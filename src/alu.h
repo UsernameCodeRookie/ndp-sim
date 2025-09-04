@@ -3,8 +3,6 @@
 
 #include <common.h>
 
-#include <deque>
-
 // Simple fixed opcodes for ALU
 enum class Op { Add, Sub, Mul, Div };
 
