@@ -7,36 +7,27 @@
 template <typename T>
 class Buffer {
  public:
-  explicit Buffer(size_t capacity) noexcept
-      : capacity(capacity), data(capacity) {}
+  explicit Buffer(size_t capacity) noexcept : capacity(capacity) {}
 
   bool push(const T& v) noexcept {
-    if (is_full()) return false;
-    data[tail] = v;
-    tail = (tail + 1) % capacity;
-    ++size;
+    if (data.size() >= capacity) return false;
+    data.push_back(v);
     return true;
   }
 
-  bool pop() noexcept {
-    if (is_empty()) return false;
-    head = (head + 1) % capacity;
-    --size;
+  bool pop(T& v) noexcept {
+    if (data.empty()) return false;
+    v = data.front();
+    data.pop_front();
     return true;
   }
 
-  T& front() noexcept { return data[head]; }
-  const T& front() const noexcept { return data[head]; }
-
-  bool is_empty() const noexcept { return size == 0; }
-  bool is_full() const noexcept { return size == capacity; }
-  size_t size() const noexcept { return size; }
-  size_t capacity() const noexcept { return capacity; }
+  bool empty() const noexcept { return data.empty(); }
+  bool full() const noexcept { return data.size() >= capacity; }
 
  private:
+  std::deque<T> data;
   size_t capacity;
-  std::vector<T> data;
-  size_t head = 0, tail = 0, size = 0;
 };
 
 #endif  // BUFFER_H

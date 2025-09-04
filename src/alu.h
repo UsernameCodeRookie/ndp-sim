@@ -6,54 +6,51 @@
 // Simple fixed opcodes for ALU
 enum class Op { Add, Sub, Mul, Div };
 
-// Input register: holds one pair of operands
-struct InReg {
-  bool valid = false;
+// Input register: holds one pair of AluInRegs
+struct AluInReg {
   int32_t src0 = 0, src1 = 0;
+  bool valid = false;
 };
 
-// Output register: holds one result
-struct OutReg {
-  bool valid = false;
+// Output register: holds one AluOutReg
+struct AluOutReg {
   int32_t value = 0;
+  bool valid = false;
 };
 
 // Represents one op flowing inside pipeline
-struct Stage {
-  int32_t a;
-  int32_t b;
-  int remaining;
-};
-
 class ALU {
+  struct Stage {
+    int32_t a;
+    int32_t b;
+    int remaining;
+  };
+
  public:
-  ALU(InReg& in, OutReg& out, Op opcode, int latency) noexcept
-      : in(in), out(out), opcode(opcode), latency(latency) {}
+  ALU(Op op, int latency) noexcept : opcode(op), latency(latency) {}
 
-  void tick() noexcept {
-    // Advance all pipeline ops
-    for (auto& st : pipeline) {
-      st.remaining--;
-    }
-
-    // Check if front op is done
-    if (!pipeline.empty() && pipeline.front().remaining <= 0) {
-      if (!out.valid) {
-        auto done = pipeline.front();
-        out.value = compute(done.a, done.b);
-        out.valid = true;
-        pipeline.pop_front();
-      }
-    }
-
-    // Accept new op if input is valid
-    if (in.valid) {
-      if ((int)pipeline.size() < latency) {
-        pipeline.push_back({in.src0, in.src1, latency});
-        in.valid = false;
-      }
-    }
+  // feed one op into pipeline (if space)
+  bool accept(const AluInReg& op) noexcept {
+    if ((int)pipeline.size() >= latency) return false;
+    pipeline.push_back({op.src0, op.src1, latency});
+    return true;
   }
+
+  // advance pipeline, return one AluOutReg if ready
+  bool tick(AluOutReg& result) noexcept {
+    for (auto& st : pipeline) st.remaining--;
+
+    if (!pipeline.empty() && pipeline.front().remaining <= 0) {
+      result.value = compute(pipeline.front().a, pipeline.front().b);
+      result.valid = true;
+      pipeline.pop_front();
+      return true;
+    }
+
+    return false;
+  }
+
+  bool full() const noexcept { return (int)pipeline.size() >= latency; }
 
  private:
   int32_t compute(int32_t a, int32_t b) const noexcept {
@@ -70,8 +67,6 @@ class ALU {
     return 0;
   }
 
-  InReg& in;
-  OutReg& out;
   Op opcode;
   int latency;
   std::deque<Stage> pipeline;
