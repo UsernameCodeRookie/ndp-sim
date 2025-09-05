@@ -44,15 +44,16 @@ class PE : public Node3x1IO<Data> {
         // Transout: only output if last_flag is set
         if (last_flag) {
           Data temp{};
-          if (feedback_state.valid) temp = feedback_state.data;
+          if (feedback_state.valid) {
+            temp = feedback_state.data;
+            feedback_state.valid = false;
+          }
           temp.last = true;  // ensure last flag
           outPort.write(temp);
           last_flag = false;
           has_accum_started = false;  // reset for next accumulation
           DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {temp.value},
                       "Transout output");
-
-          feedback_state.valid = false;
         }
       }
     }
@@ -154,14 +155,12 @@ class PE : public Node3x1IO<Data> {
   Buffer<Data> inBuffer1;
   Buffer<Data> inBuffer2;
   Buffer<Data> outBuffer;
-
   ALU alu;
+
   Op opcode;                         // fixed opcode per PE
   bool transout = false;             // transout mode flag
   std::array<bool, 3> operand_mask;  // which operands are used
-
-  // required for transout mode
-  bool last_flag = false;
+  bool last_flag = false;            // required for transout mode
   bool has_accum_started = false;
 
   // simulator only
