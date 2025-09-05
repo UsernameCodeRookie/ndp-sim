@@ -12,6 +12,11 @@ struct Data {
 
 // Processing Element: inPorts -> inBuffers -> ALU -> outBuffer -> outPort
 class PE : public Node3x1IO<Data> {
+  struct FeedbackState {
+    Data data{};
+    bool valid = false;
+  };
+
  public:
   PE(size_t inCap, size_t outCap, Op op, bool transout = false) noexcept
       : inBuffer0(inCap),
@@ -39,13 +44,15 @@ class PE : public Node3x1IO<Data> {
         // Transout: only output if last_flag is set
         if (last_flag) {
           Data temp{};
-          if (!outBuffer.empty()) outBuffer.pop(temp);
+          if (feedback_state.valid) temp = feedback_state.data;
           temp.last = true;  // ensure last flag
           outPort.write(temp);
           last_flag = false;
           has_accum_started = false;  // reset for next accumulation
           DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {temp.value},
                       "Transout output");
+
+          feedback_state.valid = false;
         }
       }
     }
@@ -69,8 +76,13 @@ class PE : public Node3x1IO<Data> {
       if (operand_mask[1]) inBuffer1.pop(src1);
 
       // In transout mode, use outBuffer as src2
-      if (transout && !outBuffer.empty()) {
-        outBuffer.pop(src2);
+      if (transout) {
+        if (!has_accum_started) {
+          src2 = {0, false};  // initial accumulation
+        } else if (feedback_state.valid) {
+          src2 = feedback_state.data;  // previous tick feedback
+          feedback_state.valid = false;
+        }
       } else if (operand_mask[2]) {
         inBuffer2.pop(src2);
       }
@@ -108,6 +120,16 @@ class PE : public Node3x1IO<Data> {
                   "inPort2 -> inBuffer2");
       inPort2.valid = false;
     }
+
+    // Virtual Stage: update feedback state from out buffer
+    if (transout && !feedback_state.valid && !outBuffer.empty()) {
+      Data temp{};
+      outBuffer.pop(temp);  // peek without removing
+      feedback_state.data = temp;
+      feedback_state.valid = true;
+      DEBUG_EVENT(dbg, "PE", EventType::StateChange, {temp.value},
+                  "Feedback state updated");
+    }
   }
 
   // Check if all operands are ready
@@ -121,7 +143,7 @@ class PE : public Node3x1IO<Data> {
       if (!has_accum_started) {
         ready2 = true;  // allow first operation without src2
       } else {
-        ready2 = !outBuffer.empty();  // need previous output
+        ready2 = feedback_state.valid;  // need previous output
       }
     }
     return ready0 && ready1 && ready2;
@@ -141,6 +163,9 @@ class PE : public Node3x1IO<Data> {
   // required for transout mode
   bool last_flag = false;
   bool has_accum_started = false;
+
+  // simulator only
+  FeedbackState feedback_state;
 };
 
 #endif  // PE_H

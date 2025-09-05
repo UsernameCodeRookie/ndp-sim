@@ -3,6 +3,8 @@
 
 #include <common.h>
 
+#include <deque>
+
 // Simple circular buffer with fixed capacity
 template <typename T>
 class Buffer {
@@ -19,6 +21,13 @@ class Buffer {
     if (data.empty()) return false;
     v = data.front();
     data.pop_front();
+    return true;
+  }
+
+  // Peek at the front element without removing it
+  bool peek(T& v) const noexcept {
+    if (data.empty()) return false;
+    v = data.front();
     return true;
   }
 
