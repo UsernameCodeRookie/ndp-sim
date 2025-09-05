@@ -3,31 +3,7 @@
 
 #include <alu.h>
 #include <buffer.h>
-#include <debug.h>
-
-template <typename T>
-struct Port {
-  T data{};
-  bool valid = false;
-
-  // Write value into port if free
-  bool write(const T& d) noexcept {
-    if (!valid) {
-      data = d;
-      valid = true;
-      return true;
-    }
-    return false;
-  }
-
-  // Read value from port if valid
-  bool read(T& d) noexcept {
-    if (!valid) return false;
-    d = data;
-    valid = false;
-    return true;
-  }
-};
+#include <node.h>
 
 struct Data {
   uint32_t value{};
@@ -35,7 +11,7 @@ struct Data {
 };
 
 // Processing Element: inPorts -> inBuffers -> ALU -> outBuffer -> outPort
-class PE {
+class PE : public Node3x1IO<Data> {
  public:
   PE(size_t inCap, size_t outCap, Op op, bool transout = false) noexcept
       : inBuffer0(inCap),
@@ -47,8 +23,7 @@ class PE {
         operand_mask(operandMaskFor(op)) {}
 
   // One simulation cycle
-  void tick(std::shared_ptr<Debugger> dbg = nullptr) {
-    // Stage 4: decide output
+  void tick(std::shared_ptr<Debugger> dbg = nullptr) override final {
     // Stage 4: decide output
     if (!outPort.valid) {
       if (!transout) {
@@ -152,12 +127,6 @@ class PE {
     return ready0 && ready1 && ready2;
   }
 
- public:
-  Port<Data> inPort0;
-  Port<Data> inPort1;
-  Port<Data> inPort2;
-  Port<Data> outPort;
-
  private:
   Buffer<Data> inBuffer0;
   Buffer<Data> inBuffer1;
@@ -169,7 +138,7 @@ class PE {
   std::array<bool, 3> operand_mask;  // which operands are used
   bool transout = false;             // transout mode flag
 
-  //
+  // required for transout mode
   bool last_flag = false;
   bool has_accum_started = false;
 };
