@@ -18,20 +18,25 @@ add_executable(ndp_sim src/main.cpp)
 target_include_directories(ndp_sim PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 # --- Find GoogleTest ---
-add_subdirectory(third_party/googletest)
-find_package(GTest REQUIRED)
+if(WIN32)
+    add_subdirectory(third_party/googletest)
+else()
+    find_package(GTest REQUIRED)
+endif()
 include_directories(${GTEST_INCLUDE_DIRS})
 
-# --- PE tests: computation tests ---
-add_executable(pe_tests_computation tests/test_pe.cpp)
-target_include_directories(pe_tests_computation PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(pe_tests_computation GTest::gtest GTest::gtest_main)
-add_test(NAME pe_tests_computation COMMAND pe_tests_computation)
-
-# --- PE tests: operand timing / barrier tests ---
-add_executable(pe_tests_timing tests/test_op_bar.cpp)
-target_include_directories(pe_tests_timing PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(pe_tests_timing GTest::gtest GTest::gtest_main)
-add_test(NAME pe_tests_timing COMMAND pe_tests_timing)
+# --- PE tests ---
+add_executable(pe_tests
+    tests/test_pe.cpp
+    tests/test_op_bar.cpp
+    tests/test_transout.cpp
+)
+target_include_directories(pe_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pe_tests GTest::gtest GTest::gtest_main)
+add_test(NAME pe_tests COMMAND pe_tests)
 
 enable_testing()
+
+# --- Enable debug mode ---
+target_compile_definitions(pe_tests PRIVATE ENABLE_DEBUG)
+

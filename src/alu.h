@@ -118,11 +118,13 @@ struct AluInReg {
   uint32_t src2 = 0;
   Op opcode = Op::nop;
   bool valid = false;
+  bool last = false;
 };
 
 struct AluOutReg {
   uint32_t value = 0;
   bool valid = false;
+  bool last = false;
 };
 
 constexpr uint32_t getLatency(Op op) {
@@ -188,6 +190,7 @@ class ALU {
     uint32_t a, b, c;
     Op opcode;
     int remaining;
+    bool last = false;
   };
 
  public:
@@ -197,8 +200,8 @@ class ALU {
   bool accept(const AluInReg& in) noexcept {
     if (!in.valid) return false;
     if ((int)pipeline.size() >= maxLatency) return false;
-    pipeline.push_back(
-        {in.src0, in.src1, in.src2, in.opcode, (int)getLatency(in.opcode)});
+    pipeline.push_back({in.src0, in.src1, in.src2, in.opcode,
+                        (int)getLatency(in.opcode), in.last});
     return true;
   }
 
@@ -209,6 +212,7 @@ class ALU {
     if (!pipeline.empty() && pipeline.front().remaining <= 0) {
       result.value = compute(pipeline.front());
       result.valid = true;
+      result.last = pipeline.front().last;
       pipeline.pop_front();
       return true;
     }
