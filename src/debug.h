@@ -40,7 +40,7 @@ struct Debugger {
 #else
 #define DEBUG_RECORD(dbg, event) \
   do {                           \
-    (void)(event);               \
+    (void)(dbg);                 \
   } while (0)
 #endif
 

@@ -157,8 +157,8 @@ class PE : public Node3x1IO<Data> {
 
   ALU alu;
   Op opcode;                         // fixed opcode per PE
-  std::array<bool, 3> operand_mask;  // which operands are used
   bool transout = false;             // transout mode flag
+  std::array<bool, 3> operand_mask;  // which operands are used
 
   // required for transout mode
   bool last_flag = false;
