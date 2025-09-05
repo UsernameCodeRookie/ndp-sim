@@ -18,6 +18,7 @@ add_executable(ndp_sim src/main.cpp)
 target_include_directories(ndp_sim PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 # --- Find GoogleTest ---
+add_subdirectory(third_party/googletest)
 find_package(GTest REQUIRED)
 include_directories(${GTEST_INCLUDE_DIRS})
 

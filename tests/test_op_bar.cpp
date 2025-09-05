@@ -30,7 +30,7 @@ TEST(PETest, OperandBarrierTiming) {
   // Stage 3: src1 arrives, now ALU should accept operands
   pe.writeIn1(3);
   dummy_out = runPEUntilOutput(pe);  // run until output ready
-  EXPECT_TRUE(dummy_out >= 0);       // operands processed
+  EXPECT_GE(dummy_out, 0u);          // operands processed
 
   // Stage 4: operands arriving simultaneously
   PE pe2(2, 2, Op::sum);
@@ -38,7 +38,7 @@ TEST(PETest, OperandBarrierTiming) {
   pe2.writeIn1(2);
   pe2.writeIn2(3);
   dummy_out = runPEUntilOutput(pe2);
-  EXPECT_TRUE(dummy_out >= 0);  // all operands ready at once
+  EXPECT_GE(dummy_out, 0u);  // all operands ready at once
 
   // Stage 5: staggered inputs with 2-input operation
   PE pe3(2, 2, Op::add);
@@ -47,5 +47,5 @@ TEST(PETest, OperandBarrierTiming) {
   EXPECT_FALSE(pe3.readOut(dummy_out));  // waiting for src1
   pe3.writeIn1(8);
   dummy_out = runPEUntilOutput(pe3);
-  EXPECT_TRUE(dummy_out >= 0);  // now ready
+  EXPECT_GE(dummy_out, 0u);  // now ready
 }
