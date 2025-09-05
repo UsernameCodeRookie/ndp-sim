@@ -3,8 +3,6 @@
 
 #include <common.h>
 
-#include <deque>
-
 // Simple circular buffer with fixed capacity
 template <typename T>
 class Buffer {
