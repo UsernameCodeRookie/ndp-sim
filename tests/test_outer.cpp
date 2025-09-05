@@ -7,18 +7,6 @@
 #include "debug.h"
 #include "pe.h"
 
-// Helper: tick PE until outPort produces output
-static uint32_t runPEUntilOutput(PE& pe,
-                                 std::shared_ptr<Debugger> dbg = nullptr,
-                                 int maxCycles = 50) {
-  for (int i = 0; i < maxCycles; ++i) {
-    pe.tick(dbg);
-    Data d;
-    if (pe.outPort.read(d)) return d.value;
-  }
-  throw std::runtime_error("PE did not produce output in expected cycles");
-}
-
 // -------------------- Outer-Product Matrix Multiply (3x3) --------------------
 TEST(PETest, OuterProduct3x3MatrixMultiply) {
   auto dbg = std::make_shared<PrintDebugger>();
@@ -34,6 +22,7 @@ TEST(PETest, OuterProduct3x3MatrixMultiply) {
 
   for (int k = 0; k < N; ++k) {
     // Feed outer product A[:,k] * B[k,:] into all PEs
+    dbg->tick();
     for (int i = 0; i < N; ++i) {
       for (int j = 0; j < N; ++j) {
         bool last = (k == N - 1);  // mark last iteration
@@ -45,10 +34,16 @@ TEST(PETest, OuterProduct3x3MatrixMultiply) {
   }
 
   // Tick PEs until outputs ready
-  for (int i = 0; i < N; ++i) {
-    for (int j = 0; j < N; ++j) {
-      uint32_t val = runPEUntilOutput(pe[i][j], dbg);
-      C[i][j] = val;
+  for (int _ = 0; _ < 50; ++_) {
+    dbg->tick();
+    for (int i = 0; i < N; ++i) {
+      for (int j = 0; j < N; ++j) {
+        pe[i][j].tick(dbg);
+        Data d;
+        if (pe[i][j].outPort.read(d)) {
+          C[i][j] = d.value;
+        }
+      }
     }
   }
 

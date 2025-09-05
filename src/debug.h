@@ -45,8 +45,18 @@ struct Debugger {
 #endif
 
 struct PrintDebugger : public Debugger {
+  int cycle = -1;  // internal cycle counter, default 0
+
+  // advance simulation cycle
+  void tick() { cycle++; }
+
   void record(const DebugEvent& e) override {
+    if (cycle >= 0) {
+      std::cout << "[" << cycle << "] ";
+    }
+
     std::cout << "[" << e.module << "] ";
+
     switch (e.type) {
       case EventType::Info:
         std::cout << "Info";
@@ -61,7 +71,9 @@ struct PrintDebugger : public Debugger {
         std::cout << "Custom";
         break;
     }
+
     if (!e.msg.empty()) std::cout << " (" << e.msg << ")";
+
     if (!e.values.empty()) {
       std::cout << " values=[";
       for (size_t i = 0; i < e.values.size(); ++i) {
@@ -70,6 +82,7 @@ struct PrintDebugger : public Debugger {
       }
       std::cout << "]";
     }
+
     std::cout << "\n";
   }
 };
