@@ -13,11 +13,12 @@ struct Port {
 // Processing Element: inPorts -> inBuffers -> ALU -> outBuffer -> outPort
 class PE {
  public:
-  PE(size_t inCap, size_t outCap, Op opcode, int latency) noexcept
+  PE(size_t inCap, size_t outCap, Op op) noexcept
       : inBuffer0(inCap),
         inBuffer1(inCap),
+        inBuffer2(inCap),
         outBuffer(outCap),
-        alu(opcode, latency) {}
+        opcode(op) {}
 
   // One simulation cycle
   void tick() {
@@ -33,13 +34,15 @@ class PE {
       outBuffer.push(r.value);
     }
 
-    // Stage 2: if both ports valid and ALU ready, send operand
-    if (!inBuffer0.empty() && !inBuffer1.empty() && !alu.full()) {
-      int32_t src0, src1;
+    // Stage 2: if all input buffers ready and ALU not full, send operands
+    if (!inBuffer0.empty() && !inBuffer1.empty() && !inBuffer2.empty() &&
+        !alu.full()) {
+      uint32_t src0, src1, src2;
       inBuffer0.pop(src0);
       inBuffer1.pop(src1);
-      AluInReg op{src0, src1, true};
-      alu.accept(op);
+      inBuffer2.pop(src2);
+      AluInReg opReg{src0, src1, src2, opcode, true};
+      alu.accept(opReg);
     }
 
     // Stage 1: pull from input ports into input buffers
@@ -51,10 +54,14 @@ class PE {
       inBuffer1.push(inPort1.value);
       inPort1.valid = false;
     }
+    if (inPort2.valid && !inBuffer2.full()) {
+      inBuffer2.push(inPort2.value);
+      inPort2.valid = false;
+    }
   }
 
   // Write to inPort0
-  void writeIn0(int32_t val) noexcept {
+  void writeIn0(uint32_t val) noexcept {
     if (!inPort0.valid) {
       inPort0.value = val;
       inPort0.valid = true;
@@ -62,15 +69,23 @@ class PE {
   }
 
   // Write to inPort1
-  void writeIn1(int32_t val) noexcept {
+  void writeIn1(uint32_t val) noexcept {
     if (!inPort1.valid) {
       inPort1.value = val;
       inPort1.valid = true;
     }
   }
 
+  // Write to inPort2
+  void writeIn2(uint32_t val) noexcept {
+    if (!inPort2.valid) {
+      inPort2.value = val;
+      inPort2.valid = true;
+    }
+  }
+
   // Read from outPort
-  bool readOut(int32_t& outVal) noexcept {
+  bool readOut(uint32_t& outVal) noexcept {
     if (outPort.valid) {
       outVal = outPort.value;
       outPort.valid = false;
@@ -80,14 +95,18 @@ class PE {
   }
 
  private:
-  Buffer<int32_t> inBuffer0;
-  Buffer<int32_t> inBuffer1;
-  Buffer<int32_t> outBuffer;
+  Buffer<uint32_t> inBuffer0;
+  Buffer<uint32_t> inBuffer1;
+  Buffer<uint32_t> inBuffer2;
+  Buffer<uint32_t> outBuffer;
 
-  Port<int32_t> inPort0;
-  Port<int32_t> inPort1;
-  Port<int32_t> outPort;
+  Port<uint32_t> inPort0;
+  Port<uint32_t> inPort1;
+  Port<uint32_t> inPort2;
+  Port<uint32_t> outPort;
+
   ALU alu;
+  Op opcode;  // fixed opcode per PE
 };
 
 #endif  // PE_H
