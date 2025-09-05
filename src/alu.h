@@ -52,6 +52,66 @@ enum class Op {
   fcpys_inv
 };
 
+#include <array>
+#include <cstdint>
+
+constexpr std::array<bool, 3> operandMaskFor(Op op) noexcept {
+  switch (op) {
+    // Two-input ops: src0, src1
+    case Op::add:
+    case Op::sub:
+    case Op::mul:
+    case Op::eq:
+    case Op::neq:
+    case Op::max:
+    case Op::sadd:
+    case Op::ssub:
+    case Op::smul:
+    case Op::joint_8:
+    case Op::joint_16:
+    case Op::bit_and:
+    case Op::bit_or:
+    case Op::bit_xor:
+    case Op::ls:
+    case Op::logic_rs:
+    case Op::arith_rs:
+    case Op::logic_and:
+    case Op::logic_or:
+    case Op::lte:
+    case Op::gte:
+    case Op::lt:
+    case Op::gt:
+    case Op::fadd:
+    case Op::fsub:
+    case Op::fmul:
+    case Op::feq:
+    case Op::flte:
+    case Op::flt:
+    case Op::fcpys:
+    case Op::fcpysn:
+    case Op::fcpys_inv:
+    case Op::bit_not:
+    case Op::logic_not:
+    case Op::nop:
+      return {true, true, false};  // true as operand used, false as unused
+
+    // Three-input ops: src0, src1, src2
+    case Op::mac:
+    case Op::smac:
+    case Op::sum:
+    case Op::ssum:
+    case Op::fmac:
+    case Op::fmas:
+    case Op::fnmac:
+    case Op::fnmas:
+    case Op::mux:
+      return {true, true, true};
+
+    default:
+      return {false, false, false};
+  }
+}
+
 struct AluInReg {
   uint32_t src0 = 0;
   uint32_t src1 = 0;

@@ -17,13 +17,20 @@ endif()
 add_executable(ndp_sim src/main.cpp)
 target_include_directories(ndp_sim PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
-# --- Unit tests with system-installed GoogleTest ---
+# --- Find GoogleTest ---
 find_package(GTest REQUIRED)
 include_directories(${GTEST_INCLUDE_DIRS})
 
-add_executable(pe_tests tests/test_pe.cpp)
-target_include_directories(pe_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(pe_tests GTest::gtest GTest::gtest_main)
+# --- PE tests: computation tests ---
+add_executable(pe_tests_computation tests/test_pe.cpp)
+target_include_directories(pe_tests_computation PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pe_tests_computation GTest::gtest GTest::gtest_main)
+add_test(NAME pe_tests_computation COMMAND pe_tests_computation)
+
+# --- PE tests: operand timing / barrier tests ---
+add_executable(pe_tests_timing tests/test_op_bar.cpp)
+target_include_directories(pe_tests_timing PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pe_tests_timing GTest::gtest GTest::gtest_main)
+add_test(NAME pe_tests_timing COMMAND pe_tests_timing)
 
 enable_testing()
-add_test(NAME pe_tests COMMAND pe_tests)

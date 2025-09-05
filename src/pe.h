@@ -18,7 +18,8 @@ class PE {
         inBuffer1(inCap),
         inBuffer2(inCap),
         outBuffer(outCap),
-        opcode(op) {}
+        opcode(op),
+        operand_mask(operandMaskFor(op)) {}
 
   // One simulation cycle
   void tick() {
@@ -35,12 +36,11 @@ class PE {
     }
 
     // Stage 2: if all input buffers ready and ALU not full, send operands
-    if (!inBuffer0.empty() && !inBuffer1.empty() && !inBuffer2.empty() &&
-        !alu.full()) {
+    if (allAluOperandsReady() && !alu.full()) {
       uint32_t src0, src1, src2;
-      inBuffer0.pop(src0);
-      inBuffer1.pop(src1);
-      inBuffer2.pop(src2);
+      if (operand_mask[0]) inBuffer0.pop(src0);
+      if (operand_mask[1]) inBuffer1.pop(src1);
+      if (operand_mask[2]) inBuffer2.pop(src2);
       AluInReg opReg{src0, src1, src2, opcode, true};
       alu.accept(opReg);
     }
@@ -58,6 +58,12 @@ class PE {
       inBuffer2.push(inPort2.value);
       inPort2.valid = false;
     }
+  }
+
+  bool allAluOperandsReady() const noexcept {
+    return (!operand_mask[0] || !inBuffer0.empty()) &&
+           (!operand_mask[1] || !inBuffer1.empty()) &&
+           (!operand_mask[2] || !inBuffer2.empty());
   }
 
   // Write to inPort0
@@ -106,7 +112,8 @@ class PE {
   Port<uint32_t> outPort;
 
   ALU alu;
-  Op opcode;  // fixed opcode per PE
+  Op opcode;                         // fixed opcode per PE
+  std::array<bool, 3> operand_mask;  // which operands are used
 };
 
 #endif  // PE_H
