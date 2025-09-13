@@ -42,11 +42,20 @@ class Node3x1IO : public NodeBase {
   Port<T> inPort1;
   Port<T> inPort2;
   Port<T> outPort;
+};
 
-  // Optional generic container of all ports for iteration
-  std::vector<Port<T>*> ports() {
-    return {&inPort0, &inPort1, &inPort2, &outPort};
-  }
+template <size_t N, typename I>
+class NodeNI : virtual public NodeBase {
+ public:
+  NodeNI() = default;
+  std::array<Port<I>, N> inPorts;
+};
+
+template <size_t M, typename O>
+class NodeMO : virtual public NodeBase {
+ public:
+  NodeMO() = default;
+  std::array<Port<O>, M> outPorts;
 };
 
 #endif  // NODE_H
