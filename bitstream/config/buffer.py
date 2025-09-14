@@ -10,8 +10,8 @@ class BufferConfig(BaseConfigModule):
         ("enable", 1),
         ("buffer_life_time", 2),
         ("mode", 1),
-        # "mask": "00001111" (binary string) -> 0b00001111 (int)
-        ("mask", 8, lambda x: int(x, 2)),
+        # "mask": List[int] -> Bit integer
+        ("mask", 8, lambda x: int("".join(str(v) for v in x), 2)),
     ]
 
     def __init__(self, idx: int):

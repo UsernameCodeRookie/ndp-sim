@@ -28,10 +28,7 @@ class BaseConfigModule(ConfigModule):
 
     def __init__(self):
         # Initialize all field values with default 0
-        self.values = {}
-        for entry in self.FIELD_MAP:
-            name = entry[0]
-            self.values[name] = 0
+        self.values = {entry[0]: 0 for entry in self.FIELD_MAP}
 
     def from_json(self, cfg: dict):
         """Populate values from a JSON dict."""
@@ -40,38 +37,52 @@ class BaseConfigModule(ConfigModule):
             if name in cfg:
                 self.values[name] = cfg[name]
 
-    def _to_int(self, val, mapper: Callable = None, width: int = None):
-        """Convert field value to int, supporting scalars, bools, and lists."""
+    def _encode_list(self, val: List[int], width: int) -> List[int]:
+        """Encode a list of integers into chunks of given width."""
+        if all(v in (0, 1) for v in val):
+            # bit vector, pack into groups of <= 64 bits
+            chunk_size = 64
+            chunks = []
+            for i in range(0, len(val), chunk_size):
+                sub = val[i:i+chunk_size]
+                bin_str = "".join(str(b) for b in sub)
+                chunks.append(int(bin_str, 2))
+            return chunks
+
+        # Otherwise treat as fixed-width ints
+        if width is None:
+            raise ValueError("List encoding requires width")
+        bits_per_elem = max(1, width // len(val))
+        bin_str = "".join(format(v, f"0{bits_per_elem}b") for v in val)
+
+        # Split into 64-bit words
+        chunks = []
+        for i in range(0, len(bin_str), 64):
+            sub = bin_str[i:i+64]
+            chunks.append(int(sub, 2))
+        return chunks
+
+    def _to_list_ints(self, val, mapper: Callable = None, width: int = None) -> List[int]:
+        """Convert a field value into a list of ints (each <=64-bit)."""
         if mapper:
-            return int(mapper(val))
+            val = mapper(val)
+
         if val is None:
-            return 0  # treat missing/None as 0
-        if isinstance(val, int):
-            return val
-        if isinstance(val, bool):
-            return int(val)
-
+            return [0]
+        if isinstance(val, (int, bool)):
+            return [int(val)]
         if isinstance(val, list):
-            # If all elements are 0/1, treat as bit vector
-            if all(v in (0, 1) for v in val):
-                bin_str = "".join(str(v) for v in val)
-                return int(bin_str, 2)
+            return self._encode_list(val, width)
 
-            # Otherwise, pack integers into fixed-width chunks
-            if width is None:
-                raise ValueError("List encoding requires a width")
-            bits_per_elem = max(1, width // len(val))
-            bin_str = "".join(format(v, f"0{bits_per_elem}b") for v in val)
-            return int(bin_str, 2)
-
-        raise TypeError(f"Cannot convert value {val} of type {type(val)} to Bit")
-
+        raise TypeError(f"Cannot convert value {val} of type {type(val)}")
 
     def to_bits(self) -> List[Bit]:
+        """Convert fields to a list of Bit objects."""
         bits: List[Bit] = []
         for entry in self.FIELD_MAP:
-            name = entry[0]
-            width = entry[1]
-            mapper = entry[2] if len(entry) > 2 else None
-            bits.append(Bit(self._to_int(self.values[name], mapper, width), width))
+            name, width, *rest = entry
+            mapper = rest[0] if rest else None
+            ints = self._to_list_ints(self.values[name], mapper, width)
+            for word in ints:
+                bits.append(Bit(word, min(width, 64)))  # 每个分块最多64位
         return bits

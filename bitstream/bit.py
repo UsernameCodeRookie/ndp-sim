@@ -1,5 +1,6 @@
 # Bit class implementation and demonstration tests
 from dataclasses import dataclass
+from typing import List
 
 @dataclass(frozen=True)
 class Bit:
@@ -45,6 +46,31 @@ class Bit:
     def from_bytes(cls, b: bytes, width: int, byteorder: str = "little"):
         """Create Bit from bytes. `width` controls how many bits to keep (excess bytes are accepted)."""
         int_val = int.from_bytes(b, byteorder=byteorder, signed=False)
+        return cls(int_val, width)
+    
+    @classmethod
+    def from_list(cls, vals: List[int], bits_per_elem: int = None) -> "Bit":
+        """
+        Create Bit from a list of integers (LSB = rightmost element).
+        - If vals are 0/1 only, treat as bit-vector string.
+        - Else, pack each integer into fixed-width fields.
+        """
+        if not vals:
+            return cls(0, 1)
+
+        if all(v in (0, 1) for v in vals):
+            # interpret as binary digits
+            bin_str = "".join(str(v) for v in vals)
+            return cls(int(bin_str, 2), len(vals))
+
+        # Otherwise: pack integers
+        if bits_per_elem is None:
+            # choose minimal width per element
+            bits_per_elem = max(1, max(v.bit_length() for v in vals))
+        width = bits_per_elem * len(vals)
+        int_val = 0
+        for v in vals:
+            int_val = (int_val << bits_per_elem) | int(v)
         return cls(int_val, width)
 
     def to_bytes(self, byteorder: str = "little") -> bytes:
