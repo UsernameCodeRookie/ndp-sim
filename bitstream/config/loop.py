@@ -6,6 +6,7 @@ class DramLoopControlConfig(BaseConfigModule):
     """Represents a single DRAM loop configuration."""
 
     FIELD_MAP = [
+        ("src_enable", 1),
         ("src_id", 8, lambda x: NodeIndex(x) if x else None),  # source node ID, resolved later
         ("outmost_loop", 1),
         ("start", 16),
@@ -42,6 +43,8 @@ class DramLoopControlConfig(BaseConfigModule):
             key, entry = stride_entries[self.idx]
             self.id = NodeIndex("DRAM_LC." + key)
             super().from_json(entry)
+            
+            self.values["src_enable"] = 1 if self.values.get("src_id") is not None else 0
         else:
             # No valid entry: treat as empty
             self.set_empty()

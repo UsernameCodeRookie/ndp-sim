@@ -2,6 +2,7 @@ from bitstream.config.base import BaseConfigModule
 from typing import List
 from bitstream.bit import Bit
 from bitstream.index import NodeIndex
+from math import log2
 
 class MemoryAGConfig0(BaseConfigModule):
     FIELD_MAP = [
@@ -33,6 +34,8 @@ class StreamCtrlConfig0(BaseConfigModule):
 
 class MemoryAGConfig1(BaseConfigModule):
     FIELD_MAP = [
+        ("transcation_spatial_size_log", 9),
+        ("transcation_total_size", 10),
         ("idx", 15, lambda lst: [NodeIndex(x) if x else None for x in lst] if lst else None),
         ("idx_enable", 3),
         ("idx_keep_mode", 3),
@@ -42,6 +45,15 @@ class MemoryAGConfig1(BaseConfigModule):
     def from_json(self, cfg: dict):
         cfg = cfg.get("memory_AG", cfg)
         super().from_json(cfg)
+        
+        idx_size = cfg.get("idx_size", None)
+        
+        if idx_size is not None:
+            idx_size = [_ if _ is not None else 1 for _ in idx_size]
+            self.values["transcation_spatial_size_log"] = [log2(idx_size[2]), 
+                                                           log2(idx_size[1] * idx_size[2]), 
+                                                           log2(idx_size[0] * idx_size[1] * idx_size[2])]
+            self.values["transcation_total_size"] = idx_size[0] * idx_size[1] * idx_size[2]
 
 class BufferAGConfig(BaseConfigModule):
     FIELD_MAP = [

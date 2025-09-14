@@ -66,7 +66,6 @@ if __name__ == "__main__":
         print(f"{m.__class__.__name__}: {[str(b) for b in bits]}")
         total_bits.extend(bits)
         
-    print(f"Total bits: {len(total_bits)}")
     # Write to binary file
     bin = bits_to_binfile(total_bits, byteorder="little")
     
