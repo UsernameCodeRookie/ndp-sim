@@ -37,23 +37,32 @@ class BaseConfigModule(ConfigModule):
             if name in cfg:
                 self.values[name] = cfg[name]
 
-    def _encode_list(self, val: List[int], width: int) -> List[int]:
-        """Encode a list of integers into chunks of given width."""
-        if all(v in (0, 1) for v in val):
-            # bit vector, pack into groups of <= 64 bits
+    def _encode_list(self, val: list, width: int) -> list[int]:
+        """Encode a list of integers (or NodeIndex/NodeIndexFuture) into chunks of <=64-bit ints."""
+        
+        # Convert NodeIndex/NodeIndexFuture to int
+        def to_int(x):
+            if x is None:
+                return 0
+            return int(x)  # NodeIndex/__int__ or int
+
+        val_ints = [to_int(v) for v in val]
+
+        if all(v in (0, 1) for v in val_ints):
+            # bit vector
             chunk_size = 64
             chunks = []
-            for i in range(0, len(val), chunk_size):
-                sub = val[i:i+chunk_size]
+            for i in range(0, len(val_ints), chunk_size):
+                sub = val_ints[i:i+chunk_size]
                 bin_str = "".join(str(b) for b in sub)
                 chunks.append(int(bin_str, 2))
             return chunks
 
-        # Otherwise treat as fixed-width ints
         if width is None:
             raise ValueError("List encoding requires width")
-        bits_per_elem = max(1, width // len(val))
-        bin_str = "".join(format(v, f"0{bits_per_elem}b") for v in val)
+        
+        bits_per_elem = max(1, width // len(val_ints))
+        bin_str = "".join(format(v, f"0{bits_per_elem}b") for v in val_ints)
 
         # Split into 64-bit words
         chunks = []
@@ -69,7 +78,7 @@ class BaseConfigModule(ConfigModule):
 
         if val is None:
             return [0]
-        if isinstance(val, (int, bool)):
+        if isinstance(val, (int, bool)) or hasattr(val, "__int__"):
             return [int(val)]
         if isinstance(val, list):
             return self._encode_list(val, width)

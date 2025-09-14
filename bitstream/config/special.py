@@ -4,7 +4,7 @@ from bitstream.config.base import BaseConfigModule
 from typing import List
 from bitstream.bit import Bit
 
-class PEConfig(BaseConfigModule):
+class SpecialConfig(BaseConfigModule):
     FIELD_MAP = [
         ("data_type", 2, lambda x: 0 if x == "fp16" else 1),
         ("index_end", 3),
@@ -45,7 +45,7 @@ class SpecialArrayConfig(BaseConfigModule):
     def __init__(self):
         super().__init__()
         # submodules: (json_key, module_instance)
-        self.submodules = [PEConfig()] + [InportConfig(i) for i in range(3)] + [OutportConfig()]
+        self.submodules = [SpecialConfig()] + [InportConfig(i) for i in range(3)] + [OutportConfig()]
 
     def from_json(self, cfg: dict):
         cfg = cfg.get("special_array", cfg)
