@@ -1,7 +1,7 @@
 from bitstream.config.base import BaseConfigModule
 from typing import List
 from bitstream.bit import Bit
-from bitstream.config.index import NodeIndex
+from bitstream.index import NodeIndex
 
 class MemoryAGConfig0(BaseConfigModule):
     FIELD_MAP = [
@@ -33,7 +33,7 @@ class StreamCtrlConfig0(BaseConfigModule):
 
 class MemoryAGConfig1(BaseConfigModule):
     FIELD_MAP = [
-        ("idx", 15, lambda lst: [NodeIndex(x) if x else None for x in lst]),
+        ("idx", 15, lambda lst: [NodeIndex(x) if x else None for x in lst] if lst else None),
         ("idx_enable", 3),
         ("idx_keep_mode", 3),
         ("idx_keep_last_index", 9),

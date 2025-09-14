@@ -4,7 +4,9 @@ from bitstream.bit import Bit
 from bitstream.visualize import visualize_modules
 from bitstream.config import (
     BaseConfigModule,
-    DramLoopConfig,
+    DramLoopControlConfig,
+    LCPEConfig,
+    BufferLoopControlConfig,
     NeighborStreamConfig,
     StreamConfig,
     BufferConfig,
@@ -45,9 +47,12 @@ if __name__ == "__main__":
 
     # Initialize modules
     modules = (
-        [DramLoopConfig()] +
+        [DramLoopControlConfig(i) for i in range(8)] +
+        [BufferLoopControlConfig(i, "row") for i in range(4)] +
+        [BufferLoopControlConfig(i, "col") for i in range(4)] +
+        [LCPEConfig(i) for i in range(4)] +
+        [StreamConfig(i) for i in range(4)] +
         [NeighborStreamConfig()] +
-        [StreamConfig(i) for i in range(3)] +
         [BufferConfig(i) for i in range(6)] +
         [SpecialArrayConfig()]
     )
