@@ -95,3 +95,29 @@ class BaseConfigModule(ConfigModule):
             for word in ints:
                 bits.append(Bit(word, min(width, 64)))  # 每个分块最多64位
         return bits
+    
+    def dump(self, indent: int = 0):
+        """
+        Print field values and their binary encoding.
+        If the module has submodules, recursively dump them.
+        """
+        prefix = " " * indent
+        print(f"{prefix}=== Dump: {self.__class__.__name__} ===")
+
+        if hasattr(self, "submodules") and self.submodules:
+            # This is a composite module
+            for sm in self.submodules:
+                sm.dump(indent + 2)
+        else:
+            # Leaf module with FIELD_MAP
+            for entry in self.FIELD_MAP:
+                name, width, *rest = entry
+                mapper = rest[0] if rest else None
+                val = self.values.get(name, None)
+                ints = self._to_list_ints(val, mapper, width)
+
+                encoded = [
+                    bin(i)[2:].zfill(width) if width <= 64 else hex(i)
+                    for i in ints
+                ]
+                print(f"{prefix}{name:<30} | value={str(val):<35} | encoded={encoded}")

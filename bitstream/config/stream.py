@@ -50,9 +50,9 @@ class MemoryAGConfig1(BaseConfigModule):
         
         if idx_size is not None:
             idx_size = [_ if _ is not None else 1 for _ in idx_size]
-            self.values["transcation_spatial_size_log"] = [log2(idx_size[2]), 
-                                                           log2(idx_size[1] * idx_size[2]), 
-                                                           log2(idx_size[0] * idx_size[1] * idx_size[2])]
+            self.values["transcation_spatial_size_log"] = [int(log2(idx_size[2])), 
+                                                           int(log2(idx_size[1] * idx_size[2])), 
+                                                           int(log2(idx_size[0] * idx_size[1] * idx_size[2]))]
             self.values["transcation_total_size"] = idx_size[0] * idx_size[1] * idx_size[2]
 
 class BufferAGConfig(BaseConfigModule):

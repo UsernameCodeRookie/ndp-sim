@@ -63,8 +63,11 @@ if __name__ == "__main__":
     for m in modules:
         m.from_json(cfg)
         bits = m.to_bits()
-        print(f"{m.__class__.__name__}: {[str(b) for b in bits]}")
+        # print(f"{m.__class__.__name__}: {[str(b) for b in bits]}")
         total_bits.extend(bits)
+        
+        # Dump field values vs binary
+        m.dump(indent=2)
         
     # Write to binary file
     bin = bits_to_binfile(total_bits, byteorder="little")
