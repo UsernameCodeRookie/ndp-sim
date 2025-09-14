@@ -140,7 +140,7 @@ def visualize_modules(modules, row_bit_width=32, save_path="./data/bitstream.png
     
 if __name__ == "__main__":
     # Load JSON configuration
-    with open("./data/new_gemm_config_ringbroadcast.json", "r") as f:
+    with open("./data/gemm_config_ringbroadcast.json", "r") as f:
         cfg = json.load(f)
 
     # Initialize modules
