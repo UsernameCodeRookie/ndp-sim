@@ -54,7 +54,7 @@ class LCPEConfig(BaseConfigModule):
 
     FIELD_MAP = [
         ("inport", 24, lambda lst: [NodeIndex(x) if x else None for x in lst] if lst else None),
-        ("inport_mode", 6, lambda lst: [0 if x == "keep" else 1 if x == "buffer" else 0 for x in lst] if lst else None),
+        ("inport_mode", 6, lambda lst: [LCPEConfig.inport_mode_map()[x] for x in lst] if lst else None),
         ("inport_last_index", 9),
         ("opcode", 4, lambda x: LCPEConfig.opcode_map()[x] if x is not None else 0),
         ("inport_enable", 3),
@@ -86,6 +86,16 @@ class LCPEConfig(BaseConfigModule):
             "sub": 2,
             "mac": 3,
             "mul": 4,
+        }
+        
+    @staticmethod
+    def inport_mode_map():
+        """Map string inport modes to integers."""
+        return {
+            None: 0,
+            "buffer": 1,
+            "keep": 2,
+            "constant": 3,
         }
 
     def from_json(self, cfg: dict):

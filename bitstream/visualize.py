@@ -42,12 +42,12 @@ def visualize_modules(modules, row_bit_width=128, save_path="./data/bitstream.pn
                     raise ValueError(f"Unexpected FIELD_MAP entry: {field_info}")
 
                 # Expand bits to match width, pad with 0 if needed
-                for w in range(width-1, -1, -1):
+                for w in range(width - 1, -1, -1):
                     if w < len(bit):
                         all_bits.append(bit[w])
                     else:
                         all_bits.append(0)
-                    all_fields.append(name if w == width-1 else "")
+                    all_fields.append(name if w == width - 1 else "")
                     all_colors.append(color)
 
     for m_idx, module in enumerate(modules):
@@ -84,11 +84,19 @@ def visualize_modules(modules, row_bit_width=128, save_path="./data/bitstream.pn
                 edgecolor='black', facecolor=all_colors[bit_idx]
             ))
 
-            # Binary value above
-            ax.text(rect_x + draw_width/2, rect_y + 0.65, bin_val,
+            # Address range in bytes
+            start_bit = bit_idx
+            end_bit = bit_idx + draw_width - 1
+            start_byte = start_bit // 8
+            end_byte = end_bit // 8
+            addr_str = f"[0x{start_byte:04X} - 0x{end_byte:04X}]"
+
+            # Binary value + address above
+            ax.text(rect_x + draw_width/2, rect_y + 0.65,
+                    f"{addr_str}\n{bin_val}",
                     ha='center', va='bottom', fontsize=6, color='black')
 
-            # Field name horizontal inside
+            # Field name inside
             if field_name and draw_width > 0:
                 ax.text(rect_x + draw_width/2, rect_y + 0.35, field_name,
                         ha='center', va='center', fontsize=6, color='white')
@@ -98,8 +106,10 @@ def visualize_modules(modules, row_bit_width=128, save_path="./data/bitstream.pn
             remaining_in_row -= draw_width
 
     # Legend: module name -> color, placed in lower-right corner
-    legend_handles = [Patch(facecolor=module_colors[i], edgecolor='black', label=modules[i].__class__.__name__)
-                      for i in range(len(modules))]
+    legend_handles = [
+        Patch(facecolor=module_colors[i], edgecolor='black', label=modules[i].__class__.__name__)
+        for i in range(len(modules))
+    ]
     ax.legend(handles=legend_handles, loc='lower right', fontsize=8)
 
     ax.set_xlim(0, row_bit_width)

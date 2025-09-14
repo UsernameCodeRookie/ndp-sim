@@ -48,16 +48,6 @@ class BaseConfigModule(ConfigModule):
 
         val_ints = [to_int(v) for v in val]
 
-        if all(v in (0, 1) for v in val_ints):
-            # bit vector
-            chunk_size = 64
-            chunks = []
-            for i in range(0, len(val_ints), chunk_size):
-                sub = val_ints[i:i+chunk_size]
-                bin_str = "".join(str(b) for b in sub)
-                chunks.append(int(bin_str, 2))
-            return chunks
-
         if width is None:
             raise ValueError("List encoding requires width")
         
@@ -93,7 +83,7 @@ class BaseConfigModule(ConfigModule):
             mapper = rest[0] if rest else None
             ints = self._to_list_ints(self.values[name], mapper, width)
             for word in ints:
-                bits.append(Bit(word, min(width, 64)))  # 每个分块最多64位
+                bits.append(Bit(word, min(width, 64)))
         return bits
     
     def dump(self, indent: int = 0):
