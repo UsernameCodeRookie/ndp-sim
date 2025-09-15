@@ -83,7 +83,7 @@ class LCPEConfig(BaseConfigModule):
         return {
             "add": 0,
             "mul": 1,
-            "max": 2,
+            "mac": 2,
         }
         
     @staticmethod
