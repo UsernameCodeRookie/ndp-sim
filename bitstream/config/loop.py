@@ -81,11 +81,9 @@ class LCPEConfig(BaseConfigModule):
     def opcode_map():
         """Map string opcode names to integers."""
         return {
-            "nop": 0,
-            "add": 1,
-            "sub": 2,
-            "mac": 3,
-            "mul": 4,
+            "add": 0,
+            "mul": 1,
+            "max": 2,
         }
         
     @staticmethod

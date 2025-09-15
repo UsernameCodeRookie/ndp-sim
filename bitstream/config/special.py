@@ -6,9 +6,16 @@ from bitstream.bit import Bit
 
 class SpecialConfig(BaseConfigModule):
     FIELD_MAP = [
-        ("data_type", 2, lambda x: 0 if x == "fp16" else 1),
+        ("data_type", 2, lambda x: SpecialConfig.data_type_map()[x] if x is not None else 0),
         ("index_end", 3),
     ]
+    
+    @classmethod
+    def data_type_map(cls):
+        return {
+            "int8": 0,
+            "fp16": 1,
+        }
 
 class InportConfig(BaseConfigModule):
     FIELD_MAP = [
@@ -31,8 +38,8 @@ class InportConfig(BaseConfigModule):
 class OutportConfig(BaseConfigModule):
     FIELD_MAP = [
         ("enable", 1),
-        ("mode", 1, lambda x: 0 if x == "col" else 1),
-        ("fp32to16", 1, lambda x: 1 if str(x).lower() == "true" else 0),
+        ("mode", 1, lambda x: 1 if x == "col" else 0),
+        ("fp32to16", 1, lambda x: 0 if str(x).lower() == "true" else 1),
     ]
     
     def from_json(self, cfg: dict):
