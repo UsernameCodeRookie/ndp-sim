@@ -3,7 +3,11 @@
 
 #include <debug.h>
 
-#include <array>
+// Utility to convert various types to uint32_t for logging
+template <typename T>
+struct ToUint32 {
+  static uint32_t convert(const T& val) { return static_cast<uint32_t>(val); }
+};
 
 template <typename T>
 struct Port {
@@ -31,6 +35,8 @@ struct Port {
     d = data;
     return true;
   }
+
+  uint32_t toUint32() const noexcept { return ToUint32<T>::convert(data); }
 };
 
 // Base class for all nodes
@@ -71,31 +77,73 @@ class Node3x1IO : public NodeNI<3, T>, public NodeMO<1, T> {
 class ConnectionBase {
  public:
   virtual ~ConnectionBase() = default;
-
-  // propagate data from source to destination
   virtual void propagate(std::shared_ptr<Debugger> dbg = nullptr) noexcept = 0;
 };
 
-// Typed connection between two ports (reference version)
+// Connection strategy types
+enum class StrategyType { SingleCast, Broadcast };
+
+// Single-cast strategy for connections
+template <typename T>
+struct SingleCastStrategy {
+  static void propagate(Port<T>* src, std::vector<Port<T>*>& dsts,
+                        std::shared_ptr<Debugger> dbg = nullptr) {
+    if (!src || !src->valid) return;
+
+    for (auto* dst : dsts) {
+      if (dst->write(src->data)) {
+        src->valid = false;
+        DEBUG_EVENT(dbg, "->", EventType::DataTransfer, {0}, "singlecast");
+        break;
+      }
+    }
+  }
+};
+
+// Broadcast strategy for connections
+template <typename T>
+struct BroadcastStrategy {
+  static void propagate(Port<T>* src, std::vector<Port<T>*>& dsts,
+                        std::shared_ptr<Debugger> dbg = nullptr) {
+    if (!src || !src->valid) return;
+
+    for (auto* dst : dsts) {
+      dst->write(src->data);
+      DEBUG_EVENT(dbg, "->", EventType::DataTransfer, {0}, "broadcast");
+    }
+
+    src->valid = false;
+  }
+};
+
+// Connection
 template <typename T>
 class Connection : public ConnectionBase {
  public:
-  Connection(Port<T>& _src, Port<T>& _dst) noexcept : src(_src), dst(_dst) {}
+  Connection(Port<T>& src, Port<T>& dst, StrategyType s)
+      : src(&src), strategy(s) {
+    dsts.push_back(&dst);
+  }
+
+  void addDst(Port<T>& dst) { dsts.push_back(&dst); }
 
   void propagate(std::shared_ptr<Debugger> dbg = nullptr) noexcept override {
-    if (!src.valid) return;  // nothing to propagate
-
-    // Try to push data downstream
-    if (dst.write(src.data)) {
-      DEBUG_EVENT(dbg, "Connection", EventType::DataTransfer, {src.data.value},
-                  "propagated");
-      src.valid = false;  // consume source
+    switch (strategy) {
+      case StrategyType::SingleCast:
+        SingleCastStrategy<T>::propagate(src, dsts, dbg);
+        break;
+      case StrategyType::Broadcast:
+        BroadcastStrategy<T>::propagate(src, dsts, dbg);
+        break;
     }
   }
 
+  Port<T>& getSrc() { return *src; }
+
  private:
-  Port<T>& src;
-  Port<T>& dst;
+  Port<T>* src;
+  std::vector<Port<T>*> dsts;
+  StrategyType strategy;
 };
 
 #endif  // NODE_H

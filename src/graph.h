@@ -21,18 +21,39 @@ class Graph {
     return node;
   }
 
-  // Connect two ports using references (no raw pointers)
+  // Connect two ports using references and specify strategy
   template <typename T>
-  void connect(Port<T>& src, Port<T>& dst) {
-    connections.emplace_back(std::make_unique<Connection<T>>(src, dst));
+  void connect(Port<T>& src, Port<T>& dst,
+               StrategyType strategy = StrategyType::Broadcast) {
+    // Check if a connection from this src already exists
+    auto it = std::find_if(connections.begin(), connections.end(),
+                           [&src](const std::unique_ptr<ConnectionBase>& c) {
+                             auto p = dynamic_cast<Connection<T>*>(c.get());
+                             return p && &(p->getSrc()) == &src;
+                           });
+
+    if (it != connections.end()) {
+      // src already has a connection, just add dst
+      auto p = dynamic_cast<Connection<T>*>(it->get());
+      if (p) {
+        p->addDst(dst);
+        return;
+      }
+    }
+
+    // Create a new connection
+    connections.emplace_back(
+        std::make_unique<Connection<T>>(src, dst, strategy));
   }
 
   // Tick all nodes and propagate data
   void tick(std::shared_ptr<Debugger> dbg = nullptr) {
+    // Tick nodes first
     for (auto& [id, node] : nodes) {
       node->tick(dbg);
     }
 
+    // Propagate data along connections
     for (auto& c : connections) {
       c->propagate(dbg);
     }
