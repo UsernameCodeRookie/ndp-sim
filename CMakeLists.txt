@@ -32,6 +32,7 @@ add_executable(pe_tests
     tests/test_transout.cpp
     tests/test_inner.cpp
     tests/test_outer.cpp
+    tests/test_connect.cpp
 )
 target_include_directories(pe_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(pe_tests GTest::gtest GTest::gtest_main)
