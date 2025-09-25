@@ -73,7 +73,7 @@ class ConnectionBase {
   virtual ~ConnectionBase() = default;
 
   // propagate data from source to destination
-  virtual void propagate() noexcept = 0;
+  virtual void propagate(std::shared_ptr<Debugger> dbg = nullptr) noexcept = 0;
 };
 
 // Typed connection between two ports (reference version)
@@ -82,11 +82,13 @@ class Connection : public ConnectionBase {
  public:
   Connection(Port<T>& _src, Port<T>& _dst) noexcept : src(_src), dst(_dst) {}
 
-  void propagate() noexcept override {
+  void propagate(std::shared_ptr<Debugger> dbg = nullptr) noexcept override {
     if (!src.valid) return;  // nothing to propagate
 
     // Try to push data downstream
     if (dst.write(src.data)) {
+      DEBUG_EVENT(dbg, "Connection", EventType::DataTransfer, {src.data.value},
+                  "propagated");
       src.valid = false;  // consume source
     }
   }

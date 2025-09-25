@@ -34,7 +34,7 @@ class Graph {
     }
 
     for (auto& c : connections) {
-      c->propagate();
+      c->propagate(dbg);
     }
   }
 
