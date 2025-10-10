@@ -4,10 +4,14 @@
 #include <alu.h>
 #include <buffer.h>
 #include <node.h>
+#include <protocol.h>
 
-struct Data {
-  uint32_t value{};
+struct Data : public ValidReadyData<uint32_t> {
   bool last = false;
+
+  Data() = default;
+  Data(uint32_t val, bool l = false)
+      : ValidReadyData<uint32_t>(val, true, true), last(l) {}
 };
 
 // Processing Element: inPorts -> inBuffers -> ALU -> outBuffer -> outPort
@@ -36,9 +40,11 @@ class PE : public Node3x1IO<Data> {
         if (!outBuffer.empty()) {
           Data temp{};
           outBuffer.pop(temp);
-          outPort.write(temp);
-          DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {temp.value},
-                      "Normal output");
+          if (temp.valid && temp.ready) {
+            outPort.write(temp);
+            DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {temp.data},
+                        "Normal output");
+          }
         }
       } else {
         // Transout: only output if last_flag is set
@@ -49,10 +55,12 @@ class PE : public Node3x1IO<Data> {
             feedback_state.valid = false;
           }
           temp.last = true;  // ensure last flag
+          temp.valid = true;
+          temp.ready = true;
           outPort.write(temp);
           last_flag = false;
           has_accum_started = false;  // reset for next accumulation
-          DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {temp.value},
+          DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {temp.data},
                       "Transout output");
         }
       }
@@ -61,7 +69,8 @@ class PE : public Node3x1IO<Data> {
     // Stage 3: collect ALU result into output buffer
     AluOutReg r;
     if (alu.tick(r) && r.valid && !outBuffer.full()) {
-      outBuffer.push({r.value, r.last});
+      Data result(r.value, r.last);
+      outBuffer.push(result);
       DEBUG_EVENT(dbg, "PE", EventType::StateChange, {r.value},
                   "ALU result pushed to outBuffer");
 
@@ -79,7 +88,7 @@ class PE : public Node3x1IO<Data> {
       // In transout mode, use outBuffer as src2
       if (transout) {
         if (!has_accum_started) {
-          src2 = {0, false};  // initial accumulation
+          src2 = Data{0, false};  // initial accumulation
         } else if (feedback_state.valid) {
           src2 = feedback_state.data;  // previous tick feedback
           feedback_state.valid = false;
@@ -90,42 +99,51 @@ class PE : public Node3x1IO<Data> {
 
       bool transout_last = transout && src0.last && src1.last;
 
-      AluInReg opReg{src0.value, src1.value, src2.value,
-                     opcode,     true,       transout_last};
+      AluInReg opReg{src0.data, src1.data, src2.data,
+                     opcode,    true,      transout_last};
       alu.accept(opReg);
       if (transout && !has_accum_started) {
         has_accum_started = true;
       }
 
-      auto _ = {src0.value, src1.value, src2.value};
+      auto _ = {src0.data, src1.data, src2.data};
       DEBUG_EVENT(dbg, "PE", EventType::StateChange, _,
                   "Operands accepted by ALU");
     }
 
     // Stage 1: pull from input ports into input buffers
     if (inPort0.valid() && !inBuffer0.full()) {
-      inBuffer0.push(inPort0.data);
-      DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {inPort0.data.value},
-                  "inPort0 -> inBuffer0");
-      // Clear the port data after reading
-      Data temp;
-      inPort0.read(temp);
+      Data portData = inPort0.data;
+      if (portData.valid && portData.ready) {
+        inBuffer0.push(portData);
+        DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {portData.data},
+                    "inPort0 -> inBuffer0");
+        // Clear the port data after reading
+        Data temp;
+        inPort0.read(temp);
+      }
     }
     if (inPort1.valid() && !inBuffer1.full()) {
-      inBuffer1.push(inPort1.data);
-      DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {inPort1.data.value},
-                  "inPort1 -> inBuffer1");
-      // Clear the port data after reading
-      Data temp;
-      inPort1.read(temp);
+      Data portData = inPort1.data;
+      if (portData.valid && portData.ready) {
+        inBuffer1.push(portData);
+        DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {portData.data},
+                    "inPort1 -> inBuffer1");
+        // Clear the port data after reading
+        Data temp;
+        inPort1.read(temp);
+      }
     }
     if (!transout && inPort2.valid() && !inBuffer2.full()) {
-      inBuffer2.push(inPort2.data);
-      DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {inPort2.data.value},
-                  "inPort2 -> inBuffer2");
-      // Clear the port data after reading
-      Data temp;
-      inPort2.read(temp);
+      Data portData = inPort2.data;
+      if (portData.valid && portData.ready) {
+        inBuffer2.push(portData);
+        DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {portData.data},
+                    "inPort2 -> inBuffer2");
+        // Clear the port data after reading
+        Data temp;
+        inPort2.read(temp);
+      }
     }
 
     // Virtual Stage: update feedback state from out buffer
@@ -134,29 +152,39 @@ class PE : public Node3x1IO<Data> {
       outBuffer.pop(temp);  // peek without removing
       feedback_state.data = temp;
       feedback_state.valid = true;
-      DEBUG_EVENT(dbg, "PE", EventType::StateChange, {temp.value},
+      DEBUG_EVENT(dbg, "PE", EventType::StateChange, {temp.data},
                   "Feedback state updated");
     }
   }
 
   // Check if all operands are ready
   bool allOpReady() const noexcept {
-    bool ready0 = !operand_mask[0] || !inBuffer0.empty();
-    bool ready1 = !operand_mask[1] || !inBuffer1.empty();
+    bool ready0 = !operand_mask[0] || hasValidData(inBuffer0);
+    bool ready1 = !operand_mask[1] || hasValidData(inBuffer1);
     bool ready2 = true;  // in transout mode, port2 is fed by outBuffer
     if (!transout) {
-      ready2 = !operand_mask[2] || !inBuffer2.empty();
+      ready2 = !operand_mask[2] || hasValidData(inBuffer2);
     } else {
       if (!has_accum_started) {
         ready2 = true;  // allow first operation without src2
       } else {
-        ready2 = feedback_state.valid;  // need previous output
+        ready2 = feedback_state.valid && feedback_state.data.valid &&
+                 feedback_state.data.ready;
       }
     }
     return ready0 && ready1 && ready2;
   }
 
  private:
+  // Helper method to check if buffer has valid and ready data
+  bool hasValidData(const Buffer<Data>& buffer) const noexcept {
+    if (buffer.empty()) return false;
+    Data temp{};
+    if (buffer.peek(temp)) {
+      return temp.valid && temp.ready;
+    }
+    return false;
+  }
   Buffer<Data> inBuffer0;
   Buffer<Data> inBuffer1;
   Buffer<Data> inBuffer2;

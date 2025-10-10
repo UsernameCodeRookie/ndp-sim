@@ -1,7 +1,9 @@
 #ifndef GRAPH_H
 #define GRAPH_H
 
+#include "common.h"
 #include "node.h"
+#include "protocol.h"
 
 class Graph {
  public:
@@ -24,8 +26,31 @@ class Graph {
   // Connect two ports using Channel architecture
   template <typename T>
   void connect(Port<T>& src, Port<T>& dst) {
-    // Create a new channel for each connection
-    auto channel = std::make_shared<Channel<T, T>>();
+    // Create a new channel for each connection with default protocol
+    auto protocol =
+        std::make_shared<ProtocolValidReady<T, CastMode::SingleCast>>();
+    auto channel = std::make_shared<Channel<T>>(protocol);
+
+    // Find and bind source port
+    std::shared_ptr<Port<T>> srcPtr = findPortPtr(src);
+    if (srcPtr) {
+      channel->bindSrc(srcPtr);
+    }
+
+    // Find and bind destination port
+    std::shared_ptr<Port<T>> dstPtr = findPortPtr(dst);
+    if (dstPtr) {
+      channel->bindDst(dstPtr);
+    }
+
+    channels.push_back(channel);
+  }
+
+  // Connect two ports using Channel architecture with custom protocol
+  template <typename T, typename Protocol>
+  void connect(Port<T>& src, Port<T>& dst, std::shared_ptr<Protocol> protocol) {
+    // Create a new channel for each connection with custom protocol
+    auto channel = std::make_shared<Channel<T, Protocol>>(protocol);
 
     // Find and bind source port
     std::shared_ptr<Port<T>> srcPtr = findPortPtr(src);

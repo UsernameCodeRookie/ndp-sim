@@ -48,12 +48,12 @@ TEST(GraphTest, TwoPEConnection) {
   Data out1;
   ASSERT_TRUE(pe1->outPort.peek(out1));
 
-  std::cout << "PE0 output: " << out0.value << "\n";
-  std::cout << "PE1 output: " << out1.value << "\n";
+  std::cout << "PE0 output: " << out0.data << "\n";
+  std::cout << "PE1 output: " << out1.data << "\n";
 
   // Verify correctness:
   // PE0: smac(3,5,0) = 3*5+0 = 15
   // PE1: smac(2,4,15) = 2*4+15 = 23
-  EXPECT_EQ(out0.value, 15);
-  EXPECT_EQ(out1.value, 23);
+  EXPECT_EQ(out0.data, 15);
+  EXPECT_EQ(out1.data, 23);
 }

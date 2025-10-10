@@ -41,7 +41,7 @@ TEST(PETest, OuterProduct3x3MatrixMultiply) {
         pe[i][j].tick(dbg);
         Data d;
         if (pe[i][j].outPort.read(d)) {
-          C[i][j] = d.value;
+          C[i][j] = d.data;
         }
       }
     }

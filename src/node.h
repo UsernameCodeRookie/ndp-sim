@@ -2,6 +2,7 @@
 #define NODE_H
 
 #include <debug.h>
+#include <protocol.h>
 
 struct IPort {
   virtual ~IPort() = default;
@@ -63,62 +64,23 @@ class ChannelBase {
   std::vector<std::shared_ptr<IPort>> ports;
 };
 
-template <typename SrcT, typename DstT,
-          typename Converter = std::function<DstT(const SrcT&)>>
+template <typename T, typename Protocol = IProtocol<T, CastMode::SingleCast>>
 class Channel : public ChannelBase {
  public:
-  Channel(Converter cvt = nullptr) : convert(std::move(cvt)) {}
+  explicit Channel(std::shared_ptr<Protocol> proto = nullptr)
+      : protocol(std::move(proto)) {}
 
-  // Bind ports explicitly
-  void bindSrc(std::shared_ptr<Port<SrcT>> src) {
-    srcs.push_back(std::move(src));
-  }
-  void bindDst(std::shared_ptr<Port<DstT>> dst) {
-    dsts.push_back(std::move(dst));
-  }
+  void bindSrc(std::shared_ptr<Port<T>> src) { srcs.push_back(std::move(src)); }
+  void bindDst(std::shared_ptr<Port<T>> dst) { dsts.push_back(std::move(dst)); }
 
-  // Access to sources for graph management
-  const std::vector<std::shared_ptr<Port<SrcT>>>& getSources() const noexcept {
-    return srcs;
-  }
-
-  // Access to destinations for graph management
-  const std::vector<std::shared_ptr<Port<DstT>>>& getDestinations()
-      const noexcept {
-    return dsts;
-  }
-
-  // Simulation tick
   void tick() noexcept override {
-    // Iterate all sources
-    for (auto& s : srcs) {
-      if (!s || !s->valid()) continue;
-
-      SrcT sdata{};
-      if (!s->read(sdata)) continue;
-
-      DstT converted = convert ? convert(sdata) : implicitConvert(sdata);
-
-      // Broadcast to all destinations
-      for (auto& d : dsts) {
-        if (d) d->write(converted);
-      }
-    }
+    if (protocol) protocol->execute(srcs, dsts);
   }
 
  private:
-  static DstT implicitConvert(const SrcT& s) {
-    if constexpr (std::is_convertible_v<SrcT, DstT>) {
-      return static_cast<DstT>(s);
-    } else {
-      static_assert(sizeof(SrcT) == 0,
-                    "No implicit conversion available between SrcT and DstT");
-    }
-  }
-
-  std::vector<std::shared_ptr<Port<SrcT>>> srcs;
-  std::vector<std::shared_ptr<Port<DstT>>> dsts;
-  Converter convert;
+  std::vector<std::shared_ptr<Port<T>>> srcs;
+  std::vector<std::shared_ptr<Port<T>>> dsts;
+  std::shared_ptr<Protocol> protocol;
 };
 
 class NodeBase {
@@ -180,19 +142,6 @@ class Node : virtual public NodeBase {
 
  protected:
   std::array<std::shared_ptr<Port<T>>, N> portPtrs;
-};
-
-// Backward compatibility aliases for reg.h
-template <size_t N, typename I>
-class NodeNI : public Node<N, I> {
- public:
-  NodeNI() = default;
-};
-
-template <size_t M, typename O>
-class NodeMO : public Node<M, O> {
- public:
-  NodeMO() = default;
 };
 
 // Node type for 3 input + 1 output configuration

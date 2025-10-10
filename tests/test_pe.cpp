@@ -22,7 +22,7 @@ static uint32_t runPEUntilOutput(PE& pe, int maxCycles = 20) {
   Data d;
   for (int i = 0; i < maxCycles; ++i) {
     pe.tick();
-    if (pe.outPort.read(d)) return d.value;
+    if (pe.outPort.read(d)) return d.data;
   }
   throw std::runtime_error("PE did not produce output in expected cycles");
 }
