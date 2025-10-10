@@ -8,8 +8,7 @@ struct IPort {
 };
 
 template <class T>
-class Port : public IPort {
- public:
+struct Port : public IPort {
   Port() = default;
 
   // Copy constructor
@@ -50,7 +49,6 @@ class Port : public IPort {
     return true;
   }
 
- private:
   T data{};
   bool occupied = false;
 };
