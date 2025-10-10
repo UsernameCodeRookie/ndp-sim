@@ -30,7 +30,7 @@ class PE : public Node3x1IO<Data> {
   // One simulation cycle
   void tick(std::shared_ptr<Debugger> dbg = nullptr) override final {
     // Stage 4: decide output
-    if (!outPort.valid) {
+    if (!outPort.valid()) {
       if (!transout) {
         // Normal PE: output whenever outBuffer has data
         if (!outBuffer.empty()) {
@@ -103,23 +103,29 @@ class PE : public Node3x1IO<Data> {
     }
 
     // Stage 1: pull from input ports into input buffers
-    if (inPort0.valid && !inBuffer0.full()) {
+    if (inPort0.valid() && !inBuffer0.full()) {
       inBuffer0.push(inPort0.data);
       DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {inPort0.data.value},
                   "inPort0 -> inBuffer0");
-      inPort0.valid = false;
+      // Clear the port data after reading
+      Data temp;
+      inPort0.read(temp);
     }
-    if (inPort1.valid && !inBuffer1.full()) {
+    if (inPort1.valid() && !inBuffer1.full()) {
       inBuffer1.push(inPort1.data);
       DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {inPort1.data.value},
                   "inPort1 -> inBuffer1");
-      inPort1.valid = false;
+      // Clear the port data after reading
+      Data temp;
+      inPort1.read(temp);
     }
-    if (!transout && inPort2.valid && !inBuffer2.full()) {
+    if (!transout && inPort2.valid() && !inBuffer2.full()) {
       inBuffer2.push(inPort2.data);
       DEBUG_EVENT(dbg, "PE", EventType::DataTransfer, {inPort2.data.value},
                   "inPort2 -> inBuffer2");
-      inPort2.valid = false;
+      // Clear the port data after reading
+      Data temp;
+      inPort2.read(temp);
     }
 
     // Virtual Stage: update feedback state from out buffer
