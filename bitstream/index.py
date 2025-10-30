@@ -45,3 +45,13 @@ class NodeIndex:
 
     def __repr__(self):
         return f"<NodeIndex {self.node_name} -> {self._index}>"
+
+class Connect:
+    """Represents a connection between two nodes in the dataflow graph."""
+
+    def __init__(self, src: str, dst: NodeIndex):
+        self.src = NodeIndex(src)
+        self.dst = dst
+        
+    def __int__(self):
+        return int(self.src)
