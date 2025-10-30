@@ -91,9 +91,9 @@ def split_config(config):
 
 
 def reset_file():
-    with open('/cluster/home/zhaohc/NDP_DL/results/bitstream.txt', 'w') as file:
+    with open('./data/bitstream.txt', 'w') as file:
         pass
-    with open('/cluster/home/zhaohc/NDP_DL/results/parsed_bitsream.txt', 'w') as file:
+    with open('./data/parsed_bitsream.txt', 'w') as file:
         pass
 
 if __name__ == "__main__":
@@ -564,12 +564,12 @@ if __name__ == "__main__":
     # ===========================
     # print bitstream
     # ===========================
-    with open('/cluster/home/zhaohc/NDP_DL/results/bitstream.txt', 'a') as file:
+    with open('./data/bitstream.txt', 'a') as file:
         for entry in bitstream:
             file.write(entry + '\n')
         # file.write(bitstream[-1])
 
-    with open('/cluster/home/zhaohc/NDP_DL/results/parsed_bitsream.txt', 'a') as file:
+    with open('./data/parsed_bitsream.txt', 'a') as file:
         print_mask = [1 for _ in range(len(ModuleID2Mask))]
         for mid, config in check_file:
             if print_mask[mid]:
