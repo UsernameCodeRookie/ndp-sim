@@ -45,7 +45,7 @@ class MemoryAGConfig1(BaseConfigModule):
     def __init__(self, idx: int):
         """Initialize the MemoryAGConfig1 instance."""
         super().__init__()
-        self.id : Optional[NodeIndex] = NodeIndex(f"STREAM{idx}.MEM_AG1")
+        self.id : Optional[NodeIndex] = NodeIndex(f"STREAM{idx}.MEM_AG")
 
     def from_json(self, cfg: dict):
         cfg = cfg.get("memory_AG", cfg)

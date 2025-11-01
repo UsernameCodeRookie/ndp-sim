@@ -48,8 +48,6 @@ if __name__ == "__main__":
     # Initialize modules
     modules = (
         [DramLoopControlConfig(i) for i in range(8)] +
-        # [BufferLoopControlConfig(i, "row") for i in range(4)] +
-        # [BufferLoopControlConfig(i, "col") for i in range(4)] +
         [BufferLoopControlGroupConfig(i) for i in range(4)] +
         [LCPEConfig(i) for i in range(4)] +
         [StreamConfig(i) for i in range(4)] +
