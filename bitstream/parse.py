@@ -3,14 +3,14 @@ from typing import List
 from bitstream.bit import Bit
 from bitstream.visualize import visualize_modules
 from bitstream.config import (
-    BaseConfigModule,
     DramLoopControlConfig,
     LCPEConfig,
-    BufferLoopControlConfig,
+    BufferLoopControlGroupConfig,
     NeighborStreamConfig,
     StreamConfig,
     BufferConfig,
     SpecialArrayConfig,
+    NodeGraph,
 )
 
 def bits_to_binfile(bits_list: List[Bit], byteorder: str = "little"):
@@ -48,8 +48,9 @@ if __name__ == "__main__":
     # Initialize modules
     modules = (
         [DramLoopControlConfig(i) for i in range(8)] +
-        [BufferLoopControlConfig(i, "row") for i in range(4)] +
-        [BufferLoopControlConfig(i, "col") for i in range(4)] +
+        # [BufferLoopControlConfig(i, "row") for i in range(4)] +
+        # [BufferLoopControlConfig(i, "col") for i in range(4)] +
+        [BufferLoopControlGroupConfig(i) for i in range(4)] +
         [LCPEConfig(i) for i in range(4)] +
         [StreamConfig(i) for i in range(4)] +
         [NeighborStreamConfig()] +
@@ -77,4 +78,9 @@ if __name__ == "__main__":
         
     # Visualize the configuration
     visualize_modules(modules, save_path="./data/bitstream.png")
+    
+    # Print NodeGraph summary
+    NodeGraph.get().summary()
+    
+    
     

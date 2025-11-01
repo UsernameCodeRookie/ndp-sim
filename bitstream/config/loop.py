@@ -109,7 +109,7 @@ class LCPEConfig(BaseConfigModule):
         if self.idx < len(opcode_entries):
             key, entry = opcode_entries[self.idx]
             # Assign NodeIndex
-            self.id = NodeIndex(key)
+            self.id = NodeIndex(f'LC_PE.{key}')
             super().from_json(entry)
         else:
             # No valid entry: treat as empty
@@ -141,15 +141,24 @@ class BufferLoopControlConfig(BaseConfigModule):
         
         cfg = cfg.get(self.lc_type, cfg)
         super().from_json(cfg)
+        
+    def set_empty(self):
+        """Set all fields to None so that to_bits produces zeros."""
+        for field_info in self.FIELD_MAP:
+            name = field_info[0]
+            self.values[name] = None  # None will encode as 0 in to_bits
     
 class BufferLoopControlGroupConfig(BaseConfigModule):
     """Group of buffer loop controls (row and column)."""
 
     def __init__(self, idx : int):
         super().__init__()
+        self.idx = idx
+        
+    def from_json(self, cfg):
+        """Fill this group config from JSON by picking the index-th group"""
 
         cfg = cfg.get("buffer_loop_configs", cfg)
-        
         # Get all group keys (e.g., Group1, Group2, etc.)
         keys = list(cfg.keys())
         
@@ -159,6 +168,7 @@ class BufferLoopControlGroupConfig(BaseConfigModule):
             key = keys[self.idx]
             self.submodules = [BufferLoopControlConfig(key, "row"), BufferLoopControlConfig(key, "col")]
             cfg = cfg.get(key, cfg)
+            super().from_json(cfg)
             
             # Initialize each submodule using the group configuration
             for submodule in self.submodules:
@@ -171,3 +181,8 @@ class BufferLoopControlGroupConfig(BaseConfigModule):
     def to_bits(self) -> List[Bit]:
         """Concatenate all sub-config bitstreams in fixed order."""
         return sum((sub.to_bits() for sub in self.submodules), [])
+    
+    def set_empty(self):
+        """Set all submodules to empty configurations."""
+        for submodule in self.submodules:
+            submodule.set_empty()
