@@ -290,9 +290,27 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
     for res_type, positions in layout.items():
         for i, (x, y) in enumerate(positions):
             res_name = f"{res_type}{i}"
-            ax.scatter(x, y, s=500, marker="s", label=res_type if i == 0 else "",
-                       edgecolor="black", facecolor="lightgray", zorder=3)
-            ax.text(x, y, res_name, ha="center", va="center", fontsize=10, weight="bold")
+
+            # Reverse lookup: find which node is mapped to this resource
+            node_name = next(
+                (node for node, res in mapper.node_to_resource.items() if res == res_name),
+                ""
+            )
+
+            ax.scatter(
+                x, y, s=500, marker="s",
+                label=res_type if i == 0 else "",
+                edgecolor="black", facecolor="lightgray", zorder=3
+            )
+
+            # Show node name (logical node) or leave blank if unassigned
+            ax.text(
+                x, y - 0.20,  # shift text slightly downward
+                node_name,
+                ha="center", va="top",   # align text to the top edge of the text box
+                fontsize=8, weight="bold",
+                color="black" if node_name else "gray"
+            )
 
     # Helper: draw straight or curved connection
     def draw_connection(x1, y1, x2, y2, color="black"):
