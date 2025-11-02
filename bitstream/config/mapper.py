@@ -90,28 +90,47 @@ class Mapper:
             """Return True if the connection satisfies the constraint."""
             raise NotImplementedError
 
-
     class LCtoLCConstraint(Constraint):
         """LC i → LC j constraint: j in [i-2, i-1, i+1, i+2]"""
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "LC" and dst_type == "LC":
                 return abs(dst_idx - src_idx) in [1, 2]
             return True  # not applicable
-
-
-    class LCtoGROUPConstraint(Constraint):
-        """LC i → GROUP j constraint: j = i / 4"""
+        
+    class LCtoPEConstraint(Constraint):
+        """LC i → PE j constraint: j in [i, i+1]"""
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "LC" and dst_type == "GROUP":
-                return dst_idx == src_idx // 2
+            if src_type == "LC" and dst_type == "PE":
+                return abs(dst_idx - src_idx) in [0, 1]
             return True
 
-
-    class GROUPtoAGConstraint(Constraint):
-        """GROUP i → AG j constraint: j = i"""
+    class LCtoGROUPConstraint(Constraint):
+        """LC i → GROUP j constraint: j in [i//2 - 1, i//2 + 1]"""
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "GROUP" and dst_type == "AG":
-                return dst_idx == src_idx
+            if src_type == "LC" and dst_type == "GROUP":
+                return abs(dst_idx - (src_idx // 2)) in [0, 1]
+            return True
+        
+    class LCtoAGConstraint(Constraint):
+        """LC i → AG j constraint: j in [i//2 - 1, i//2 + 1]"""
+        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
+            if src_type == "LC" and dst_type == "AG":
+                return abs(dst_idx - (src_idx // 2)) in [0, 1]
+            return True
+    
+    class PEtoPEConstraint(Constraint):
+        """PE i → PE j constraint: j in [i-2, i-1, i+1, i+2]"""
+        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
+            if src_type == "PE" and dst_type == "PE":
+                return abs(dst_idx - src_idx) in [1, 2]
+            return True
+    
+    
+    class PEtoAGConstraint(Constraint):
+        """PE i → AG j constraint: j in [i//2 - 1, i//2 + 1]"""
+        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
+            if src_type == "PE" and dst_type == "AG":
+                return abs(dst_idx - (src_idx // 2)) in [0, 1]
             return True
 
     
@@ -119,8 +138,11 @@ class Mapper:
         """Backtracking search for a valid node→resource mapping."""
         self.constraints: List[Mapper.Constraint] = [
             self.LCtoLCConstraint(),
+            self.LCtoPEConstraint(),
             self.LCtoGROUPConstraint(),
-            self.GROUPtoAGConstraint(),
+            self.LCtoAGConstraint(),
+            self.PEtoPEConstraint(),
+            self.PEtoAGConstraint(),
         ]
 
         def backtrack(index: int, current_mapping: Dict[str, str], used_resources: Set[str]) -> Optional[Dict[str, str]]:
@@ -273,7 +295,7 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
             ax.text(x, y, res_name, ha="center", va="center", fontsize=10, weight="bold")
 
     # Helper: draw straight or curved connection
-    def draw_connection(x1, y1, x2, y2, color="steelblue"):
+    def draw_connection(x1, y1, x2, y2, color="black"):
         if y1 == y2:
             # Same-row connection → use a small curve above the row
             mid_x = (x1 + x2) / 2
@@ -283,14 +305,14 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
             path = Path(verts, codes)
             patch = FancyArrowPatch(
                 path=path, arrowstyle="-|>", color=color,
-                lw=1.2, alpha=0.6, mutation_scale=10, zorder=1
+                lw=1.2, alpha=0.6, mutation_scale=10, zorder=4
             )
             ax.add_patch(patch)
         else:
             # Different-row connection → draw a straight arrow
             patch = FancyArrowPatch(
                 (x1, y1), (x2, y2), arrowstyle="-|>",
-                color=color, lw=1.2, alpha=0.6, mutation_scale=10, zorder=1
+                color=color, lw=1.2, alpha=0.6, mutation_scale=10, zorder=4
             )
             ax.add_patch(patch)
 
@@ -305,8 +327,12 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
         
         src_res = mapper.node_to_resource.get(src_node)
         dst_res = mapper.node_to_resource.get(dst_node)
+        
         if not src_res or not dst_res:
             continue
+        
+        if src_res is dst_res:
+            continue  # skip self-loops
 
         src_type = ''.join(ch for ch in src_res if ch.isalpha())
         dst_type = ''.join(ch for ch in dst_res if ch.isalpha())
