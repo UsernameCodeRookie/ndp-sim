@@ -39,6 +39,14 @@ target_include_directories(lsu_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_executable(tpu_example src/examples/tpu_examples.cpp)
 target_include_directories(tpu_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+# --- GEMM 64x64 example ---
+add_executable(gemm_64x64_example src/examples/gemm_64x64_example.cpp)
+target_include_directories(gemm_64x64_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# --- Software-Hardware Integration example ---
+add_executable(sw_hw_integration_example src/examples/sw_hw_integration_example.cpp)
+target_include_directories(sw_hw_integration_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 # --- DRAMsim3 library ---
 add_subdirectory(third_party/DRAMsim3)
 
@@ -111,6 +119,12 @@ add_executable(tpu_tests tests/test_tpu.cpp)
 target_include_directories(tpu_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(tpu_tests GTest::gtest GTest::gtest_main)
 add_test(NAME tpu_tests COMMAND tpu_tests)
+
+# --- GEMM Operator tests ---
+add_executable(gemm_operator_tests tests/test_gemm_operator.cpp)
+target_include_directories(gemm_operator_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(gemm_operator_tests GTest::gtest GTest::gtest_main)
+add_test(NAME gemm_operator_tests COMMAND gemm_operator_tests)
 
 enable_testing()
 
