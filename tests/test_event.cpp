@@ -5,16 +5,15 @@
 
 #include "../src/event.h"
 
-using namespace EventDriven;
-
 // Test event class
-class TestEvent : public Event {
+class TestEvent : public EventDriven::Event {
  public:
   TestEvent(uint64_t time, int* counter, int priority = 0)
-      : Event(time, priority, EventType::GENERIC, "TestEvent"),
+      : EventDriven::Event(time, priority, EventDriven::EventType::GENERIC,
+                           "TestEvent"),
         counter_(counter) {}
 
-  void execute(EventScheduler&) override { (*counter_)++; }
+  void execute(EventDriven::EventScheduler&) override { (*counter_)++; }
 
  private:
   int* counter_;
@@ -22,18 +21,18 @@ class TestEvent : public Event {
 
 // Test: Basic event scheduling
 TEST(EventSchedulerTest, BasicScheduling) {
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   int counter = 0;
 
   // Schedule three events
   scheduler.scheduleAt(
-      10, [&counter](EventScheduler&) { counter++; }, 0, "Event1");
+      10, [&counter](EventDriven::EventScheduler&) { counter++; }, 0, "Event1");
 
   scheduler.scheduleAt(
-      20, [&counter](EventScheduler&) { counter++; }, 0, "Event2");
+      20, [&counter](EventDriven::EventScheduler&) { counter++; }, 0, "Event2");
 
   scheduler.scheduleAt(
-      30, [&counter](EventScheduler&) { counter++; }, 0, "Event3");
+      30, [&counter](EventDriven::EventScheduler&) { counter++; }, 0, "Event3");
 
   EXPECT_EQ(scheduler.getPendingEventCount(), 3);
 
@@ -47,19 +46,28 @@ TEST(EventSchedulerTest, BasicScheduling) {
 
 // Test: Events execute in time order
 TEST(EventSchedulerTest, TimeOrdering) {
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   std::vector<int> execution_order;
 
   scheduler.scheduleAt(
-      30, [&execution_order](EventScheduler&) { execution_order.push_back(3); },
+      30,
+      [&execution_order](EventDriven::EventScheduler&) {
+        execution_order.push_back(3);
+      },
       0, "Event3");
 
   scheduler.scheduleAt(
-      10, [&execution_order](EventScheduler&) { execution_order.push_back(1); },
+      10,
+      [&execution_order](EventDriven::EventScheduler&) {
+        execution_order.push_back(1);
+      },
       0, "Event1");
 
   scheduler.scheduleAt(
-      20, [&execution_order](EventScheduler&) { execution_order.push_back(2); },
+      20,
+      [&execution_order](EventDriven::EventScheduler&) {
+        execution_order.push_back(2);
+      },
       0, "Event2");
 
   scheduler.run();
@@ -72,20 +80,29 @@ TEST(EventSchedulerTest, TimeOrdering) {
 
 // Test: Event priority
 TEST(EventSchedulerTest, EventPriority) {
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   std::vector<int> execution_order;
 
   // All events at the same time, but with different priorities
   scheduler.scheduleAt(
-      10, [&execution_order](EventScheduler&) { execution_order.push_back(1); },
+      10,
+      [&execution_order](EventDriven::EventScheduler&) {
+        execution_order.push_back(1);
+      },
       1, "LowPriority");
 
   scheduler.scheduleAt(
-      10, [&execution_order](EventScheduler&) { execution_order.push_back(3); },
+      10,
+      [&execution_order](EventDriven::EventScheduler&) {
+        execution_order.push_back(3);
+      },
       10, "HighPriority");
 
   scheduler.scheduleAt(
-      10, [&execution_order](EventScheduler&) { execution_order.push_back(2); },
+      10,
+      [&execution_order](EventDriven::EventScheduler&) {
+        execution_order.push_back(2);
+      },
       5, "MediumPriority");
 
   scheduler.run();
@@ -98,7 +115,7 @@ TEST(EventSchedulerTest, EventPriority) {
 
 // Test: Custom event class
 TEST(EventSchedulerTest, CustomEventClass) {
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   int counter = 0;
 
   auto event1 = std::make_shared<TestEvent>(10, &counter, 0);
@@ -114,20 +131,20 @@ TEST(EventSchedulerTest, CustomEventClass) {
 
 // Test: Chained event scheduling
 TEST(EventSchedulerTest, ChainedEvents) {
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   std::vector<uint64_t> times;
 
   scheduler.scheduleAt(
       0,
-      [&times](EventScheduler& sched) {
+      [&times](EventDriven::EventScheduler& sched) {
         times.push_back(sched.getCurrentTime());
         sched.scheduleAt(
             sched.getCurrentTime() + 10,
-            [&times](EventScheduler& sched) {
+            [&times](EventDriven::EventScheduler& sched) {
               times.push_back(sched.getCurrentTime());
               sched.scheduleAt(
                   sched.getCurrentTime() + 10,
-                  [&times](EventScheduler& sched) {
+                  [&times](EventDriven::EventScheduler& sched) {
                     times.push_back(sched.getCurrentTime());
                   },
                   0, "Event3");
@@ -146,14 +163,14 @@ TEST(EventSchedulerTest, ChainedEvents) {
 
 // Test: Event cancellation
 TEST(EventSchedulerTest, EventCancellation) {
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   int counter = 0;
 
-  auto event1 = std::make_shared<LambdaEvent>(
-      10, [&counter](EventScheduler&) { counter++; }, 0, "Event1");
+  auto event1 = std::make_shared<EventDriven::LambdaEvent>(
+      10, [&counter](EventDriven::EventScheduler&) { counter++; }, 0, "Event1");
 
-  auto event2 = std::make_shared<LambdaEvent>(
-      20, [&counter](EventScheduler&) { counter++; }, 0, "Event2");
+  auto event2 = std::make_shared<EventDriven::LambdaEvent>(
+      20, [&counter](EventDriven::EventScheduler&) { counter++; }, 0, "Event2");
 
   scheduler.schedule(event1);
   scheduler.schedule(event2);
@@ -168,12 +185,12 @@ TEST(EventSchedulerTest, EventCancellation) {
 
 // Test: Time-limited run
 TEST(EventSchedulerTest, TimeLimitedRun) {
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   int counter = 0;
 
   for (int i = 0; i < 10; i++) {
     scheduler.scheduleAt(
-        i * 10, [&counter](EventScheduler&) { counter++; }, 0,
+        i * 10, [&counter](EventDriven::EventScheduler&) { counter++; }, 0,
         "Event" + std::to_string(i));
   }
 
@@ -188,14 +205,15 @@ TEST(EventSchedulerTest, TimeLimitedRun) {
 
 // Test: Periodic events
 TEST(EventSchedulerTest, PeriodicEvents) {
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   std::vector<uint64_t> execution_times;
   int execution_count = 0;
 
-  auto periodic = std::make_shared<PeriodicEvent>(
+  auto periodic = std::make_shared<EventDriven::PeriodicEvent>(
       0,   // start time
       10,  // period
-      [&execution_times, &execution_count](EventScheduler& sched, uint64_t) {
+      [&execution_times, &execution_count](EventDriven::EventScheduler& sched,
+                                           uint64_t) {
         execution_times.push_back(sched.getCurrentTime());
         execution_count++;
       },
@@ -216,10 +234,10 @@ TEST(EventSchedulerTest, PeriodicEvents) {
 
 // Test: Scheduler reset
 TEST(EventSchedulerTest, SchedulerReset) {
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
 
-  scheduler.scheduleAt(10, [](EventScheduler&) {}, 0, "Event1");
-  scheduler.scheduleAt(20, [](EventScheduler&) {}, 0, "Event2");
+  scheduler.scheduleAt(10, [](EventDriven::EventScheduler&) {}, 0, "Event1");
+  scheduler.scheduleAt(20, [](EventDriven::EventScheduler&) {}, 0, "Event2");
 
   EXPECT_EQ(scheduler.getPendingEventCount(), 2);
 
@@ -231,17 +249,18 @@ TEST(EventSchedulerTest, SchedulerReset) {
 
 // Test: Cannot schedule events in the past
 TEST(EventSchedulerTest, NoPastScheduling) {
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   int counter = 0;
 
   // First schedule an event at time 20
   scheduler.scheduleAt(
       20,
-      [&counter](EventScheduler& sched) {
+      [&counter](EventDriven::EventScheduler& sched) {
         counter++;
         // Try to schedule an event in the past (should be rejected)
         sched.scheduleAt(
-            10, [&counter](EventScheduler&) { counter++; }, 0, "PastEvent");
+            10, [&counter](EventDriven::EventScheduler&) { counter++; }, 0,
+            "PastEvent");
       },
       0, "Event1");
 
@@ -252,12 +271,12 @@ TEST(EventSchedulerTest, NoPastScheduling) {
 
 // Test: runFor method
 TEST(EventSchedulerTest, RunForCount) {
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   int counter = 0;
 
   for (int i = 0; i < 10; i++) {
     scheduler.scheduleAt(
-        i, [&counter](EventScheduler&) { counter++; }, 0,
+        i, [&counter](EventDriven::EventScheduler&) { counter++; }, 0,
         "Event" + std::to_string(i));
   }
 
@@ -270,13 +289,13 @@ TEST(EventSchedulerTest, RunForCount) {
 
 // Test: Unique event IDs
 TEST(EventSchedulerTest, UniqueEventIDs) {
-  EventScheduler scheduler;
-  std::set<Event::EventID> ids;
+  EventDriven::EventScheduler scheduler;
+  std::set<EventDriven::Event::EventID> ids;
 
   for (int i = 0; i < 100; i++) {
     scheduler.scheduleAt(
         i,
-        [&ids](EventScheduler&) {
+        [&ids](EventDriven::EventScheduler&) {
           // Lambda events will also create new events internally
         },
         0, "Event" + std::to_string(i));

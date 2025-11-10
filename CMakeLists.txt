@@ -16,8 +16,16 @@ elseif (MSVC)
 endif()
 
 # --- Event-driven framework example ---
-add_executable(event_example src/event_example.cpp)
+add_executable(event_example src/examples/event_examples.cpp)
 target_include_directories(event_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# --- Architecture framework example ---
+add_executable(architecture_example src/examples/architecture_examples.cpp)
+target_include_directories(architecture_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# --- Architecture connection debug ---
+add_executable(connection_debug tests/test_connection_debug.cpp)
+target_include_directories(connection_debug PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 # --- GoogleTest configuration ---
 if(WIN32)
@@ -33,6 +41,12 @@ add_executable(event_tests tests/test_event.cpp)
 target_include_directories(event_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(event_tests GTest::gtest GTest::gtest_main)
 add_test(NAME event_tests COMMAND event_tests)
+
+# --- Architecture framework tests ---
+add_executable(architecture_tests tests/test_architecture.cpp)
+target_include_directories(architecture_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(architecture_tests GTest::gtest GTest::gtest_main)
+add_test(NAME architecture_tests COMMAND architecture_tests)
 
 enable_testing()
 

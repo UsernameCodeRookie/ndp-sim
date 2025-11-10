@@ -1,76 +1,35 @@
 #include <iostream>
 
-#include "event.h"
-
-using namespace EventDriven;
-
-// Custom event example: Compute event
-class ComputeEvent : public Event {
- public:
-  ComputeEvent(uint64_t time, int value,
-               const std::string& name = "ComputeEvent")
-      : Event(time, 0, EventType::COMPUTE, name), value_(value) {}
-
-  void execute(EventScheduler& scheduler) override {
-    std::cout << "  Computing value: " << value_ << " * 2 = " << (value_ * 2)
-              << std::endl;
-
-    // Can schedule new events during event execution
-    if (value_ < 100) {
-      auto next_event = std::make_shared<ComputeEvent>(
-          scheduler.getCurrentTime() + 10, value_ * 2, "ComputeEvent-Next");
-      scheduler.schedule(next_event);
-    }
-  }
-
- private:
-  int value_;
-};
-
-// Custom event example: Memory access event
-class MemoryAccessEvent : public Event {
- public:
-  MemoryAccessEvent(uint64_t time, uint64_t address, bool is_read)
-      : Event(time, 0, EventType::MEMORY_ACCESS,
-              is_read ? "MemoryRead" : "MemoryWrite"),
-        address_(address),
-        is_read_(is_read) {}
-
-  void execute(EventScheduler&) override {
-    std::cout << "  " << (is_read_ ? "Reading from" : "Writing to")
-              << " address 0x" << std::hex << address_ << std::dec << std::endl;
-  }
-
- private:
-  uint64_t address_;
-  bool is_read_;
-};
+#include "../event_periodic.h"
+#include "../events/compute.h"
+#include "../events/memory.h"
+#include "../scheduler.h"
 
 // Example 1: Basic event scheduling
 void example1_basic_events() {
   std::cout << "\n=== Example 1: Basic Event Scheduling ===" << std::endl;
 
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   scheduler.setVerbose(true);
 
   // Using Lambda events
   scheduler.scheduleAt(
       10,
-      [](EventScheduler&) {
+      [](EventDriven::EventScheduler&) {
         std::cout << "  Hello from event at time 10!" << std::endl;
       },
       0, "HelloEvent");
 
   scheduler.scheduleAt(
       5,
-      [](EventScheduler&) {
+      [](EventDriven::EventScheduler&) {
         std::cout << "  This event happens first (time 5)" << std::endl;
       },
       0, "FirstEvent");
 
   scheduler.scheduleAt(
       15,
-      [](EventScheduler&) {
+      [](EventDriven::EventScheduler&) {
         std::cout << "  Goodbye from event at time 15!" << std::endl;
       },
       0, "GoodbyeEvent");
@@ -82,7 +41,7 @@ void example1_basic_events() {
 void example2_custom_events() {
   std::cout << "\n=== Example 2: Custom Event Classes ===" << std::endl;
 
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   scheduler.setVerbose(true);
 
   // Schedule compute event
@@ -103,27 +62,27 @@ void example2_custom_events() {
 void example3_event_priority() {
   std::cout << "\n=== Example 3: Event Priority ===" << std::endl;
 
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   scheduler.setVerbose(true);
 
   // These events all happen at time 10, but with different priorities
   scheduler.scheduleAt(
       10,
-      [](EventScheduler&) {
+      [](EventDriven::EventScheduler&) {
         std::cout << "  Low priority event (priority=1)" << std::endl;
       },
       1, "LowPriority");
 
   scheduler.scheduleAt(
       10,
-      [](EventScheduler&) {
+      [](EventDriven::EventScheduler&) {
         std::cout << "  High priority event (priority=10)" << std::endl;
       },
       10, "HighPriority");
 
   scheduler.scheduleAt(
       10,
-      [](EventScheduler&) {
+      [](EventDriven::EventScheduler&) {
         std::cout << "  Medium priority event (priority=5)" << std::endl;
       },
       5, "MediumPriority");
@@ -135,15 +94,15 @@ void example3_event_priority() {
 void example4_periodic_events() {
   std::cout << "\n=== Example 4: Periodic Events ===" << std::endl;
 
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   scheduler.setVerbose(true);
 
   // Create a periodic event, starting at time 0, repeating every 10 time units,
   // total 5 executions
-  auto periodic = std::make_shared<PeriodicEvent>(
+  auto periodic = std::make_shared<EventDriven::PeriodicEvent>(
       0,   // start time
       10,  // period
-      [](EventScheduler&, uint64_t count) {
+      [](EventDriven::EventScheduler&, uint64_t count) {
         std::cout << "  Periodic event execution #" << count << std::endl;
       },
       5,  // repeat 5 times
@@ -157,21 +116,21 @@ void example4_periodic_events() {
 void example5_chained_events() {
   std::cout << "\n=== Example 5: Chained Events ===" << std::endl;
 
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   scheduler.setVerbose(true);
 
   // First event schedules second, second schedules third...
   scheduler.scheduleAt(
       0,
-      [](EventScheduler& sched) {
+      [](EventDriven::EventScheduler& sched) {
         std::cout << "  Stage 1: Initialize" << std::endl;
         sched.scheduleAt(
             sched.getCurrentTime() + 5,
-            [](EventScheduler& sched) {
+            [](EventDriven::EventScheduler& sched) {
               std::cout << "  Stage 2: Process" << std::endl;
               sched.scheduleAt(
                   sched.getCurrentTime() + 5,
-                  [](EventScheduler&) {
+                  [](EventDriven::EventScheduler&) {
                     std::cout << "  Stage 3: Finalize" << std::endl;
                   },
                   0, "Stage3");
@@ -187,20 +146,20 @@ void example5_chained_events() {
 void example6_event_cancellation() {
   std::cout << "\n=== Example 6: Event Cancellation ===" << std::endl;
 
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   scheduler.setVerbose(true);
 
   // Create an event but cancel it later
-  auto event1 = std::make_shared<LambdaEvent>(
+  auto event1 = std::make_shared<EventDriven::LambdaEvent>(
       10,
-      [](EventScheduler&) {
+      [](EventDriven::EventScheduler&) {
         std::cout << "  This should not print!" << std::endl;
       },
       0, "CancelledEvent");
 
-  auto event2 = std::make_shared<LambdaEvent>(
+  auto event2 = std::make_shared<EventDriven::LambdaEvent>(
       15,
-      [](EventScheduler&) {
+      [](EventDriven::EventScheduler&) {
         std::cout << "  This event will execute" << std::endl;
       },
       0, "NormalEvent");
@@ -220,7 +179,7 @@ void example6_event_cancellation() {
 void example7_time_limited_run() {
   std::cout << "\n=== Example 7: Time-Limited Simulation ===" << std::endl;
 
-  EventScheduler scheduler;
+  EventDriven::EventScheduler scheduler;
   scheduler.setVerbose(true);
 
   // Schedule multiple events, but only run until time 50
@@ -228,8 +187,10 @@ void example7_time_limited_run() {
     uint64_t time = i * 10;
     scheduler.scheduleAt(
         time,
-        [i](EventScheduler&) { std::cout << "  Event #" << i << std::endl; }, 0,
-        "Event" + std::to_string(i));
+        [i](EventDriven::EventScheduler&) {
+          std::cout << "  Event #" << i << std::endl;
+        },
+        0, "Event" + std::to_string(i));
   }
 
   std::cout << "\nRunning simulation until time 50..." << std::endl;
