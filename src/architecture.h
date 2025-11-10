@@ -8,7 +8,6 @@
 #include "connection.h"
 #include "packet.h"
 #include "port.h"
-#include "tick_component.h"
-#include "tick_connection.h"
+#include "tick.h"
 
 #endif  // ARCHITECTURE_H

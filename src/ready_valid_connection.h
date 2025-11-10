@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "connection.h"
-#include "event_lambda.h"
+#include "event.h"
 #include "packet.h"
 #include "scheduler.h"
 

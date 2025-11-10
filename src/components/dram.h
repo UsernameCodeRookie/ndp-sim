@@ -1,5 +1,5 @@
-#ifndef DRAMSIM3_WRAPPER_H
-#define DRAMSIM3_WRAPPER_H
+#ifndef DRAM_H
+#define DRAM_H
 
 #include <functional>
 #include <iostream>
@@ -167,4 +167,4 @@ class DRAMsim3Wrapper {
   bool verbose_;
 };
 
-#endif  // DRAMSIM3_WRAPPER_H
+#endif  // DRAM_H

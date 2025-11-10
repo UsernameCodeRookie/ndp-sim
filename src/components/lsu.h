@@ -9,8 +9,13 @@
 #include <vector>
 
 #include "../port.h"
-#include "../tick_component.h"
+#include "../tick.h"
 #include "int_packet.h"
+
+// Conditional include for DRAMsim3
+#ifdef USE_DRAMSIM3
+#include "dram.h"
+#endif
 
 /**
  * @brief LSU Operation Types
@@ -24,8 +29,6 @@ enum class LSUOp {
 
 /**
  * @brief Memory Request Packet
- *
- * Contains memory address, data (for stores), and operation type
  */
 class MemoryRequestPacket : public Architecture::DataPacket {
  public:
@@ -49,16 +52,10 @@ class MemoryRequestPacket : public Architecture::DataPacket {
   void setOperation(LSUOp op) { op_ = op; }
   void setAddress(uint32_t addr) { address_ = addr; }
   void setData(int32_t data) { data_ = data; }
-  void setStride(uint32_t stride) { stride_ = stride; }
-  void setLength(uint32_t length) { length_ = length; }
-  void setMask(bool mask) { mask_ = mask; }
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    auto cloned = std::make_shared<MemoryRequestPacket>(
-        op_, address_, data_, stride_, length_, mask_);
-    cloned->setTimestamp(timestamp_);
-    cloned->setValid(valid_);
-    return cloned;
+    return std::make_shared<MemoryRequestPacket>(op_, address_, data_, stride_,
+                                                 length_, mask_);
   }
 
  private:
@@ -72,36 +69,28 @@ class MemoryRequestPacket : public Architecture::DataPacket {
 
 /**
  * @brief Memory Response Packet
- *
- * Contains data read from memory and status
  */
 class MemoryResponsePacket : public Architecture::DataPacket {
  public:
-  MemoryResponsePacket(int32_t data, bool success = true)
-      : data_(data), success_(success) {}
+  MemoryResponsePacket(int32_t data, uint32_t address)
+      : data_(data), address_(address) {}
 
   int32_t getData() const { return data_; }
-  bool isSuccess() const { return success_; }
-
-  void setData(int32_t data) { data_ = data; }
-  void setSuccess(bool success) { success_ = success; }
+  uint32_t getAddress() const { return address_; }
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    auto cloned = std::make_shared<MemoryResponsePacket>(data_, success_);
-    cloned->setTimestamp(timestamp_);
-    cloned->setValid(valid_);
-    return cloned;
+    return std::make_shared<MemoryResponsePacket>(data_, address_);
   }
 
  private:
   int32_t data_;
-  bool success_;
+  uint32_t address_;
 };
 
 /**
- * @brief Memory Bank Component
+ * @brief Memory Bank
  *
- * Single memory bank with configurable latency
+ * Simple on-chip memory bank
  */
 class MemoryBank : public Architecture::TickingComponent {
  public:
@@ -132,7 +121,6 @@ class MemoryBank : public Architecture::TickingComponent {
   bool isReady() const { return current_state_ == State::IDLE; }
   bool isDone() const { return current_state_ == State::DONE; }
 
-  // Process a memory request
   void processRequest(std::shared_ptr<MemoryRequestPacket> request) {
     if (current_state_ != State::IDLE) {
       std::cerr << "Warning: Memory bank busy!" << std::endl;
@@ -144,12 +132,10 @@ class MemoryBank : public Architecture::TickingComponent {
     current_state_ = State::PROCESSING;
   }
 
-  // Get the response
   std::shared_ptr<MemoryResponsePacket> getResponse() {
     return current_response_;
   }
 
-  // Read from memory
   int32_t read(uint32_t address) {
     if (address < memory_.size()) {
       return memory_[address];
@@ -157,14 +143,12 @@ class MemoryBank : public Architecture::TickingComponent {
     return 0;
   }
 
-  // Write to memory
   void write(uint32_t address, int32_t data) {
     if (address < memory_.size()) {
       memory_[address] = data;
     }
   }
 
-  // Clear response and return to idle (called by LSU after reading response)
   void acknowledgeResponse() {
     current_response_ = nullptr;
     current_state_ = State::IDLE;
@@ -174,46 +158,26 @@ class MemoryBank : public Architecture::TickingComponent {
  private:
   enum class State { IDLE, PROCESSING, DONE };
 
-  void handleIdle() {
-    // Wait for request
-    current_response_ = nullptr;
-  }
+  void handleIdle() { current_response_ = nullptr; }
 
   void handleProcessing() {
     cycle_count_++;
-
     if (cycle_count_ >= latency_) {
-      // Complete the operation
-      if (current_request_) {
-        uint32_t addr = current_request_->getAddress();
-
-        if (current_request_->getOperation() == LSUOp::LOAD ||
-            current_request_->getOperation() == LSUOp::LOAD_VECTOR) {
-          // Load operation
-          int32_t data = read(addr);
-          current_response_ =
-              std::make_shared<MemoryResponsePacket>(data, true);
-        } else {
-          // Store operation
-          write(addr, current_request_->getData());
-          current_response_ = std::make_shared<MemoryResponsePacket>(0, true);
-        }
+      if (current_request_->getOperation() == LSUOp::LOAD) {
+        int32_t data = read(current_request_->getAddress());
+        current_response_ = std::make_shared<MemoryResponsePacket>(
+            data, current_request_->getAddress());
+      } else {
+        write(current_request_->getAddress(), current_request_->getData());
+        current_response_ = std::make_shared<MemoryResponsePacket>(
+            0, current_request_->getAddress());
       }
-
       current_state_ = State::DONE;
     }
   }
 
   void handleDone() {
-    // Stay in DONE state for one cycle so response can be read
-    // Then return to idle
-    if (current_response_) {
-      // Response available, will be picked up by LSU
-      // Stay in DONE state
-    } else {
-      current_state_ = State::IDLE;
-      current_request_ = nullptr;
-    }
+    // Wait for acknowledgment
   }
 
   std::vector<int32_t> memory_;
@@ -228,19 +192,26 @@ class MemoryBank : public Architecture::TickingComponent {
 /**
  * @brief Load-Store Unit (LSU)
  *
- * Handles memory access operations including:
- * - Scalar loads/stores
- * - Vector loads/stores with stride support
+ * Unified LSU supporting both on-chip memory banks and DRAMsim3.
+ * Use USE_DRAMSIM3 macro to enable DRAMsim3 integration.
+ *
+ * Features:
+ * - Scalar/vector loads and stores
  * - Memory bank conflict resolution
  * - Request queuing with back pressure
- *
- * Based on the vector processor MAU and MCN design
+ * - Optional DRAMsim3 off-chip memory simulation
  */
 class LoadStoreUnit : public Architecture::TickingComponent {
  public:
   LoadStoreUnit(const std::string& name, EventDriven::EventScheduler& scheduler,
                 uint64_t period, size_t num_banks = 8, size_t queue_depth = 4,
-                size_t bank_capacity = 64)
+                size_t bank_capacity = 64
+#ifdef USE_DRAMSIM3
+                ,
+                const std::string& config_file = "",
+                const std::string& output_dir = ""
+#endif
+                )
       : Architecture::TickingComponent(name, scheduler, period),
         num_banks_(num_banks),
         queue_depth_(queue_depth),
@@ -249,58 +220,109 @@ class LoadStoreUnit : public Architecture::TickingComponent {
         vector_length_(0),
         operations_completed_(0),
         cycles_stalled_(0) {
-    // Create memory banks
-    for (size_t i = 0; i < num_banks_; ++i) {
-      auto bank = std::make_shared<MemoryBank>(
-          name + "_Bank" + std::to_string(i), scheduler, period, bank_capacity);
-      memory_banks_.push_back(bank);
-      bank->start();  // Start the bank's tick cycle
+
+#ifdef USE_DRAMSIM3
+    // Use DRAMsim3 for off-chip memory
+    if (!config_file.empty()) {
+      dram_ = std::make_shared<DRAMsim3Wrapper>(name + "_DRAM", config_file,
+                                                output_dir);
+      use_dramsim3_ = true;
+      if (verbose_) {
+        std::cout << "[LSU] Using DRAMsim3 for memory simulation\n";
+      }
+    } else {
+      use_dramsim3_ = false;
+      createMemoryBanks(bank_capacity);
     }
+#else
+    // Use simple memory banks
+    createMemoryBanks(bank_capacity);
+#endif
 
-    // Create ports
-    // Request input port
-    auto req_in = std::make_shared<Architecture::Port>(
-        "req_in", Architecture::PortDirection::INPUT, this);
-    addPort(req_in);
-
-    // Response output port
-    auto resp_out = std::make_shared<Architecture::Port>(
-        "resp_out", Architecture::PortDirection::OUTPUT, this);
-    addPort(resp_out);
-
-    // Ready signal output
-    auto ready_out = std::make_shared<Architecture::Port>(
-        "ready", Architecture::PortDirection::OUTPUT, this);
-    addPort(ready_out);
-
-    // Valid signal input
-    auto valid_in = std::make_shared<Architecture::Port>(
-        "valid", Architecture::PortDirection::INPUT, this);
-    addPort(valid_in);
-
-    // Done signal output
-    auto done_out = std::make_shared<Architecture::Port>(
-        "done", Architecture::PortDirection::OUTPUT, this);
-    addPort(done_out);
+    createPorts();
   }
 
   void tick() override {
-    auto req_in = getPort("req_in");
-    auto resp_out = getPort("resp_out");
-    auto ready_out = getPort("ready");
-    auto valid_in = getPort("valid");
-    auto done_out = getPort("done");
+    handlePortIO();
 
-    // Check if we can accept new requests
+    switch (current_state_) {
+      case State::IDLE:
+        handleIdle();
+        break;
+      case State::PROCESSING:
+        handleProcessing();
+        break;
+      case State::WAITING_BANK:
+        handleWaitingBank();
+        break;
+    }
+
+    sendStatusSignals();
+  }
+
+  // Direct memory access (bypassing ports)
+  void directWrite(uint32_t address, int32_t data) {
+#ifdef USE_DRAMSIM3
+    if (use_dramsim3_) {
+      dram_->write(address, data);
+      return;
+    }
+#endif
+    size_t bank_id = address % num_banks_;
+    uint32_t bank_addr = address / num_banks_;
+    memory_banks_[bank_id]->write(bank_addr, data);
+  }
+
+  int32_t directRead(uint32_t address) {
+#ifdef USE_DRAMSIM3
+    if (use_dramsim3_) {
+      return dram_->read(address);
+    }
+#endif
+    size_t bank_id = address % num_banks_;
+    uint32_t bank_addr = address / num_banks_;
+    return memory_banks_[bank_id]->read(bank_addr);
+  }
+
+  // Statistics
+  size_t getOperationsCompleted() const { return operations_completed_; }
+  size_t getCyclesStalled() const { return cycles_stalled_; }
+
+  void setVerbose(bool verbose) { verbose_ = verbose; }
+
+ private:
+  enum class State { IDLE, PROCESSING, WAITING_BANK };
+
+  void createMemoryBanks(size_t bank_capacity) {
+    for (size_t i = 0; i < num_banks_; ++i) {
+      auto bank =
+          std::make_shared<MemoryBank>(getName() + "_Bank" + std::to_string(i),
+                                       scheduler_, getPeriod(), bank_capacity);
+      memory_banks_.push_back(bank);
+      bank->start();
+    }
+  }
+
+  void createPorts() {
+    addPort(std::make_shared<Architecture::Port>(
+        "req_in", Architecture::PortDirection::INPUT, this));
+    addPort(std::make_shared<Architecture::Port>(
+        "resp_out", Architecture::PortDirection::OUTPUT, this));
+    addPort(std::make_shared<Architecture::Port>(
+        "ready", Architecture::PortDirection::OUTPUT, this));
+    addPort(std::make_shared<Architecture::Port>(
+        "valid", Architecture::PortDirection::INPUT, this));
+    addPort(std::make_shared<Architecture::Port>(
+        "done", Architecture::PortDirection::OUTPUT, this));
+  }
+
+  void handlePortIO() {
+    auto req_in = getPort("req_in");
+    auto valid_in = getPort("valid");
+
     bool is_ready = (request_queue_.size() < queue_depth_) &&
                     (current_state_ == State::IDLE);
 
-    // Send ready signal
-    auto ready_packet = std::make_shared<IntDataPacket>(is_ready ? 1 : 0);
-    ready_out->write(
-        std::static_pointer_cast<Architecture::DataPacket>(ready_packet));
-
-    // Try to enqueue new request if ready and valid
     if (is_ready) {
       auto valid_data = valid_in->read();
       auto valid_int = std::dynamic_pointer_cast<IntDataPacket>(valid_data);
@@ -319,55 +341,26 @@ class LoadStoreUnit : public Architecture::TickingComponent {
         }
       }
     }
+  }
 
-    // Process current state
-    switch (current_state_) {
-      case State::IDLE:
-        handleIdle();
-        break;
-      case State::PROCESSING:
-        handleProcessing();
-        break;
-      case State::WAITING_BANK:
-        handleWaitingBank();
-        break;
-    }
+  void sendStatusSignals() {
+    auto resp_out = getPort("resp_out");
+    auto ready_out = getPort("ready");
+    auto done_out = getPort("done");
 
-    // Send done signal
+    bool is_ready = (request_queue_.size() < queue_depth_) &&
+                    (current_state_ == State::IDLE);
+    ready_out->write(std::make_shared<IntDataPacket>(is_ready ? 1 : 0));
+
     bool is_done = (current_state_ == State::IDLE) && request_queue_.empty();
-    auto done_packet = std::make_shared<IntDataPacket>(is_done ? 1 : 0);
-    done_out->write(
-        std::static_pointer_cast<Architecture::DataPacket>(done_packet));
+    done_out->write(std::make_shared<IntDataPacket>(is_done ? 1 : 0));
 
-    // Output response if available
     if (current_response_) {
       resp_out->write(std::static_pointer_cast<Architecture::DataPacket>(
           current_response_));
       current_response_ = nullptr;
     }
   }
-
-  // Statistics
-  size_t getOperationsCompleted() const { return operations_completed_; }
-  size_t getCyclesStalled() const { return cycles_stalled_; }
-
-  void setVerbose(bool verbose) { verbose_ = verbose; }
-
-  // Direct memory access (bypassing ports, for testing/initialization)
-  void directWrite(uint32_t address, int32_t data) {
-    size_t bank_id = address % num_banks_;
-    uint32_t bank_addr = address / num_banks_;
-    memory_banks_[bank_id]->write(bank_addr, data);
-  }
-
-  int32_t directRead(uint32_t address) {
-    size_t bank_id = address % num_banks_;
-    uint32_t bank_addr = address / num_banks_;
-    return memory_banks_[bank_id]->read(bank_addr);
-  }
-
- private:
-  enum class State { IDLE, PROCESSING, WAITING_BANK };
 
   void handleIdle() {
     if (!request_queue_.empty()) {
@@ -376,82 +369,78 @@ class LoadStoreUnit : public Architecture::TickingComponent {
 
       element_index_ = 0;
       vector_length_ = current_request_->getLength();
-      current_state_ = State::PROCESSING;
 
-      if (verbose_) {
-        std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                  << ": Started processing request" << std::endl;
-      }
+      current_state_ = State::PROCESSING;
     }
   }
 
   void handleProcessing() {
-    if (!current_request_ || element_index_ >= vector_length_) {
-      // Finished processing current request
+#ifdef USE_DRAMSIM3
+    if (use_dramsim3_) {
+      handleProcessingDRAM();
+      return;
+    }
+#endif
+    handleProcessingBanks();
+  }
+
+  void handleProcessingBanks() {
+    if (element_index_ >= vector_length_) {
       current_state_ = State::IDLE;
-      current_request_ = nullptr;
+      operations_completed_++;
       return;
     }
 
-    // Calculate current address with stride
-    uint32_t current_addr = current_request_->getAddress() +
-                            element_index_ * current_request_->getStride();
+    uint32_t address = current_request_->getAddress() +
+                       element_index_ * current_request_->getStride();
+    size_t bank_id = address % num_banks_;
+    uint32_t bank_addr = address / num_banks_;
 
-    // Check mask
-    if (!current_request_->getMask()) {
-      element_index_++;
-      return;
-    }
-
-    // Determine target bank (using lower bits for bank selection)
-    size_t bank_id = current_addr % num_banks_;
     auto& bank = memory_banks_[bank_id];
 
-    // Check if bank is ready
     if (bank->isReady()) {
-      // Create bank request
-      auto bank_req = std::make_shared<MemoryRequestPacket>(
-          current_request_->getOperation(), current_addr,
-          current_request_->getData(), 1, 1, true);
-
-      bank->processRequest(bank_req);
-      current_bank_ = bank;
+      bank->processRequest(current_request_);
       current_state_ = State::WAITING_BANK;
-
-      if (verbose_) {
-        std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                  << ": Sent request to bank " << bank_id
-                  << ", addr=" << current_addr << std::endl;
-      }
     } else {
-      // Bank is busy, stall
       cycles_stalled_++;
     }
   }
 
+#ifdef USE_DRAMSIM3
+  void handleProcessingDRAM() {
+    if (element_index_ >= vector_length_) {
+      current_state_ = State::IDLE;
+      operations_completed_++;
+      return;
+    }
+
+    uint32_t address = current_request_->getAddress() +
+                       element_index_ * current_request_->getStride();
+
+    if (current_request_->getOperation() == LSUOp::LOAD ||
+        current_request_->getOperation() == LSUOp::LOAD_VECTOR) {
+      int32_t data = dram_->read(address);
+      current_response_ = std::make_shared<MemoryResponsePacket>(data, address);
+    } else {
+      dram_->write(address, current_request_->getData());
+      current_response_ = std::make_shared<MemoryResponsePacket>(0, address);
+    }
+
+    element_index_++;
+  }
+#endif
+
   void handleWaitingBank() {
-    if (current_bank_ && current_bank_->isDone()) {
-      // Get response from bank
-      auto response = current_bank_->getResponse();
+    uint32_t address = current_request_->getAddress() +
+                       element_index_ * current_request_->getStride();
+    size_t bank_id = address % num_banks_;
+    auto& bank = memory_banks_[bank_id];
 
-      if (response) {
-        current_response_ = response;
-        operations_completed_++;
-
-        if (verbose_) {
-          std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                    << ": Received response, data=" << response->getData()
-                    << std::endl;
-        }
-      }
-
-      // Acknowledge the response to the bank
-      current_bank_->acknowledgeResponse();
-
-      // Move to next element
+    if (bank->isDone()) {
+      current_response_ = bank->getResponse();
+      bank->acknowledgeResponse();
       element_index_++;
       current_state_ = State::PROCESSING;
-      current_bank_ = nullptr;
     }
   }
 
@@ -459,35 +448,20 @@ class LoadStoreUnit : public Architecture::TickingComponent {
   size_t queue_depth_;
   std::vector<std::shared_ptr<MemoryBank>> memory_banks_;
   std::queue<std::shared_ptr<MemoryRequestPacket>> request_queue_;
-
-  State current_state_;
   std::shared_ptr<MemoryRequestPacket> current_request_;
   std::shared_ptr<MemoryResponsePacket> current_response_;
-  std::shared_ptr<MemoryBank> current_bank_;
 
+  State current_state_;
   size_t element_index_;
   size_t vector_length_;
   size_t operations_completed_;
   size_t cycles_stalled_;
   bool verbose_ = false;
-};
 
-/**
- * @brief Helper function to get LSU operation name
- */
-inline std::string getLSUOpName(LSUOp op) {
-  switch (op) {
-    case LSUOp::LOAD:
-      return "LOAD";
-    case LSUOp::STORE:
-      return "STORE";
-    case LSUOp::LOAD_VECTOR:
-      return "LOAD_VECTOR";
-    case LSUOp::STORE_VECTOR:
-      return "STORE_VECTOR";
-    default:
-      return "UNKNOWN";
-  }
-}
+#ifdef USE_DRAMSIM3
+  std::shared_ptr<DRAMsim3Wrapper> dram_;
+  bool use_dramsim3_ = false;
+#endif
+};
 
 #endif  // LSU_H

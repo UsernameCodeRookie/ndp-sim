@@ -6,7 +6,19 @@
 #include <string>
 #include <vector>
 
+// Forward declarations
+class SystolicArrayTPU;
+
 namespace Operators {
+
+/**
+ * @brief Execution backend type
+ */
+enum class ExecutionBackend {
+  CPU,  // CPU execution
+  TPU,  // TPU hardware acceleration
+  AUTO  // Automatically select based on availability
+};
 
 /**
  * @brief Tensor shape descriptor
@@ -110,10 +122,17 @@ class Tensor {
 
 /**
  * @brief Base class for all operators
+ *
+ * All operators support multiple execution backends (CPU, TPU).
+ * Hardware scheduling logic resides in operators, not in hardware components.
  */
 class OperatorBase {
  public:
-  OperatorBase(const std::string& name) : name_(name), verbose_(false) {}
+  OperatorBase(const std::string& name)
+      : name_(name),
+        verbose_(false),
+        tpu_(nullptr),
+        backend_(ExecutionBackend::CPU) {}
   virtual ~OperatorBase() = default;
 
   virtual void compute() = 0;
@@ -123,13 +142,76 @@ class OperatorBase {
   void setVerbose(bool verbose) { verbose_ = verbose; }
   bool isVerbose() const { return verbose_; }
 
+  /**
+   * @brief Bind to a TPU for hardware acceleration
+   */
+  virtual void bindTPU(std::shared_ptr<SystolicArrayTPU> tpu) {
+    tpu_ = tpu;
+    backend_ = ExecutionBackend::TPU;
+  }
+
+  /**
+   * @brief Unbind from TPU (use CPU)
+   */
+  virtual void unbindTPU() {
+    tpu_ = nullptr;
+    backend_ = ExecutionBackend::CPU;
+  }
+
+  /**
+   * @brief Set execution backend
+   */
+  void setBackend(ExecutionBackend backend) { backend_ = backend; }
+
+  /**
+   * @brief Get current execution backend
+   */
+  ExecutionBackend getBackend() const {
+    if (backend_ == ExecutionBackend::AUTO) {
+      return tpu_ ? ExecutionBackend::TPU : ExecutionBackend::CPU;
+    }
+    return backend_;
+  }
+
+  /**
+   * @brief Check if using TPU backend
+   */
+  bool isTPUBound() const {
+    return getBackend() == ExecutionBackend::TPU && tpu_ != nullptr;
+  }
+
+  /**
+   * @brief Check if TPU is available
+   */
+  bool hasTPU() const { return tpu_ != nullptr; }
+
+  /**
+   * @brief Get bound TPU
+   */
+  std::shared_ptr<SystolicArrayTPU> getTPU() const { return tpu_; }
+
   virtual void printInfo() const {
     std::cout << "Operator: " << name_ << " [" << getOpType() << "]\n";
+    std::cout << "  Backend: ";
+    switch (getBackend()) {
+      case ExecutionBackend::CPU:
+        std::cout << "CPU";
+        break;
+      case ExecutionBackend::TPU:
+        std::cout << "TPU";
+        break;
+      case ExecutionBackend::AUTO:
+        std::cout << "AUTO";
+        break;
+    }
+    std::cout << "\n";
   }
 
  protected:
   std::string name_;
   bool verbose_;
+  std::shared_ptr<SystolicArrayTPU> tpu_;
+  ExecutionBackend backend_;
 };
 
 }  // namespace Operators

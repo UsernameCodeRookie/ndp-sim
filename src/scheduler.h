@@ -9,8 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "event_base.h"
-#include "event_lambda.h"
+#include "event.h"
 
 namespace EventDriven {
 
@@ -171,6 +170,25 @@ class EventScheduler {
   size_t event_count_;     // Total number of scheduled events
   bool verbose_;           // Whether to output detailed information
 };
+
+// PeriodicEvent::execute implementation (must be after EventScheduler
+// definition)
+inline void PeriodicEvent::execute(EventScheduler& scheduler) {
+  if (callback_) {
+    callback_(scheduler, execution_count_);
+  }
+
+  execution_count_++;
+
+  // If still needs to repeat
+  if (repeat_count_ == 0 || execution_count_ < repeat_count_) {
+    // Create new event instance for next execution
+    auto next_event = std::make_shared<PeriodicEvent>(
+        time_ + period_, period_, callback_, repeat_count_, name_);
+    next_event->execution_count_ = execution_count_;
+    scheduler.schedule(next_event);
+  }
+}
 
 }  // namespace EventDriven
 

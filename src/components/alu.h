@@ -6,7 +6,7 @@
 #include <string>
 
 #include "../port.h"
-#include "../tick_component.h"
+#include "../tick.h"
 #include "int_packet.h"
 #include "pipeline.h"
 

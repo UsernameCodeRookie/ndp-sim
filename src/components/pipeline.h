@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "../port.h"
-#include "../tick_component.h"
+#include "../tick.h"
 #include "int_packet.h"
 
 /**

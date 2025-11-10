@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "../src/operators/gemm_operator.h"
+#include "../src/operators/gemm.h"
 
 using namespace Operators;
 
