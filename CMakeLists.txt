@@ -23,6 +23,14 @@ target_include_directories(event_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_executable(architecture_example src/examples/architecture_examples.cpp)
 target_include_directories(architecture_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+# --- Pipeline example ---
+add_executable(pipeline_example src/examples/pipeline_examples.cpp)
+target_include_directories(pipeline_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# --- PE (Processing Element) example ---
+add_executable(pe_example src/examples/pe_examples.cpp)
+target_include_directories(pe_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 # --- Architecture connection debug ---
 add_executable(connection_debug tests/test_connection_debug.cpp)
 target_include_directories(connection_debug PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -47,6 +55,18 @@ add_executable(architecture_tests tests/test_architecture.cpp)
 target_include_directories(architecture_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(architecture_tests GTest::gtest GTest::gtest_main)
 add_test(NAME architecture_tests COMMAND architecture_tests)
+
+# --- Pipeline tests ---
+add_executable(pipeline_tests tests/test_pipeline.cpp)
+target_include_directories(pipeline_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pipeline_tests GTest::gtest GTest::gtest_main)
+add_test(NAME pipeline_tests COMMAND pipeline_tests)
+
+# --- PE tests ---
+add_executable(pe_tests tests/test_pe.cpp)
+target_include_directories(pe_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pe_tests GTest::gtest GTest::gtest_main)
+add_test(NAME pe_tests COMMAND pe_tests)
 
 enable_testing()
 

@@ -6,11 +6,9 @@
 #include <memory>
 
 #include "event_base.h"
+#include "scheduler.h"
 
 namespace EventDriven {
-
-// Forward declaration
-class EventScheduler;
 
 /**
  * @brief Periodic event class
