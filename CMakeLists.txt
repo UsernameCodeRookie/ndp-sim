@@ -31,6 +31,14 @@ target_include_directories(pipeline_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_executable(pe_example src/examples/pe_examples.cpp)
 target_include_directories(pe_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+# --- LSU (Load-Store Unit) example ---
+add_executable(lsu_example src/examples/lsu_examples.cpp)
+target_include_directories(lsu_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# --- TPU (Tensor Processing Unit) example ---
+add_executable(tpu_example src/examples/tpu_examples.cpp)
+target_include_directories(tpu_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 # --- Architecture connection debug ---
 add_executable(connection_debug tests/test_connection_debug.cpp)
 target_include_directories(connection_debug PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -67,6 +75,18 @@ add_executable(pe_tests tests/test_pe.cpp)
 target_include_directories(pe_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(pe_tests GTest::gtest GTest::gtest_main)
 add_test(NAME pe_tests COMMAND pe_tests)
+
+# --- LSU tests ---
+add_executable(lsu_tests tests/test_lsu.cpp)
+target_include_directories(lsu_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(lsu_tests GTest::gtest GTest::gtest_main)
+add_test(NAME lsu_tests COMMAND lsu_tests)
+
+# --- TPU tests ---
+add_executable(tpu_tests tests/test_tpu.cpp)
+target_include_directories(tpu_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tpu_tests GTest::gtest GTest::gtest_main)
+add_test(NAME tpu_tests COMMAND tpu_tests)
 
 enable_testing()
 
