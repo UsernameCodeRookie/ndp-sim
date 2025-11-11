@@ -227,7 +227,7 @@ class GEMMOperator : public OperatorBase {
     event_time += 10;
     scheduler.scheduleAt(
         event_time,
-        [tpu](EventDriven::EventScheduler& sched) { tpu->resetAllMACs(); }, 0,
+        [tpu](EventDriven::EventScheduler&) { tpu->resetAllMACs(); }, 0,
         "ResetMACs");
 
     // Step 3: Schedule GEMM computation as single event

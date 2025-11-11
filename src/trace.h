@@ -142,21 +142,38 @@ class Tracer {
    */
   void trace(uint64_t timestamp, TraceEventType type,
              const std::string& component_name, const std::string& event_name,
-             const std::string& details = "", int priority = 0) {
-    if (!enabled_ || !initialized_) return;
+             const std::string& details = "", int priority = 0);
 
-    // Filter by component if filters are set
-    if (!shouldTraceComponent(component_name)) return;
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    entries_.emplace_back(timestamp, type, component_name, event_name, details,
-                          priority);
-
-    // Optional: immediate flush for debugging (can be disabled for performance)
-    if (immediate_flush_) {
-      flushEntry(entries_.back());
-    }
+  // Tracing helpers with signatures matching usage in components
+  void traceQueueOp(uint64_t timestamp, const std::string& component_name,
+                    const std::string& event_name, size_t queue_size,
+                    size_t queue_depth) {
+    std::stringstream ss;
+    ss << event_name << " size=" << queue_size << " depth=" << queue_depth;
+    trace(timestamp, TraceEventType::QUEUE_OPERATION, component_name,
+          "queue_op", ss.str());
   }
+
+  void traceRegisterAccess(uint64_t timestamp,
+                           const std::string& component_name, bool is_write,
+                           int address, int value) {
+    std::stringstream ss;
+    ss << (is_write ? "WRITE" : "READ") << " addr=" << address
+       << " value=" << value;
+    trace(timestamp, TraceEventType::REGISTER_ACCESS, component_name,
+          "register_access", ss.str());
+  }
+
+  void traceInstruction(uint64_t timestamp, const std::string& component_name,
+                        const std::string& instr_name,
+                        const std::string& details) {
+    std::stringstream ss;
+    ss << instr_name;
+    if (!details.empty()) ss << " - " << details;
+    trace(timestamp, TraceEventType::INSTRUCTION, component_name, "instruction",
+          ss.str());
+  }
+  const std::string& getOutputPath() const { return output_path_; }
 
   /**
    * @brief Convenience methods for specific event types
@@ -375,6 +392,26 @@ class Tracer {
       component_filters_;  // Component name patterns to trace
   mutable std::mutex mutex_;
 };
+
+// Inline implementation of Tracer::trace
+inline void Tracer::trace(uint64_t timestamp, TraceEventType type,
+                          const std::string& component_name,
+                          const std::string& event_name,
+                          const std::string& details, int priority) {
+  if (!enabled_ || !initialized_) return;
+
+  // Filter by component if filters are set
+  if (!shouldTraceComponent(component_name)) return;
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  entries_.emplace_back(timestamp, type, component_name, event_name, details,
+                        priority);
+
+  // Optional: immediate flush for debugging (can be disabled for performance)
+  if (immediate_flush_) {
+    flushEntry(entries_.back());
+  }
+}
 
 }  // namespace EventDriven
 
