@@ -149,12 +149,97 @@ class SystolicArrayTPU : public SystolicArrayTPUBase {
 
   std::shared_ptr<LoadStoreUnit> getLSU() { return lsu_; }
 
+  // Port-based memory access with buffering for timing simulation
   void writeMemory(uint32_t address, ValueType data) {
-    lsu_->directWrite(address, Traits::encode(data));
+    auto req = std::make_shared<MemoryRequestPacket>(LSUOp::STORE, address,
+                                                     Traits::encode(data));
+
+    auto req_port = lsu_->getPort("req_in");
+    auto valid_port = lsu_->getPort("valid");
+    auto ready_port = lsu_->getPort("ready");
+    auto resp_port = lsu_->getPort("resp_out");
+
+    if (verbose_) {
+      std::cout << "  [TPU Write] addr=" << address << " data=" << data
+                << std::endl;
+    }
+
+    // Clear any stale responses
+    while (resp_port->hasData()) {
+      resp_port->read();
+    }
+
+    // Wait for LSU to be ready
+    for (int wait = 0; wait < 100; ++wait) {
+      auto ready_data = ready_port->read();
+      auto ready_int = std::dynamic_pointer_cast<IntDataPacket>(ready_data);
+      if (ready_int && ready_int->getValue() == 1) {
+        break;
+      }
+      lsu_->tick();
+    }
+
+    valid_port->write(std::make_shared<IntDataPacket>(1));
+    req_port->write(req);
+    lsu_->tick();  // Enqueue the request
+    valid_port->write(std::make_shared<IntDataPacket>(0));
+
+    // Process until write completes
+    for (int i = 0; i < 50; ++i) {
+      lsu_->tick();
+    }
   }
 
   ValueType readMemory(uint32_t address) {
-    return Traits::decode(lsu_->directRead(address));
+    auto req = std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, address);
+
+    auto req_port = lsu_->getPort("req_in");
+    auto valid_port = lsu_->getPort("valid");
+    auto resp_port = lsu_->getPort("resp_out");
+    auto ready_port = lsu_->getPort("ready");
+
+    // Clear any stale responses
+    while (resp_port->hasData()) {
+      resp_port->read();
+    }
+
+    // Wait for LSU to be ready
+    for (int wait = 0; wait < 100; ++wait) {
+      auto ready_data = ready_port->read();
+      auto ready_int = std::dynamic_pointer_cast<IntDataPacket>(ready_data);
+      if (ready_int && ready_int->getValue() == 1) {
+        break;
+      }
+      lsu_->tick();
+    }
+
+    valid_port->write(std::make_shared<IntDataPacket>(1));
+    req_port->write(req);
+    lsu_->tick();  // Enqueue the request
+    valid_port->write(std::make_shared<IntDataPacket>(0));
+
+    // Process until response is available
+    ValueType result = Traits::zeroValue();
+    for (int i = 0; i < 50; ++i) {
+      lsu_->tick();
+      if (resp_port->hasData()) {
+        auto resp_data = resp_port->read();
+        auto resp = std::dynamic_pointer_cast<MemoryResponsePacket>(resp_data);
+        if (resp && resp->getAddress() == address) {
+          result = Traits::decode(resp->getData());
+          if (verbose_) {
+            std::cout << "  [TPU Read] addr=" << address << " data=" << result
+                      << std::endl;
+          }
+          return result;
+        }
+      }
+    }
+
+    if (verbose_) {
+      std::cout << "  [TPU Read] addr=" << address << " TIMEOUT!" << std::endl;
+    }
+    return result;
   }
 
   void writeMemoryBlock(uint32_t base_addr,

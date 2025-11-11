@@ -21,12 +21,12 @@ int main() {
 
   // Create TPU (4x4 systolic array)
   auto tpu = std::make_shared<TPUPrecision>("TPU", scheduler, 1, 4);
-  tpu->setVerbose(true);
+  tpu->setVerbose(false);
   tpu->start();
 
   // Create GEMM operator
   GEMMOperator<float, Precision> gemm_op("GEMM_TPU");
-  gemm_op.setVerbose(true);
+  gemm_op.setVerbose(false);
 
   // Bind operator to TPU
   gemm_op.bindTPU(tpu);

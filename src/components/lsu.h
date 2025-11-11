@@ -243,6 +243,11 @@ class LoadStoreUnit : public Architecture::TickingComponent {
   }
 
   void tick() override {
+    // Tick all memory banks first
+    for (auto& bank : memory_banks_) {
+      bank->tick();
+    }
+
     handlePortIO();
 
     switch (current_state_) {
@@ -258,30 +263,6 @@ class LoadStoreUnit : public Architecture::TickingComponent {
     }
 
     sendStatusSignals();
-  }
-
-  // Direct memory access (bypassing ports)
-  void directWrite(uint32_t address, int32_t data) {
-#ifdef USE_DRAMSIM3
-    if (use_dramsim3_) {
-      dram_->write(address, data);
-      return;
-    }
-#endif
-    size_t bank_id = address % num_banks_;
-    uint32_t bank_addr = address / num_banks_;
-    memory_banks_[bank_id]->write(bank_addr, data);
-  }
-
-  int32_t directRead(uint32_t address) {
-#ifdef USE_DRAMSIM3
-    if (use_dramsim3_) {
-      return dram_->read(address);
-    }
-#endif
-    size_t bank_id = address % num_banks_;
-    uint32_t bank_addr = address / num_banks_;
-    return memory_banks_[bank_id]->read(bank_addr);
   }
 
   // Statistics
@@ -336,10 +317,16 @@ class LoadStoreUnit : public Architecture::TickingComponent {
           if (verbose_) {
             std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
                       << ": Enqueued request, addr=" << mem_req->getAddress()
+                      << " queue_size=" << request_queue_.size()
+                      << " state=" << static_cast<int>(current_state_)
                       << std::endl;
           }
         }
       }
+    } else if (verbose_) {
+      std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
+                << ": NOT ready, queue_size=" << request_queue_.size()
+                << " state=" << static_cast<int>(current_state_) << std::endl;
     }
   }
 
@@ -399,7 +386,11 @@ class LoadStoreUnit : public Architecture::TickingComponent {
     auto& bank = memory_banks_[bank_id];
 
     if (bank->isReady()) {
-      bank->processRequest(current_request_);
+      // Create a new request with bank-local address
+      auto bank_request = std::make_shared<MemoryRequestPacket>(
+          current_request_->getOperation(), bank_addr,
+          current_request_->getData(), 1, 1, current_request_->getMask());
+      bank->processRequest(bank_request);
       current_state_ = State::WAITING_BANK;
     } else {
       cycles_stalled_++;
@@ -437,7 +428,12 @@ class LoadStoreUnit : public Architecture::TickingComponent {
     auto& bank = memory_banks_[bank_id];
 
     if (bank->isDone()) {
-      current_response_ = bank->getResponse();
+      auto bank_response = bank->getResponse();
+      if (bank_response) {
+        // Create response with original global address, not bank address
+        current_response_ = std::make_shared<MemoryResponsePacket>(
+            bank_response->getData(), address);
+      }
       bank->acknowledgeResponse();
       element_index_++;
       current_state_ = State::PROCESSING;
