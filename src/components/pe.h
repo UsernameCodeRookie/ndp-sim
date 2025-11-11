@@ -76,13 +76,14 @@ class PEInstructionPacket : public Architecture::DataPacket {
 };
 
 /**
- * @brief Processing Element (PE) Component
+ * @brief Processing Element (PE) Component with MAC support
  *
  * A complete processing element with:
  * - Register file (local storage)
- * - ALU for computations
+ * - ALU for computations (including MAC operations)
  * - Instruction queue with back pressure support
  * - Input/output ports with ready/valid handshake
+ * - Dedicated accumulator for MAC operations
  */
 class ProcessingElement : public Architecture::TickingComponent {
  public:
@@ -95,7 +96,8 @@ class ProcessingElement : public Architecture::TickingComponent {
         instructions_executed_(0),
         cycles_stalled_(0),
         input_ready_(true),
-        output_valid_(false) {
+        output_valid_(false),
+        mac_accumulator_(0) {
     // Initialize register file
     register_file_.resize(num_registers_, 0);
 
@@ -185,23 +187,39 @@ class ProcessingElement : public Architecture::TickingComponent {
       int operand_a = readRegister(inst->getSrcRegA());
       int operand_b = readRegister(inst->getSrcRegB());
 
-      // Execute operation using ALU
-      int result = ALUComponent::executeOperation(operand_a, operand_b,
-                                                  inst->getOperation());
+      // Execute operation
+      int result;
+      if (inst->getOperation() == ALUOp::MAC) {
+        // MAC operation: accumulator = accumulator + (a * b)
+        mac_accumulator_ = mac_accumulator_ + (operand_a * operand_b);
+        result = mac_accumulator_;
+
+        if (verbose_) {
+          std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
+                    << ": MAC acc=" << mac_accumulator_ << " += R"
+                    << inst->getSrcRegA() << "(" << operand_a << ") * R"
+                    << inst->getSrcRegB() << "(" << operand_b << ")"
+                    << std::endl;
+        }
+      } else {
+        // Regular ALU operation
+        result = ALUComponent::executeOperation(operand_a, operand_b,
+                                                inst->getOperation());
+
+        if (verbose_) {
+          std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
+                    << ": Execute "
+                    << ALUComponent::getOpName(inst->getOperation()) << " R"
+                    << inst->getSrcRegA() << "(" << operand_a << "), R"
+                    << inst->getSrcRegB() << "(" << operand_b << ") -> R"
+                    << inst->getDstReg() << "(" << result << ")" << std::endl;
+        }
+      }
 
       // Write result back to register file
       writeRegister(inst->getDstReg(), result);
 
       instructions_executed_++;
-
-      if (verbose_) {
-        std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                  << ": Execute "
-                  << ALUComponent::getOpName(inst->getOperation()) << " R"
-                  << inst->getSrcRegA() << "(" << operand_a << "), R"
-                  << inst->getSrcRegB() << "(" << operand_b << ") -> R"
-                  << inst->getDstReg() << "(" << result << ")" << std::endl;
-      }
 
       // Output result
       auto result_packet = std::make_shared<IntDataPacket>(result);
@@ -256,6 +274,21 @@ class ProcessingElement : public Architecture::TickingComponent {
   size_t getQueueOccupancy() const { return instruction_queue_.size(); }
 
   /**
+   * @brief Get MAC accumulator value
+   */
+  int getMACAccumulator() const { return mac_accumulator_; }
+
+  /**
+   * @brief Reset MAC accumulator
+   */
+  void resetMACAccumulator() { mac_accumulator_ = 0; }
+
+  /**
+   * @brief Set MAC accumulator value
+   */
+  void setMACAccumulator(int value) { mac_accumulator_ = value; }
+
+  /**
    * @brief Print register file contents
    */
   void printRegisters() const {
@@ -302,6 +335,7 @@ class ProcessingElement : public Architecture::TickingComponent {
   uint64_t cycles_stalled_;            // Stall cycles count
   bool input_ready_;                   // Ready to accept instruction
   bool output_valid_;                  // Has valid output
+  int mac_accumulator_;                // MAC accumulator
   bool verbose_ = false;               // Verbose output flag
 };
 

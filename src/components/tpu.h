@@ -9,61 +9,93 @@
 #include "../tick.h"
 #include "int_packet.h"
 #include "lsu.h"
+#include "pe.h"
 #include "precision.h"
 
 template <typename PrecisionTraits>
-class MACUnit : public Architecture::TickingComponent {
+class MACUnit : public ProcessingElement {
  public:
   using Traits = PrecisionTraits;
   using ValueType = typename Traits::ValueType;
   using AccumulatorType = typename Traits::AccumulatorType;
 
+  // Register allocation for MAC operation
+  static constexpr int REG_INPUT_A = 0;  // Input A register
+  static constexpr int REG_INPUT_B = 1;  // Input B register
+  static constexpr int REG_RESULT = 2;   // Result register
+
   MACUnit(const std::string& name, EventDriven::EventScheduler& scheduler,
           uint64_t period, int row, int col)
-      : Architecture::TickingComponent(name, scheduler, period),
+      : ProcessingElement(name, scheduler, period, 32, 4),
         row_(row),
         col_(col),
-        accumulator_(Traits::zeroAccumulator()),
-        input_a_(Traits::zeroValue()),
-        input_b_(Traits::zeroValue()),
-        output_valid_(false) {}
+        output_valid_(false) {
+    // Initialize accumulator to zero
+    resetAccumulator();
+  }
 
   void tick() override {
-    accumulator_ = Traits::accumulate(accumulator_, input_a_, input_b_);
+    // Execute MAC operation using the MAC instruction
+    // MAC: accumulator += input_a * input_b
+
+    auto mac_inst = std::make_shared<PEInstructionPacket>(
+        ALUOp::MAC, REG_INPUT_A, REG_INPUT_B, REG_RESULT);
+
+    auto inst_in = getPort("inst_in");
+    inst_in->write(mac_inst);
+
+    // Call base class tick to execute the MAC operation
+    ProcessingElement::tick();
+
     output_valid_ = true;
 
     if (verbose_) {
-      const auto acc_value = Traits::fromAccumulator(accumulator_);
+      int acc_value = getMACAccumulator();
+      int input_a = readRegister(REG_INPUT_A);
+      int input_b = readRegister(REG_INPUT_B);
       std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                << " [" << row_ << "," << col_
-                << "]: " << Traits::toString(acc_value)
-                << " += " << Traits::toString(input_a_) << " * "
-                << Traits::toString(input_b_) << std::endl;
+                << " [" << row_ << "," << col_ << "]: acc=" << acc_value
+                << " (prev + " << input_a << " * " << input_b << ")"
+                << std::endl;
     }
   }
 
-  void setInputA(ValueType value) { input_a_ = value; }
-  void setInputB(ValueType value) { input_b_ = value; }
+  void setInputA(ValueType value) {
+    // Convert value to int representation for PE register
+    int int_value = static_cast<int>(value);
+    writeRegister(REG_INPUT_A, int_value);
+  }
+
+  void setInputB(ValueType value) {
+    // Convert value to int representation for PE register
+    int int_value = static_cast<int>(value);
+    writeRegister(REG_INPUT_B, int_value);
+  }
 
   void resetAccumulator() {
-    accumulator_ = Traits::zeroAccumulator();
+    resetMACAccumulator();
+    writeRegister(REG_RESULT, 0);
     output_valid_ = false;
   }
 
-  AccumulatorType getAccumulator() const { return accumulator_; }
+  AccumulatorType getAccumulator() const {
+    // Read accumulator from PE MAC accumulator
+    return static_cast<AccumulatorType>(getMACAccumulator());
+  }
+
   bool isOutputValid() const { return output_valid_; }
 
   int getRow() const { return row_; }
   int getCol() const { return col_; }
 
-  void setVerbose(bool verbose) { verbose_ = verbose; }
+  void setVerbose(bool verbose) {
+    verbose_ = verbose;
+    ProcessingElement::setVerbose(verbose);
+  }
 
  private:
   int row_;
   int col_;
-  AccumulatorType accumulator_;
-  ValueType input_a_;
-  ValueType input_b_;
   bool output_valid_;
   bool verbose_ = false;
 };

@@ -41,6 +41,10 @@ target_include_directories(gemm_operator_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(gemm_operator_tests GTest::gtest GTest::gtest_main)
 add_test(NAME gemm_operator_tests COMMAND gemm_operator_tests)
 
+# --- MAC PE tests ---
+add_executable(test_mac_pe tests/test_mac_pe.cpp)
+target_include_directories(test_mac_pe PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 enable_testing()
 
 # -----------------------------

@@ -18,6 +18,7 @@ enum class ALUOp {
   SUB,     // Subtraction
   MUL,     // Multiplication
   DIV,     // Division
+  MAC,     // Multiply-Accumulate (a = a + b * c, uses accumulator)
   AND,     // Bitwise AND
   OR,      // Bitwise OR
   XOR,     // Bitwise XOR
@@ -66,7 +67,7 @@ class ALUDataPacket : public Architecture::DataPacket {
 };
 
 /**
- * @brief ALU Component
+ * @brief ALU Component with accumulator support
  *
  * Arithmetic Logic Unit implemented as a pipeline
  * Stages:
@@ -78,7 +79,9 @@ class ALUComponent : public PipelineComponent {
  public:
   ALUComponent(const std::string& name, EventDriven::EventScheduler& scheduler,
                uint64_t period)
-      : PipelineComponent(name, scheduler, period, 3), operations_executed_(0) {
+      : PipelineComponent(name, scheduler, period, 3),
+        operations_executed_(0),
+        accumulator_(0) {
     // Stage 0: Decode - just pass through (could add operation validation)
     setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
       auto alu_data = std::dynamic_pointer_cast<ALUDataPacket>(data);
@@ -97,15 +100,22 @@ class ALUComponent : public PipelineComponent {
       if (alu_data) {
         int a = alu_data->getOperandA();
         int b = alu_data->getOperandB();
-        int result = executeOperation(a, b, alu_data->getOperation());
+        int result =
+            executeOperationWithAccumulator(a, b, alu_data->getOperation());
 
         operations_executed_++;
 
         if (verbose_) {
           std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                    << " [Execute]: " << a << " "
-                    << getOpSymbol(alu_data->getOperation()) << " " << b
-                    << " = " << result << std::endl;
+                    << " [Execute]: ";
+          if (alu_data->getOperation() == ALUOp::MAC) {
+            std::cout << "MAC: acc=" << accumulator_ << " += " << a << " * "
+                      << b;
+          } else {
+            std::cout << a << " " << getOpSymbol(alu_data->getOperation())
+                      << " " << b << " = " << result;
+          }
+          std::cout << std::endl;
         }
 
         // Convert result to IntDataPacket for output
@@ -130,6 +140,20 @@ class ALUComponent : public PipelineComponent {
   }
 
   /**
+   * @brief Execute ALU operation with accumulator support
+   */
+  int executeOperationWithAccumulator(int a, int b, ALUOp op) {
+    switch (op) {
+      case ALUOp::MAC:
+        // Multiply-Accumulate: accumulator = accumulator + (a * b)
+        accumulator_ = accumulator_ + (a * b);
+        return accumulator_;
+      default:
+        return executeOperation(a, b, op);
+    }
+  }
+
+  /**
    * @brief Execute ALU operation
    */
   static int executeOperation(int a, int b, ALUOp op) {
@@ -142,6 +166,9 @@ class ALUComponent : public PipelineComponent {
         return a * b;
       case ALUOp::DIV:
         return (b != 0) ? a / b : 0;  // Avoid division by zero
+      case ALUOp::MAC:
+        // MAC without accumulator context, just multiply
+        return a * b;
       case ALUOp::AND:
         return a & b;
       case ALUOp::OR:
@@ -190,6 +217,8 @@ class ALUComponent : public PipelineComponent {
         return "MUL";
       case ALUOp::DIV:
         return "DIV";
+      case ALUOp::MAC:
+        return "MAC";
       case ALUOp::AND:
         return "AND";
       case ALUOp::OR:
@@ -236,6 +265,8 @@ class ALUComponent : public PipelineComponent {
         return "*";
       case ALUOp::DIV:
         return "/";
+      case ALUOp::MAC:
+        return "*+";
       case ALUOp::AND:
         return "&";
       case ALUOp::OR:
@@ -262,13 +293,20 @@ class ALUComponent : public PipelineComponent {
   // Statistics
   uint64_t getOperationsExecuted() const { return operations_executed_; }
 
+  // Accumulator access
+  int getAccumulator() const { return accumulator_; }
+  void resetAccumulator() { accumulator_ = 0; }
+  void setAccumulator(int value) { accumulator_ = value; }
+
   void printStatistics() const {
     PipelineComponent::printStatistics();
     std::cout << "Operations executed: " << operations_executed_ << std::endl;
+    std::cout << "Accumulator value: " << accumulator_ << std::endl;
   }
 
  private:
   uint64_t operations_executed_;
+  int accumulator_;  // Internal accumulator for MAC operations
 };
 
 #endif  // ALU_H
