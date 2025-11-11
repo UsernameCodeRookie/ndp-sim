@@ -39,6 +39,7 @@ def get_config_bits(params, idx):
     #     "iga_lc_index": 7,               # last index（PORT_LAST_INDEX 宽度内的值）
     # }
 
+
     params = params
 
     # =========================

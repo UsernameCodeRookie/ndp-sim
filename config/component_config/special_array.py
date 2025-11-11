@@ -13,7 +13,7 @@ def _compute_total_len():
     pass
 
 
-config_bits_len = (1 + 1 + PORT_LAST_INDEX)*3 + SA_PE_COMP_DATA_TYPE_WIDTH + SA_PE_TRANSOUT_LAST_INDEX + 1 + 1
+config_bits_len = (1 + 1 + PORT_LAST_INDEX)*3 + SA_PE_COMP_DATA_TYPE_WIDTH + SA_PE_TRANSOUT_LAST_INDEX + 1 + 1 + 1
 
 # config_chunk_cnt = config_bits_len // config_chunk_size
 
@@ -39,13 +39,18 @@ def get_config_bits(params, idx):
     # =========================
     # 位宽常量
     # =========================
-    E_sa_inport_enable       = 1
-    E_sa_inport_pingpong_en  = 1
+    E_sa_inport_enable              = 1
+    E_sa_inport_pingpong_en         = 1
     E_sa_inport_pingpong_last_index = PORT_LAST_INDEX
     E_sa_pe_computation_data_type   = SA_PE_COMP_DATA_TYPE_WIDTH
     E_sa_pe_config_last_index       = SA_PE_TRANSOUT_LAST_INDEX
     E_sa_outport_major              = 1
     E_sa_outport_fp32to16           = 1
+    E_sa_pe_keep_last_index         = 3
+    E_sa_pe_transout_last_index     = SA_PE_TRANSOUT_LAST_INDEX
+    E_sa_pe_bias_enable             = 1
+
+
 
     # =========================
     # 按 Verilog 高位到低位顺序打包 bit_fields
@@ -64,7 +69,12 @@ def get_config_bits(params, idx):
         pack_field_decimal(params["sa_inport_pingpong_last_index"][0], E_sa_inport_pingpong_last_index, 1),
 
         pack_field_decimal(params["sa_pe_computation_data_type"], E_sa_pe_computation_data_type, 1),
-        pack_field_decimal(params["sa_pe_config_last_index"],     E_sa_pe_config_last_index, 1),
+        #
+        # pack_field_decimal(params["sa_pe_keep_last_index"],     E_sa_pe_keep_last_index, 1),
+        #
+        pack_field_decimal(params["sa_pe_transout_last_index"],   E_sa_pe_transout_last_index, 1),  # 保留位
+        #
+        pack_field_decimal(params["sa_pe_bias_enable"],           E_sa_pe_bias_enable, 1),
         pack_field_decimal(params["sa_outport_major"],            E_sa_outport_major, 1),
         pack_field_decimal(params["sa_outport_fp32to16"],         E_sa_outport_fp32to16, 1),
     ]

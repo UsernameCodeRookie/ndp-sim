@@ -121,7 +121,18 @@ if __name__ == "__main__":
         "iga_lc_index": 1,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_0)
-    cc.iga_lc.get_config_bits(lc_params_0,7)
+    cc.iga_lc.get_config_bits(lc_params_0,6)
+
+    lc_params_10 = {
+        "iga_lc_src_id": 1,              # 例如 src id = 2。若多个： [2,1,0]
+        "iga_lc_outmost_loop": 0,        # 是否作为最外层循环（或宽度值）
+        "iga_lc_initial_value": 0,       # 初始值
+        "iga_lc_stride_value": 128,        # stride
+        "iga_lc_end_value": 128,          # end value（示例）
+        "iga_lc_index": 2,               # last index（PORT_LAST_INDEX 宽度内的值）
+    }
+    sheet1_data.append(lc_params_10)
+    cc.iga_lc.get_config_bits(lc_params_10,7)
 
     lc_params_1 = {
         "iga_lc_src_id": 0,              # 例如 src id = 2。若多个： [2,1,0]
@@ -132,18 +143,18 @@ if __name__ == "__main__":
         "iga_lc_index": 0,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_1)
-    cc.iga_lc.get_config_bits(lc_params_1,6)
+    cc.iga_lc.get_config_bits(lc_params_1,5)
 
     lc_params_2 = {
-        "iga_lc_src_id": 2,              # 例如 src id = 2。若多个： [2,1,0]
+        "iga_lc_src_id": 3,              # 例如 src id = 2。若多个： [2,1,0]
         "iga_lc_outmost_loop": 0,        # 是否作为最外层循环（或宽度值）
         "iga_lc_initial_value": 0,       # 初始值
-        "iga_lc_stride_value": 1,        # stride
-        "iga_lc_end_value": 16,          # end value（示例）
+        "iga_lc_stride_value": 4,        # stride
+        "iga_lc_end_value": 64,          # end value（示例）
         "iga_lc_index": 1,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_2)
-    cc.iga_lc.get_config_bits(lc_params_2,5)
+    cc.iga_lc.get_config_bits(lc_params_2,3)
 
     lc_params_3 = {
         "iga_lc_src_id": 2,              # 例如 src id = 2。若多个： [2,1,0]
@@ -154,7 +165,7 @@ if __name__ == "__main__":
         "iga_lc_index": 2,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_3)
-    cc.iga_lc.get_config_bits(lc_params_3, 4)
+    cc.iga_lc.get_config_bits(lc_params_3, 2)
 
     lc_params_4 = {
         "iga_lc_src_id": 2,              # 例如 src id = 2。若多个： [2,1,0]
@@ -165,7 +176,7 @@ if __name__ == "__main__":
         "iga_lc_index": 3,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_4)
-    cc.iga_lc.get_config_bits(lc_params_4, 3)
+    cc.iga_lc.get_config_bits(lc_params_4, 1)
 
     lc_params_5 = {
         "iga_lc_src_id": 2,              # 例如 src id = 2。若多个： [2,1,0]
@@ -176,7 +187,7 @@ if __name__ == "__main__":
         "iga_lc_index": 4,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_5)
-    cc.iga_lc.get_config_bits(lc_params_5, 2)
+    cc.iga_lc.get_config_bits(lc_params_5, 0)
 
 
 
@@ -204,7 +215,7 @@ if __name__ == "__main__":
         "iga_pe_cfg_constant_pos" : [0, 0, 0],
     }
     sheet2_data.append(iga_pe_params_0)
-    cc.iga_pe.get_config_bits(iga_pe_params_0, 3)
+    cc.iga_pe.get_config_bits(iga_pe_params_0, 1)
 
     iga_pe_params_1 = {
         "iga_pe_alu_opcode" : 2,
@@ -216,7 +227,7 @@ if __name__ == "__main__":
         "iga_pe_cfg_constant_pos" : [0, 3, 0],
     }
     sheet2_data.append(iga_pe_params_1)
-    cc.iga_pe.get_config_bits(iga_pe_params_1, 4)
+    cc.iga_pe.get_config_bits(iga_pe_params_1,  2)
 
 
     all_data["IGA_PE_Config"] = sheet2_data
@@ -232,7 +243,7 @@ if __name__ == "__main__":
         "iga_row_lc_index":5,          # index
     }
     sheet3_data.append(row_lc_params_0)
-    cc.iga_row_lc.get_config_bits(row_lc_params_0, 1)
+    cc.iga_row_lc.get_config_bits(row_lc_params_0, 0)
 
     row_lc_params_1 = {
         "iga_row_lc_src_id": 0,         # 例如通道号 / src id
@@ -242,14 +253,14 @@ if __name__ == "__main__":
         "iga_row_lc_index":5,          # index
     }
     sheet3_data.append(row_lc_params_1)
-    cc.iga_row_lc.get_config_bits(row_lc_params_1, 2)
+    cc.iga_row_lc.get_config_bits(row_lc_params_1, 1)
  
     row_lc_params_2 = {
         "iga_row_lc_src_id": 3,         # 例如通道号 / src id
         "iga_row_lc_initial_value": 0,  # 初始值
         "iga_row_lc_stride_value": 1,   # 步长
         "iga_row_lc_end_value": 4,     # 结束值
-        "iga_row_lc_index":2,          # index
+        "iga_row_lc_index":3,          # index
     }
     sheet3_data.append(row_lc_params_2)
     cc.iga_row_lc.get_config_bits(row_lc_params_2, 3)
@@ -267,8 +278,7 @@ if __name__ == "__main__":
         "iga_col_lc_index": 6,
     }
     sheet4_data.append(col_lc_params_0)
-    cc.iga_col_lc.get_config_bits(col_lc_params_0, 1)
-
+    cc.iga_col_lc.get_config_bits(col_lc_params_0, 0)
 
     col_lc_params_1 = {
         "iga_col_lc_src_id": 6,
@@ -278,14 +288,14 @@ if __name__ == "__main__":
         "iga_col_lc_index": 6,
     }
     sheet4_data.append(col_lc_params_1)
-    cc.iga_col_lc.get_config_bits(col_lc_params_1, 2)
+    cc.iga_col_lc.get_config_bits(col_lc_params_1, 1)
 
     col_lc_params_2 = {
         "iga_col_lc_src_id": 6,
         "iga_col_lc_initial_value": 0,
         "iga_col_lc_stride_value": 16,
         "iga_col_lc_end_value": 32,
-        "iga_col_lc_index": 3,
+        "iga_col_lc_index": 4,
     }
     sheet4_data.append(col_lc_params_2)
     cc.iga_col_lc.get_config_bits(col_lc_params_2, 3)
@@ -298,33 +308,33 @@ if __name__ == "__main__":
 
     # write
     sheet5_data = []    
-    # wr_mse_params_0 = {
-    #     "mse_enable": 1,
-    #     "mse_mem_idx_mode": [1, 3, 3],
-    #     # "mem_inport_src_id": [0]*MSE_MEM_AG_INPORT_NUM,
-    #     # "mse_mem_idx_enable": [1]*MSE_MEM_AG_INPORT_NUM,
-    #     # "mse_mem_idx_mode": [0]*MSE_MEM_AG_INPORT_NUM,
-    #     "mse_mem_idx_keep_last_index": [2,0,0],
-    #     "mem_inport_src_id": [3, 0, 0],
-    #     "mse_mem_idx_constant" : [0, 0, 0],
-    #     # "mse_buf_idx_enable": [1]*MSE_BUF_AG_INPORT_NUM,
-    #     # [row, col]
-    #     "mse_buf_idx_mode": [1, 0], 
-    #     "mse_buf_idx_keep_last_index": [3, 0],
-    #     "mse_pingpong_enable": 0,
-    #     "mse_pingpong_last_index": 1,
-    #     "mse_stream_base_addr": 0x0_1000,
-    #     "mse_transaciton_layout_size": [128,1,1],
-    #     "mse_transaciton_layout_size_log": [0,7,7],
-    #     "mse_transaciton_total_size": 128,
-    #     "mse_transaciton_mult": [128, 0, 0],
-    #     "mse_map_matrix_b": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15][::-1],
-    #     "mse_buf_spatial_stride": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15][::-1],
-    #     "mse_buf_spatial_size": 16-1,
-    # }
-    # cc.se_wr_mse.get_config_bits(wr_mse_params_0, 0)
-    # sheet5_data.append(wr_mse_params_0)
-    # all_data["SE_WR_MSE_Config"] = sheet5_data
+    wr_mse_params_0 = {
+        "mse_enable": 1,
+        "mse_mem_idx_mode": [AGMode.BUFFER, AGMode.KEEP, AGMode.CONSTANT],
+        # "mem_inport_src_id": [0]*MSE_MEM_AG_INPORT_NUM,
+        # "mse_mem_idx_enable": [1]*MSE_MEM_AG_INPORT_NUM,
+        # "mse_mem_idx_mode": [0]*MSE_MEM_AG_INPORT_NUM,
+        "mse_mem_idx_keep_last_index": [3,2,0],
+        "mem_inport_src_id": [3, 2, 0],
+        "mse_mem_idx_constant" : [0, 0, 0],
+        # "mse_buf_idx_enable": [1]*MSE_BUF_AG_INPORT_NUM,
+        # [row, col]
+        "mse_buf_idx_mode": [1, 0], 
+        "mse_buf_idx_keep_last_index": [4, 0],
+        "mse_pingpong_enable": 0,
+        "mse_pingpong_last_index": 1,
+        "mse_stream_base_addr": 0x0_1004,
+        "mse_transaciton_layout_size": [128-1,1-1,1-1],
+        "mse_transaciton_layout_size_log": [7,7,0],
+        "mse_transaciton_total_size": 128,
+        "mse_transaciton_mult": [1, 128, 0],
+        "mse_map_matrix_b": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15][::-1],
+        "mse_buf_spatial_stride": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15][::-1],
+        "mse_buf_spatial_size": 16,
+    }
+    cc.se_wr_mse.get_config_bits(wr_mse_params_0, 0)
+    sheet5_data.append(wr_mse_params_0)
+    all_data["SE_WR_MSE_Config"] = sheet5_data
 
     # activations
     sheet6_data = []
@@ -336,75 +346,77 @@ if __name__ == "__main__":
         #port2 port1 port0
         "mse_mem_idx_mode" : [AGMode.KEEP, AGMode.BUFFER, AGMode.KEEP],
          # keep_last_index：有 NUM 个，每个占 WIDTH_xxx_each 位
-        "mse_mem_idx_keep_last_index": [2, 4, 3],  # 3个元素，每个3bit
-        "mem_inport_src_id": [2, 0, 3],  # 举例：3,1,0
+        "mse_mem_idx_keep_last_index": [2, 5, 3],  # 3个元素，每个3bit
+        "mem_inport_src_id": [3, 7, 2],  # 举例：3,1,0
         "mse_mem_idx_constant" : [0, 0, 0],
-        "mse_buf_idx_mode": [BAGMode.KEEP, BAGMode.BUFFER],        # [row, col]
+        "mse_buf_idx_mode": [BAGMode.KEEP, BAGMode.BUFFER],   # [row, col]
         "mse_buf_idx_keep_last_index": [6,0],   # [row, col]
 
-        "mse_pingpong_enable": 0,
+        "mse_pingpong_enable": 1,
         "mse_pingpong_last_index": 4, 
 
         "mse_stream_base_addr": 0x10_0000,
-        "mse_transaciton_layout_size": [4,32,1],
-        "mse_transaciton_layout_size_log": [0, 2, 5+2], 
+        # !!!!!!!!!!
+        "mse_transaciton_layout_size": [4-1,32-1,1-1],
+        "mse_transaciton_layout_size_log": [2, 5+2, 0], 
         "mse_transaciton_total_size": 1*4*32,
-        "mse_transaciton_mult": [4, 2, 1], # [56*4, 4, 4*56*56]
+
+        "mse_transaciton_mult": [56, 4, 4*56*56], # [56*4, 4, 4*56*56]
         "mse_map_matrix_b": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15][::-1],  # 十进制/十六进制都可
         "mse_padding_reg_value": 0,
         "mse_padding_valid": [0,1,1],
         "mse_padding_low_bound": [0,1,1],
-        "mse_padding_up_bound": [63, 31, 31],
+        "mse_padding_up_bound": [63, 33, 33],
 
         "mse_branch_valid": [0,1,1],
+        "mse_branch_low_bound": [0,0,0],
+        "mse_branch_up_bound": [63,33,33],
+
+        "mse_buf_spatial_stride": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15][::-1],
+        "mse_buf_spatial_size": 16, # 0 base
+    }
+    sheet6_data.append(rd_mse_params_0)
+    cc.se_rd_mse.get_config_bits(rd_mse_params_0, 1)
+    
+
+    # weight
+    rd_mse_params_1 = {
+        "mse_enable": 1,
+
+        # mem_inport_src_id：假设有 NUM_mem_inport_src_id 个，每个占 WIDTH_mem_inport_src_id_each bit
+        # 输入十进制数组（左边元素将放在更高位）
+        #port2 port1 port0
+        "mse_mem_idx_mode" : [AGMode.KEEP, AGMode.CONSTANT, AGMode.BUFFER],
+         # keep_last_index：有 NUM 个，每个占 WIDTH_xxx_each 位
+        "mse_mem_idx_keep_last_index": [2, 0, 5],  # 3个元素，每个3bit
+        "mem_inport_src_id": [5, 10, 10],  # 举例：3,1,0
+        "mse_mem_idx_constant" : [0, 0, 0],
+        "mse_buf_idx_mode": [BAGMode.KEEP, BAGMode.BUFFER],        # [row, col]
+        "mse_buf_idx_keep_last_index": [6,0],   # [row, col]
+
+        "mse_pingpong_enable": 1,
+        "mse_pingpong_last_index": 4, 
+
+        "mse_stream_base_addr": 0x20_0000,
+        "mse_transaciton_layout_size": [4-1,32-1,1-1],
+        "mse_transaciton_layout_size_log": [2, 7, 0],
+        "mse_transaciton_total_size": 1*4*32,
+        "mse_transaciton_mult": [64, 4, 64*64], # [56*4, 4, 4*56*56]
+        "mse_map_matrix_b": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15][::-1],  # 十进制/十六进制都可
+        "mse_padding_reg_value": 0,
+        "mse_padding_valid": [0,0,0],
+        "mse_padding_low_bound": [0,0,0],
+        "mse_padding_up_bound": [63, 31, 31],
+
+        "mse_branch_valid": [0,0,0],
         "mse_branch_low_bound": [0,0,0],
         "mse_branch_up_bound": [63,31,31],
 
         "mse_buf_spatial_stride": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15][::-1],
-        "mse_buf_spatial_size": 16-1, # 0 base
+        "mse_buf_spatial_size": 16, # 0 base
     }
-    sheet6_data.append(rd_mse_params_0)
-    cc.se_rd_mse.get_config_bits(rd_mse_params_0, 2)
-    
-
-    # weight
-    # rd_mse_params_1 = {
-    #     "mse_enable": 1,
-
-    #     # mem_inport_src_id：假设有 NUM_mem_inport_src_id 个，每个占 WIDTH_mem_inport_src_id_each bit
-    #     # 输入十进制数组（左边元素将放在更高位）
-    #     #port2 port1 port0
-    #     "mse_mem_idx_mode" : [AGMode.KEEP, AGMode.CONSTANT, AGMode.BUFFER],
-    #      # keep_last_index：有 NUM 个，每个占 WIDTH_xxx_each 位
-    #     "mse_mem_idx_keep_last_index": [2, 0, 5],  # 3个元素，每个3bit
-    #     "mem_inport_src_id": [5, 10, 8],  # 举例：3,1,0
-    #     "mse_mem_idx_constant" : [0, 0, 0],
-    #     "mse_buf_idx_mode": [BAGMode.KEEP, BAGMode.BUFFER],        # [row, col]
-    #     "mse_buf_idx_keep_last_index": [6,0],   # [row, col]
-
-    #     "mse_pingpong_enable": 1,
-    #     "mse_pingpong_last_index": 4, 
-
-    #     "mse_stream_base_addr": 0x20_0000,
-    #     "mse_transaciton_layout_size": [1,32,4],
-    #     "mse_transaciton_layout_size_log": [0, 0, 5],
-    #     "mse_transaciton_total_size": 1*4*32,
-    #     "mse_transaciton_mult": [4*64, 4, 4*64*9], # [56*4, 4, 4*56*56]
-    #     "mse_map_matrix_b": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15][::-1],  # 十进制/十六进制都可
-    #     "mse_padding_reg_value": 0,
-    #     "mse_padding_valid": [0,0,0],
-    #     "mse_padding_low_bound": [0,0,0],
-    #     "mse_padding_up_bound": [63, 31, 31],
-
-    #     "mse_branch_valid": [0,0,0],
-    #     "mse_branch_low_bound": [0,0,0],
-    #     "mse_branch_up_bound": [63,31,31],
-
-    #     "mse_buf_spatial_stride": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15][::-1],
-    #     "mse_buf_spatial_size": 16-1, # 0 base
-    # }
-    # sheet6_data.append(rd_mse_params_1)
-    # cc.se_rd_mse.get_config_bits(rd_mse_params_1, 1)
+    sheet6_data.append(rd_mse_params_1)
+    cc.se_rd_mse.get_config_bits(rd_mse_params_1, 0)
 
     all_data["SE_RD_MSE_Config"] = sheet6_data
 
@@ -412,84 +424,90 @@ if __name__ == "__main__":
     # buffer manager cluster
     # =================================
     sheet7_data = []
-    # bmc_params_0 = {
-    #     "buffer_enable": 1,
-    #     "buf_wr_src_id": 0,
-    #     "buffer_life_time": 3,  # 示例
-    #     "buffer_mode": 0,
-    #     "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
-    # }
-    # sheet7_data.append(bmc_params_0)
-    # cc.buffer_manager_cluster.get_config_bits(bmc_params_0, 0)
+    bmc_params_0 = {
+        "buffer_enable": 1,
+        "buf_wr_src_id": 0,
+        "buffer_life_time": 3,  # 示例
+        "buffer_mode": 0,
+        "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
+    }
+    sheet7_data.append(bmc_params_0)
+    cc.buffer_manager_cluster.get_config_bits(bmc_params_0, 0)
 
-    # bmc_params_1 = {
-    #     "buffer_enable": 1,
-    #     "buf_wr_src_id": 0,
-    #     "buffer_life_time": 3,  # 示例
-    #     "buffer_mode": 0,
-    #     "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
-    # }
-    # sheet7_data.append(bmc_params_1)
-    # cc.buffer_manager_cluster.get_config_bits(bmc_params_1, 1)
+    bmc_params_1 = {
+        "buffer_enable": 1,
+        "buf_wr_src_id": 0,
+        "buffer_life_time": 3,  # 示例
+        "buffer_mode": 0,
+        "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
+    }
+    sheet7_data.append(bmc_params_1)
+    cc.buffer_manager_cluster.get_config_bits(bmc_params_1, 1)
 
-    # bmc_params_2 = {
-    #     "buffer_enable": 1,
-    #     "buf_wr_src_id": 0,
-    #     "buffer_life_time": 3,  # 示例
-    #     "buffer_mode": 1,
-    #     "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
-    # }
-    # cc.buffer_manager_cluster.get_config_bits(bmc_params_2, 2)
-
-    # bmc_params_3 = {
-    #     "buffer_enable": 1,
-    #     "buf_wr_src_id": 0,
-    #     "buffer_life_time": 3,  # 示例
-    #     "buffer_mode": 1,
-    #     "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
-    # }
-    # sheet7_data.append(bmc_params_3)
-    # cc.buffer_manager_cluster.get_config_bits(bmc_params_3, 3)
-
-    bmc_params_4 = {
+    bmc_params_2 = {
         "buffer_enable": 1,
         "buf_wr_src_id": 0,
         "buffer_life_time": 3,  # 示例
         "buffer_mode": 1,
         "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
     }
-    sheet7_data.append(bmc_params_4)
-    cc.buffer_manager_cluster.get_config_bits(bmc_params_4, 4)
+    cc.buffer_manager_cluster.get_config_bits(bmc_params_2, 2)
 
-    # bmc_params_5 = {
+    bmc_params_3 = {
+        "buffer_enable": 1,
+        "buf_wr_src_id": 0,
+        "buffer_life_time": 3,  # 示例
+        "buffer_mode": 1,
+        "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
+    }
+    sheet7_data.append(bmc_params_3)
+    cc.buffer_manager_cluster.get_config_bits(bmc_params_3, 3)
+
+    # bmc_params_4 = {
     #     "buffer_enable": 1,
     #     "buf_wr_src_id": 0,
-    #     "buffer_life_time": 1,  # 示例
-    #     "buffer_mode": 0,
+    #     "buffer_life_time": 3,  # 示例
+    #     "buffer_mode": 1,
     #     "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
     # }
-    # sheet7_data.append(bmc_params_5)
-    # cc.buffer_manager_cluster.get_config_bits(bmc_params_5, 5)
+    # sheet7_data.append(bmc_params_4)
+    # cc.buffer_manager_cluster.get_config_bits(bmc_params_4, 4)
+
+    bmc_params_5 = {
+        "buffer_enable": 1,
+        "buf_wr_src_id": 0,
+        "buffer_life_time": 0,  # 示例
+        "buffer_mode": 0,
+        "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
+    }
+    sheet7_data.append(bmc_params_5)
+    cc.buffer_manager_cluster.get_config_bits(bmc_params_5, 5)
     all_data["Buffer_Manager_Cluster_Config"] = sheet7_data
 
     # =================================
     # pe array
     # =================================
 
-    # sheet8_data = []
-    # spa_params = {
-    #     "sa_inport_enable":        [1, 1, 1],        # 按索引 [0..2]
-    #     "sa_inport_pingpong_en":   [0, 1, 1],
-    #     "sa_inport_pingpong_last_index": [0, 3, 3],
-    #     "sa_pe_computation_data_type":  0,            # 示例
-    #     "sa_pe_config_last_index":      1,          # 示例
-    #     "sa_outport_major":             0,
-    #     "sa_outport_fp32to16":          0,
-    # }
-    # cc.special_array.get_config_bits(spa_params, 0)
-    # sheet8_data.append(spa_params)
+    sheet8_data = []
+    spa_params = {
+        # port0 port1 port2
+        "sa_inport_enable":        [1, 1, 0],        # 按索引 [0..2]
+        "sa_inport_pingpong_en":   [1, 1, 0],
+        # pe array什么时候切换buffer
+        "sa_inport_pingpong_last_index": [5, 5, 0],
+        "sa_pe_computation_data_type":  0,            # 示例
+        # 什么时候row换完
+        # "sa_pe_keep_last_index":        5,          # 示例
+        # 什么时候累加完成
+        "sa_pe_transout_last_index":    1,          # 示例
+        "sa_pe_bias_enable":            0,
+        "sa_outport_major":             0,
+        "sa_outport_fp32to16":          0,
+    }
+    cc.special_array.get_config_bits(spa_params, 0)
+    sheet8_data.append(spa_params)
 
-    # all_data["Special_Array_Config"] = sheet8_data
+    all_data["Special_Array_Config"] = sheet8_data
 
 
     # generator Excel

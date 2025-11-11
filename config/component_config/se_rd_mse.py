@@ -89,7 +89,7 @@ N_mse_mem_idx_constant           = MSE_MEM_AG_INPORT_NUM
 def _compute_total_len():
     total = 0
     for e, n in [
-        (5,1),
+        (4,1),
         (E_mse_enable, N_mse_enable),
         (E_mse_mem_idx_keep_mode, N_mse_mem_idx_keep_mode),
         (E_mse_mem_idx_keep_last_index, N_mse_mem_idx_keep_last_index),
@@ -240,9 +240,11 @@ def get_config_bits(params, idx):
 
     #     "mse_stream_base_addr": 0x10_0000,
     #     "mse_transaciton_layout_size": [4,32,1],
-    #     "mse_transaciton_layout_size_log": [0, 2, 5+2],
+
+    #     "mse_transaciton_layout_size_log": [2, 5+2, 0],
     #     "mse_transaciton_total_size": 1*4*32,
     #     "mse_transaciton_mult": [4, 2, 1], # [56*4, 4, 4*56*56]
+
     #     "mse_map_matrix_b": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15][::-1],  # 十进制/十六进制都可
     #     "mse_padding_reg_value": 0,
     #     "mse_padding_valid": [0,1,1],
@@ -254,22 +256,23 @@ def get_config_bits(params, idx):
     #     "mse_branch_up_bound": [63,57,67],
 
     #     "mse_buf_spatial_stride": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15][::-1],
-    #     "mse_buf_spatial_size": 16-1, # 0 base
+    #     "mse_buf_spatial_size": 16, # 0 base
     # }
 
     params = params
 
+
+    # print(pack_field_decimal(params["mse_mem_idx_constant"], E_mse_mem_idx_constant, N_mse_mem_idx_constant))
+
     bit_fields = [
         # mse_enable
-        '0' * 5,
-        # pack_field_decimal(params["mse_enable"], E_mse_enable, N_mse_enable),
+        '0' * 4,
         pack_field_decimal(params["mse_mem_idx_mode"], E_mse_mem_idx_keep_mode, N_mse_mem_idx_keep_mode),
         pack_field_decimal(params["mse_mem_idx_keep_last_index"], E_mse_mem_idx_keep_last_index, N_mse_mem_idx_keep_last_index),
         # mem_inport_src_id
 
         pack_field_decimal(params["mem_inport_src_id"], E_mem_inport_src_id, N_mem_inport_src_id),
-        # pack_field_decimal(params["mse_mem_idx_constant"], E_mse_mem_idx_constant, N_mse_mem_idx_constant),
-
+        pack_field_decimal(params["mse_mem_idx_constant"][::-1], E_mse_mem_idx_constant, N_mse_mem_idx_constant),
 
         pack_field_decimal(params["mse_buf_idx_mode"], E_mse_buf_idx_keep_mode, N_mse_buf_idx_keep_mode),
 
@@ -321,7 +324,7 @@ def get_config_bits(params, idx):
 
         pack_field_decimal(params["mse_buf_spatial_size"], E_mse_buf_spatial_size, N_mse_buf_spatial_size),
 
-        pack_field_decimal(params["mse_mem_idx_constant"][::-1], E_mse_mem_idx_constant, N_mse_mem_idx_constant),
+        # pack_field_decimal(params["mse_mem_idx_constant"][::-1], E_mse_mem_idx_constant, N_mse_mem_idx_constant),
 
 
     ]

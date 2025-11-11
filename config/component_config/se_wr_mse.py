@@ -87,7 +87,7 @@ N_mse_mem_idx_constant           = MSE_MEM_AG_INPORT_NUM
 #    顺序要与 bit_fields 拼接顺序一致
 # ===================================================
 FIELD_SPECS = [
-    ("config_padding",                1,          1),  # 填充位，凑齐342位
+    ("config_padding",                0,          1),  # 填充位，凑齐342位
     ("mse_enable",                   E_mse_enable,                   N_mse_enable),
     ("mse_mem_idx_mode",             E_mse_mem_idx_keep_mode,        N_mse_mem_idx_keep_mode),
     ("mse_mem_idx_keep_last_index",  E_mse_mem_idx_keep_last_index,  N_mse_mem_idx_keep_last_index),
@@ -216,7 +216,7 @@ def get_config_bits(params, idx):
     # ========================
     bit_fields = []
 
-    bit_fields.append('0'* 1 )
+    # bit_fields.append('0'* 1 )
     # bit_fields.append(pack_field_decimal(params["mse_enable"], E_mse_enable, N_mse_enable))
     bit_fields.append(pack_field_decimal(params["mse_mem_idx_mode"], E_mse_mem_idx_keep_mode, N_mse_mem_idx_keep_mode))
     bit_fields.append(pack_field_decimal(params["mse_mem_idx_keep_last_index"], E_mse_mem_idx_keep_last_index, N_mse_mem_idx_keep_last_index))
