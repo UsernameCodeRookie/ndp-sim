@@ -54,19 +54,28 @@ class MemoryAGConfig1(BaseConfigModule):
         idx_size = cfg.get("idx_size", None)
         
         if idx_size is not None:
-            idx_size = [_ if _ is not None else 1 for _ in idx_size]
-            self.values["transcation_spatial_size_log"] = [int(log2(idx_size[2])), 
-                                                           int(log2(idx_size[1] * idx_size[2])), 
-                                                           int(log2(idx_size[0] * idx_size[1] * idx_size[2]))]
-            self.values["transcation_total_size"] = idx_size[0] * idx_size[1] * idx_size[2]
+            # idx_size from JSON is size-1, so add 1 to get actual size
+            # But if it's 0, it means that dimension is disabled (size=1)
+            actual_size = [(s + 1) if s is not None and s > 0 else 1 for s in idx_size]
+            
+            self.values["transcation_spatial_size_log"] = [
+                int(log2(actual_size[2])) if actual_size[2] > 0 else 0, 
+                int(log2(actual_size[1] * actual_size[2])) if actual_size[1] * actual_size[2] > 0 else 0, 
+                int(log2(actual_size[0] * actual_size[1] * actual_size[2])) if actual_size[0] * actual_size[1] * actual_size[2] > 0 else 0
+            ]
+            self.values["transcation_total_size"] = actual_size[0] * actual_size[1] * actual_size[2]
             
     @staticmethod
     def idx_keep_mode_map():
-        '''Map string idx_keep_mode names to integers.'''
+        '''Map string/int idx_keep_mode names to integers matching hardware encoding.'''
         return {
             None: 0,
-            "buffer": 1,
-            "keep": 2,
+            0: 0,  # BUFFER
+            1: 1,  # KEEP
+            2: 2,  # CONSTANT
+            "buffer": 0,
+            "keep": 1,
+            "constant": 2,
         }
 
 class BufferAGConfig(BaseConfigModule):
@@ -84,11 +93,13 @@ class BufferAGConfig(BaseConfigModule):
         
     @staticmethod
     def idx_keep_mode_map():
-        '''Map string idx_keep_mode names to integers.'''
+        '''Map string/int idx_keep_mode names to integers matching hardware encoding.'''
         return {
             None: 0,
-            "buffer": 1,
-            "keep": 2,
+            0: 0,  # BUFFER
+            1: 1,  # KEEP
+            "buffer": 0,
+            "keep": 1,
         }
 
 class StreamCtrlConfig1(BaseConfigModule):

@@ -3,15 +3,15 @@ from bitstream.config.base import BaseConfigModule
 class BufferConfig(BaseConfigModule):
     """Buffer manager config with index (buffer0, buffer1, ...)."""
 
+    # Based on register_map:
+    # enable(1) + dst_port(1) + buffer_life_time(2) + mode(1) + mask(8) = 13 bits
     FIELD_MAP = [
-        # rw: "read" -> 0, "write" -> 1
-        ("rw", 1, lambda x: 0 if x == "read" else 1),
-        ("dst_port", 2),
         ("enable", 1),
+        ("dst_port", 1),  # buf_wr_src_id in hardware: 0=SpecArray, 1=GeneArray
         ("buffer_life_time", 2),
         ("mode", 1),
         # "mask": List[int] -> Bit integer
-        ("mask", 8, lambda x: int("".join(str(v) for v in x), 2)),
+        ("mask", 8, lambda x: int("".join(str(v) for v in x), 2) if isinstance(x, list) else x),
     ]
 
     def __init__(self, idx: int):

@@ -66,8 +66,10 @@ class Mapper:
         # Special case: ROW_LC shares its parent GROUP’s resource
         if node.endswith("ROW_LC") or node.endswith("COL_LC"):
             group_prefix = node.split(".")[0]  # e.g., GROUP0 from GROUP0.ROW_LC
-            # If the parent group isn’t allocated yet, allocate it first
-            return self.allocate(group_prefix)
+            # Ensure the parent group is allocated and reuse its resource.
+            parent_res = self.allocate(group_prefix)
+            self.node_to_resource[node] = parent_res
+            return parent_res
 
         # Normal allocation — pick the next available resource from the pool
         idx = self.resource_counters[res_type]
@@ -147,6 +149,8 @@ class Mapper:
 
         def backtrack(index: int, current_mapping: Dict[str, str], used_resources: Set[str]) -> Optional[Dict[str, str]]:
             if index >= len(self.nodes):
+                existing_mapping = self.node_to_resource.copy()
+
                 for c in connections:
                     src, dst = c["src"], c["dst"]
                     
@@ -160,8 +164,9 @@ class Mapper:
                         dst_type, dst_idx = self.get_type(dst), int(current_mapping[dst][len(self.get_type(dst)):])
                         if not all(constraint.check(src_type, src_idx, dst_type, dst_idx) for constraint in self.constraints):
                             return None
-                self.node_to_resource = current_mapping
-                return current_mapping
+                existing_mapping.update(current_mapping)
+                self.node_to_resource = existing_mapping
+                return self.node_to_resource
 
             node = self.nodes[index]
             node_type = self.get_type(node)

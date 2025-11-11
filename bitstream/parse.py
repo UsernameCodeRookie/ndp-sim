@@ -41,8 +41,9 @@ def bits_to_binfile(bits_list: List[Bit], byteorder: str = "little"):
     return bin
     
 if __name__ == "__main__":
-    # Load JSON configuration
-    with open("./data/gemm_config_ringbroadcast.json", "r") as f:
+    # Load JSON configuration - use aligned config for testing
+    config_file = "./data/gemm_config_aligned_with_config.json"
+    with open(config_file, "r") as f:
         cfg = json.load(f)
 
     # Initialize modules
@@ -58,11 +59,34 @@ if __name__ == "__main__":
 
     total_bits = []
     print("Configuration Bitstream:")
-    # Process each module
+    # Process each module - first load all JSON to register all nodes
     for m in modules:
         m.from_json(cfg)
+    
+    # Now allocate resources and resolve node indices BEFORE generating bits
+    from bitstream.index import NodeIndex
+    node_graph = NodeGraph.get()
+    node_graph.allocate_resources()
+    node_graph.search_mapping()
+    # Resolve all logical node indices to physical resource IDs ahead of encoding
+    NodeIndex.resolve_all()
+    
+    # Separate modules by type for physical-order output
+    dram_lc_modules = [m for m in modules if isinstance(m, DramLoopControlConfig)]
+    buffer_lc_modules = [m for m in modules if isinstance(m, BufferLoopControlGroupConfig)]
+    lc_pe_modules = [m for m in modules if isinstance(m, LCPEConfig)]
+    stream_modules = [m for m in modules if isinstance(m, StreamConfig)]
+    other_modules = [m for m in modules if not isinstance(m, (DramLoopControlConfig, BufferLoopControlGroupConfig, LCPEConfig, StreamConfig))]
+    
+    # Sort DRAM LC modules by physical_index
+    dram_lc_modules.sort(key=lambda m: m.physical_index if hasattr(m, 'physical_index') and m.physical_index is not None else 999)
+    
+    # Reconstruct modules in physical order
+    ordered_modules = dram_lc_modules + buffer_lc_modules + lc_pe_modules + stream_modules + other_modules
+    
+    # Now generate bits with resolved node IDs in physical order
+    for m in ordered_modules:
         bits = m.to_bits()
-        # print(f"{m.__class__.__name__}: {[str(b) for b in bits]}")
         total_bits.extend(bits)
         
         # Dump field values vs binary
@@ -75,10 +99,10 @@ if __name__ == "__main__":
         f.write(bin)
         
     # Visualize the configuration
-    visualize_modules(modules, save_path="./data/bitstream.png")
+    # visualize_modules(modules, save_path="./data/bitstream.png")
     
     # Print NodeGraph summary
-    NodeGraph.get().summary()
+    # NodeGraph.get().summary()
     
     
     

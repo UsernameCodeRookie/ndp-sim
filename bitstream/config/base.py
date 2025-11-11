@@ -37,7 +37,7 @@ class BaseConfigModule(ConfigModule):
             if name in cfg:
                 self.values[name] = cfg[name]
 
-    def _encode_list(self, val: list, width: int) -> list[int]:
+    def _encode_list(self, val: list, width: int) -> list[tuple[int, int]]:
         """Encode a list of integers (or NodeIndex/NodeIndexFuture) into chunks of <=64-bit ints."""
         
         # Convert NodeIndex/NodeIndexFuture to int
@@ -55,14 +55,14 @@ class BaseConfigModule(ConfigModule):
         bin_str = "".join(format(v, f"0{bits_per_elem}b") for v in val_ints)
 
         # Split into 64-bit words
-        chunks = []
+        chunks: list[tuple[int, int]] = []
         for i in range(0, len(bin_str), 64):
             sub = bin_str[i:i+64]
-            chunks.append(int(sub, 2))
+            chunks.append((int(sub, 2), len(sub)))
         return chunks
 
-    def _to_list_ints(self, val, mapper: Callable = None, width: int = None) -> List[int]:
-        """Convert a field value into a list of ints (each <=64-bit)."""
+    def _encode_field(self, val, mapper: Callable = None, width: int = None) -> List[tuple[int, int]]:
+        """Convert a field value into one or more (value,width) tuples."""
         if mapper:
             argc = mapper.__code__.co_argcount
             if argc == 2:
@@ -71,9 +71,9 @@ class BaseConfigModule(ConfigModule):
                 val = mapper(val)
 
         if val is None:
-            return [0]
+            return [(0, width if width is not None else 1)]
         if isinstance(val, (int, bool)) or hasattr(val, "__int__"):
-            return [int(val)]
+            return [(int(val), width if width is not None else max(int(val).bit_length(), 1))]
         if isinstance(val, list):
             return self._encode_list(val, width)
 
@@ -85,9 +85,9 @@ class BaseConfigModule(ConfigModule):
         for entry in self.FIELD_MAP:
             name, width, *rest = entry
             mapper = rest[0] if rest else None
-            ints = self._to_list_ints(self.values[name], mapper, width)
-            for word in ints:
-                bits.append(Bit(word, min(width, 64)))
+            encoded_parts = self._encode_field(self.values[name], mapper, width)
+            for word, part_width in encoded_parts:
+                bits.append(Bit(word, part_width))
         return bits
     
     def dump(self, indent: int = 0):
@@ -108,10 +108,10 @@ class BaseConfigModule(ConfigModule):
                 name, width, *rest = entry
                 mapper = rest[0] if rest else None
                 val = self.values.get(name, None)
-                ints = self._to_list_ints(val, mapper, width)
+                encoded_parts = self._encode_field(val, mapper, width)
 
                 encoded = [
-                    bin(i)[2:].zfill(width) if width <= 64 else hex(i)
-                    for i in ints
+                    bin(value)[2:].zfill(part_width) if part_width <= 64 else hex(value)
+                    for value, part_width in encoded_parts
                 ]
                 print(f"{prefix}{name:<30} | value={str(val):<35} | encoded={encoded}")

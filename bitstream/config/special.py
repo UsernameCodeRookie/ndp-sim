@@ -5,9 +5,11 @@ from typing import List
 from bitstream.bit import Bit
 
 class SpecialConfig(BaseConfigModule):
+    # Based on register_map:
+    # data_type(2) + index_end(3) = 5 bits
     FIELD_MAP = [
         ("data_type", 2, lambda x: SpecialConfig.data_type_map()[x] if x is not None else 0),
-        ("index_end", 3),
+        ("index_end", 3),  # sa_pe_config_last_index in hardware
     ]
     
     @classmethod
@@ -18,12 +20,12 @@ class SpecialConfig(BaseConfigModule):
         }
 
 class InportConfig(BaseConfigModule):
+    # Based on register_map:
+    # enable(1) + pingpong_en(1) + pingpong_last_index(3) = 5 bits (per inport)
     FIELD_MAP = [
-        ("enable", 1),
-        ("pingpong_en", 1),
-        ("pingpong_last_index", 3),
-        ("src_ping_id", 3),
-        ("src_pong_id", 3),
+        ("enable", 1),  # sa_inport_enable
+        ("pingpong_en", 1),  # sa_inport_pingpong_en
+        ("pingpong_last_index", 3),  # sa_inport_pingpong_last_index
     ]
     
     def __init__(self, idx: int):
@@ -36,10 +38,11 @@ class InportConfig(BaseConfigModule):
         super().from_json(cfg)
 
 class OutportConfig(BaseConfigModule):
+    # Based on register_map:
+    # mode(1) + fp32to16(1) = 2 bits
     FIELD_MAP = [
-        ("enable", 1),
-        ("mode", 1, lambda x: 1 if x == "col" else 0),
-        ("fp32to16", 1, lambda x: 0 if str(x).lower() == "true" else 1),
+        ("mode", 1, lambda x: 1 if x == "col" else 0),  # sa_outport_major: col=1, row=0
+        ("fp32to16", 1, lambda x: 1 if str(x).lower() == "true" else 0),  # sa_outport_fp32to16
     ]
     
     def from_json(self, cfg: dict):
