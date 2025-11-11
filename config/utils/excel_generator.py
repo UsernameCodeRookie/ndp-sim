@@ -13,7 +13,7 @@ def _to_cell_value(v):
     except AttributeError:
         return v
 
-def multiple_dicts_to_excel(data_dict, output_dir="output", file_name="multiple_sheets.xlsx",
+def multiple_dicts_to_excel(data_dict, output_dir="data", file_name="multiple_sheets.xlsx",
                             pad_with=0, max_col_width=80, padding=2):
     """
     - list/tuple 字段横向展开

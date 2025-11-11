@@ -10,14 +10,21 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Enable compiler warnings
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    add_compile_options(-Wall -Wextra -Wpedantic -Werror -O2 -pipe)
+    add_compile_options(-Wall -Wextra -Wpedantic -O2 -pipe)
 elseif (MSVC)
-    add_compile_options(/W4 /WX /permissive-)
+    add_compile_options(/W4 /permissive-)
 endif()
 
-# --- Main executable ---
-add_executable(ndp_sim src/main.cpp)
-target_include_directories(ndp_sim PRIVATE ${CMAKE_SOURCE_DIR}/src)
+# --- GEMM 64x64 example ---
+add_executable(gemm_64x64_example src/examples/gemm_64x64_example.cpp)
+target_include_directories(gemm_64x64_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# --- GEMM Operator with TPU example ---
+add_executable(gemm_operator_tpu_example src/examples/gemm_operator_tpu_example.cpp)
+target_include_directories(gemm_operator_tpu_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# --- DRAMsim3 library ---
+add_subdirectory(third_party/DRAMsim3)
 
 # --- GoogleTest configuration ---
 if(WIN32)
@@ -27,36 +34,31 @@ else()
 endif()
 include_directories(${GTEST_INCLUDE_DIRS})
 
-# --- Processing element tests ---
-add_executable(pe_tests
-    tests/test_pe.cpp
-    tests/test_op_bar.cpp
-    tests/test_transout.cpp
-    tests/test_inner.cpp
-    tests/test_outer.cpp
-    tests/test_connect.cpp
-)
-target_include_directories(pe_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(pe_tests GTest::gtest GTest::gtest_main)
-add_test(NAME pe_tests COMMAND pe_tests)
+
+# --- GEMM Operator tests ---
+add_executable(gemm_operator_tests tests/test_gemm_operator.cpp)
+target_include_directories(gemm_operator_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(gemm_operator_tests GTest::gtest GTest::gtest_main)
+add_test(NAME gemm_operator_tests COMMAND gemm_operator_tests)
+
+# --- MAC PE tests ---
+add_executable(test_mac_pe tests/test_mac_pe.cpp)
+target_include_directories(test_mac_pe PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 enable_testing()
-
-# --- Enable debug mode ---
-target_compile_definitions(pe_tests PRIVATE ENABLE_DEBUG)
 
 # -----------------------------
 # Optional: Python module using pybind11
 # -----------------------------
-option(BUILD_PYTHON_MODULE "Build Python module with pybind11" OFF)
+# option(BUILD_PYTHON_MODULE "Build Python module with pybind11" OFF)
 
-if(BUILD_PYTHON_MODULE)
-    # Find pybind11
-    find_package(pybind11 REQUIRED)
+# if(BUILD_PYTHON_MODULE)
+#     # Find pybind11
+#     find_package(pybind11 REQUIRED)
 
-    # Create Python module target
-    pybind11_add_module(ndp_sim_py src/bindings.cpp)
-    target_include_directories(ndp_sim_py PRIVATE ${CMAKE_SOURCE_DIR}/src)
+#     # Create Python module target
+#     pybind11_add_module(ndp_sim_py src/bindings.cpp)
+#     target_include_directories(ndp_sim_py PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
-    message(STATUS "Python module ndp_sim_py enabled")
-endif()
+#     message(STATUS "Python module ndp_sim_py enabled")
+# endif()

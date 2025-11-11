@@ -1,4 +1,9 @@
 from typing import List, Optional, Dict
+from bitstream.config.mapper import NodeGraph
+
+"""
+TODO: Use mapper to place node instead of direct NodeIndex creation in config modules.
+"""
 
 class NodeIndex:
     """Represents a placeholder for a node index, resolved later in batch."""
@@ -7,22 +12,24 @@ class NodeIndex:
     _registry: Dict[str, "NodeIndex"] = {}
     _counter: int = 0
 
-    def __new__(cls, node_name: str):
+    def __new__(cls, name: str):
         # If a NodeIndex with the same name exists, return it
-        if node_name in cls._registry:
-            return cls._registry[node_name]
+        if name in cls._registry:
+            return cls._registry[name]
         instance = super().__new__(cls)
         return instance
 
-    def __init__(self, node_name: str):
+    def __init__(self, name: str):
         # Avoid re-initialization if already registered
         if hasattr(self, "_initialized"):
             return
-        self.node_name = node_name
+        self.node_name = name
         self._index: Optional[int] = None
         NodeIndex._queue.append(self)
-        NodeIndex._registry[node_name] = self
+        NodeIndex._registry[name] = self
         self._initialized = True
+        
+        NodeGraph.get().add_node(name)
 
     @classmethod
     def resolve_all(cls):
@@ -43,5 +50,14 @@ class NodeIndex:
     def __int__(self):
         return self.index
 
-    def __repr__(self):
-        return f"<NodeIndex {self.node_name} -> {self._index}>"
+class Connect:
+    """Represents a connection between two nodes in the dataflow graph."""
+
+    def __init__(self, src: str, dst: NodeIndex):
+        self.src = NodeIndex(src)
+        self.dst = dst
+        
+        NodeGraph.get().connect(src, dst.node_name)
+        
+    def __int__(self):
+        return int(self.src)

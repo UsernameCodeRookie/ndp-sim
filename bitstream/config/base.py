@@ -64,7 +64,11 @@ class BaseConfigModule(ConfigModule):
     def _to_list_ints(self, val, mapper: Callable = None, width: int = None) -> List[int]:
         """Convert a field value into a list of ints (each <=64-bit)."""
         if mapper:
-            val = mapper(val)
+            argc = mapper.__code__.co_argcount
+            if argc == 2:
+                val = mapper(self, val)
+            else:
+                val = mapper(val)
 
         if val is None:
             return [0]
