@@ -1,13 +1,16 @@
 #ifndef OPERATOR_BASE_H
 #define OPERATOR_BASE_H
 
+#include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 // Forward declarations
-class SystolicArrayTPU;
+class SystolicArrayTPUBase;
 
 namespace Operators {
 
@@ -92,8 +95,20 @@ class Tensor {
   void fill(T value) { std::fill(data_.begin(), data_.end(), value); }
 
   void fillRandom(T min_val = 0, T max_val = 10) {
-    for (auto& val : data_) {
-      val = min_val + (rand() % (max_val - min_val + 1));
+    if constexpr (std::is_integral_v<T>) {
+      int min_i = static_cast<int>(min_val);
+      int max_i = static_cast<int>(max_val);
+      if (max_i < min_i) std::swap(max_i, min_i);
+      int span = max_i - min_i;
+      for (auto& val : data_) {
+        int offset = span > 0 ? (rand() % (span + 1)) : 0;
+        val = static_cast<T>(min_i + offset);
+      }
+    } else if constexpr (std::is_floating_point_v<T>) {
+      for (auto& val : data_) {
+        float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        val = static_cast<T>(min_val + r * (max_val - min_val));
+      }
     }
   }
 
@@ -145,7 +160,7 @@ class OperatorBase {
   /**
    * @brief Bind to a TPU for hardware acceleration
    */
-  virtual void bindTPU(std::shared_ptr<SystolicArrayTPU> tpu) {
+  virtual void bindTPU(std::shared_ptr<SystolicArrayTPUBase> tpu) {
     tpu_ = tpu;
     backend_ = ExecutionBackend::TPU;
   }
@@ -188,7 +203,7 @@ class OperatorBase {
   /**
    * @brief Get bound TPU
    */
-  std::shared_ptr<SystolicArrayTPU> getTPU() const { return tpu_; }
+  std::shared_ptr<SystolicArrayTPUBase> getTPU() const { return tpu_; }
 
   virtual void printInfo() const {
     std::cout << "Operator: " << name_ << " [" << getOpType() << "]\n";
@@ -205,12 +220,15 @@ class OperatorBase {
         break;
     }
     std::cout << "\n";
+    if (hasTPU()) {
+      std::cout << "  TPU Precision: " << tpu_->getPrecisionName() << "\n";
+    }
   }
 
  protected:
   std::string name_;
   bool verbose_;
-  std::shared_ptr<SystolicArrayTPU> tpu_;
+  std::shared_ptr<SystolicArrayTPUBase> tpu_;
   ExecutionBackend backend_;
 };
 

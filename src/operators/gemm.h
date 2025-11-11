@@ -1,7 +1,11 @@
 #ifndef GEMM_OPERATOR_H
 #define GEMM_OPERATOR_H
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <limits>
+#include <type_traits>
 
 #include "../components/tpu.h"
 #include "base.h"
@@ -20,11 +24,19 @@ namespace Operators {
  * Supports tiled computation for efficient memory access and parallelization
  * Can run on CPU (fallback) or TPU (hardware accelerated)
  */
-template <typename T = int>
+template <typename T = int,
+          typename PrecisionTraits = typename DefaultPrecisionTrait<T>::type>
 class GEMMOperator : public OperatorBase {
  public:
   GEMMOperator(const std::string& name = "GEMM")
       : OperatorBase(name), use_tiling_(false), tile_config_(16, 16, 16) {}
+
+  using Traits = PrecisionTraits;
+  using ValueType = typename Traits::ValueType;
+  using AccumulatorType = typename Traits::AccumulatorType;
+
+  static_assert(std::is_same_v<T, ValueType>,
+                "GEMMOperator data type must match precision trait value type");
 
   /**
    * @brief Set input tensors
@@ -139,13 +151,22 @@ class GEMMOperator : public OperatorBase {
    * - TPU provides only hardware primitives (MACs, memory)
    */
   void computeOnTPU() {
-    if (!tpu_) {
+    auto tpu_base = getTPU();
+    if (!tpu_base) {
       throw std::runtime_error("TPU not bound");
+    }
+
+    auto tpu =
+        std::dynamic_pointer_cast<SystolicArrayTPU<PrecisionTraits>>(tpu_base);
+    if (!tpu) {
+      throw std::runtime_error(
+          "Bound TPU precision does not match GEMM operator traits");
     }
 
     if (verbose_) {
       std::cout << "Computing GEMM on TPU: (" << M_ << "x" << K_ << ") * ("
-                << K_ << "x" << N_ << ") using hardware primitives\n";
+                << K_ << "x" << N_ << ") using hardware primitives ["
+                << tpu->getPrecisionName() << "]\n";
     }
 
     // Memory layout: simple linear allocation
@@ -154,32 +175,32 @@ class GEMMOperator : public OperatorBase {
     const uint32_t BASE_ADDR_C = 0x3000;
 
     // Step 1: Flatten and load matrices A and B into TPU memory
-    std::vector<int> A_flat(M_ * K_);
-    std::vector<int> B_flat(K_ * N_);
+    std::vector<ValueType> A_flat(M_ * K_);
+    std::vector<ValueType> B_flat(K_ * N_);
 
     for (size_t i = 0; i < M_; ++i) {
       for (size_t j = 0; j < K_; ++j) {
-        A_flat[i * K_ + j] = static_cast<int>(A_.at(i, j));
+        A_flat[i * K_ + j] = static_cast<ValueType>(A_.at(i, j));
       }
     }
 
     for (size_t i = 0; i < K_; ++i) {
       for (size_t j = 0; j < N_; ++j) {
-        B_flat[i * N_ + j] = static_cast<int>(B_.at(i, j));
+        B_flat[i * N_ + j] = static_cast<ValueType>(B_.at(i, j));
       }
     }
 
     // Use TPU primitive: writeMemoryBlock
-    tpu_->writeMemoryBlock(BASE_ADDR_A, A_flat);
-    tpu_->writeMemoryBlock(BASE_ADDR_B, B_flat);
+    tpu->writeMemoryBlock(BASE_ADDR_A, A_flat);
+    tpu->writeMemoryBlock(BASE_ADDR_B, B_flat);
 
     // Step 2: Reset all MAC units (using TPU primitive)
-    tpu_->resetAllMACs();
+    tpu->resetAllMACs();
 
     // Step 3: Perform GEMM computation using TPU primitives
     // Algorithm: Standard matrix multiplication with MAC units
-    size_t array_size = tpu_->getArraySize();
-    std::vector<int> C_flat(M_ * N_, 0);
+    size_t array_size = tpu->getArraySize();
+    std::vector<AccumulatorType> C_accum(M_ * N_, Traits::zeroAccumulator());
 
     // Iterate over K dimension (accumulation)
     for (size_t k = 0; k < K_; ++k) {
@@ -187,25 +208,30 @@ class GEMMOperator : public OperatorBase {
         std::cout << "  K-step: " << k << "/" << K_ << "\n";
       }
 
-      // Load A column and B row from memory (using TPU primitive)
-      std::vector<int> A_col = tpu_->readMemoryBlock(BASE_ADDR_A + k, 1);
-      std::vector<int> B_row = tpu_->readMemoryBlock(BASE_ADDR_B + k * N_, N_);
-
       // Process all output elements
       for (size_t i = 0; i < M_; ++i) {
         // Read A[i][k]
-        int a_val = tpu_->readMemory(BASE_ADDR_A + i * K_ + k);
+        ValueType a_val = tpu->readMemory(BASE_ADDR_A + i * K_ + k);
 
         for (size_t j = 0; j < N_; ++j) {
           // Read B[k][j]
-          int b_val = tpu_->readMemory(BASE_ADDR_B + k * N_ + j);
+          ValueType b_val = tpu->readMemory(BASE_ADDR_B + k * N_ + j);
 
           // Accumulate C[i][j] += A[i][k] * B[k][j]
-          C_flat[i * N_ + j] += a_val * b_val;
+          C_accum[i * N_ + j] =
+              Traits::accumulate(C_accum[i * N_ + j], a_val, b_val);
+
+          if (verbose_ && i < 4 && j < 4) {
+            auto current = Traits::fromAccumulator(C_accum[i * N_ + j]);
+            std::cout << "    TPU C[" << i << "][" << j
+                      << "] += " << Traits::toString(a_val) << " * "
+                      << Traits::toString(b_val) << " -> "
+                      << Traits::toString(current) << "\n";
+          }
 
           // If this element fits in the MAC array, use it for demonstration
           if (i < array_size && j < array_size) {
-            auto mac = tpu_->getMAC(i, j);  // Use TPU primitive: getMAC
+            auto mac = tpu->getMAC(i, j);  // Use TPU primitive: getMAC
             if (mac) {
               mac->setInputA(a_val);
               mac->setInputB(b_val);
@@ -218,10 +244,15 @@ class GEMMOperator : public OperatorBase {
     }
 
     // Step 4: Write results back to TPU memory (using TPU primitive)
-    tpu_->writeMemoryBlock(BASE_ADDR_C, C_flat);
+    std::vector<ValueType> C_values(M_ * N_, Traits::zeroValue());
+    for (size_t idx = 0; idx < C_values.size(); ++idx) {
+      C_values[idx] = Traits::fromAccumulator(C_accum[idx]);
+    }
+    tpu->writeMemoryBlock(BASE_ADDR_C, C_values);
 
     // Step 5: Read results from TPU memory
-    std::vector<int> C_result = tpu_->readMemoryBlock(BASE_ADDR_C, M_ * N_);
+    std::vector<ValueType> C_result =
+        tpu->readMemoryBlock(BASE_ADDR_C, M_ * N_);
 
     // Step 6: Copy to output tensor
     for (size_t i = 0; i < M_; ++i) {
@@ -246,9 +277,19 @@ class GEMMOperator : public OperatorBase {
 
     for (size_t i = 0; i < M_; ++i) {
       for (size_t j = 0; j < N_; ++j) {
-        T sum = 0;
+        ValueType sum = Traits::zeroValue();
         for (size_t k = 0; k < K_; ++k) {
-          sum += A_.at(i, k) * B_.at(k, j);
+          ValueType a_val = static_cast<ValueType>(A_.at(i, k));
+          ValueType b_val = static_cast<ValueType>(B_.at(k, j));
+          ValueType product = a_val * b_val;
+          sum += product;
+
+          if (verbose_ && i < 4 && j < 4) {
+            std::cout << "    CPU C[" << i << "][" << j
+                      << "] += " << Traits::toString(a_val) << " * "
+                      << Traits::toString(b_val) << " -> "
+                      << Traits::toString(sum) << "\n";
+          }
         }
         C_.at(i, j) = sum;
       }
@@ -315,9 +356,19 @@ class GEMMOperator : public OperatorBase {
                        size_t n_end, size_t k_start, size_t k_end) {
     for (size_t i = m_start; i < m_end; ++i) {
       for (size_t j = n_start; j < n_end; ++j) {
-        T sum = C_.at(i, j);  // Accumulate (important for K tiling)
+        ValueType sum = C_.at(i, j);  // Accumulate (important for K tiling)
         for (size_t k = k_start; k < k_end; ++k) {
-          sum += A_.at(i, k) * B_.at(k, j);
+          ValueType a_val = static_cast<ValueType>(A_.at(i, k));
+          ValueType b_val = static_cast<ValueType>(B_.at(k, j));
+          ValueType product = a_val * b_val;
+          sum += product;
+
+          if (verbose_ && i < 4 && j < 4) {
+            std::cout << "    CPU(tile) C[" << i << "][" << j
+                      << "] += " << Traits::toString(a_val) << " * "
+                      << Traits::toString(b_val) << " -> "
+                      << Traits::toString(sum) << "\n";
+          }
         }
         C_.at(i, j) = sum;
       }
@@ -366,7 +417,17 @@ bool verifyGEMM(const Tensor<T>& A, const Tensor<T>& B, const Tensor<T>& C,
         expected += A.at(i, k) * B.at(k, j);
       }
 
-      if (C.at(i, j) != expected) {
+      bool mismatch = false;
+      if constexpr (std::is_floating_point_v<T>) {
+        T diff = std::fabs(C.at(i, j) - expected);
+        T tolerance =
+            static_cast<T>(1e-3) * static_cast<T>(std::max<size_t>(1, K));
+        mismatch = diff > tolerance;
+      } else {
+        mismatch = (C.at(i, j) != expected);
+      }
+
+      if (mismatch) {
         all_correct = false;
         error_count++;
         if (verbose && error_count <= max_errors_to_print) {

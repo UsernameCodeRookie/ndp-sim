@@ -1,84 +1,101 @@
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <cstdlib>
+
+#include "../src/components/tpu.h"
 #include "../src/operators/gemm.h"
+#include "../src/scheduler.h"
 
 using namespace Operators;
+using FloatGEMM = GEMMOperator<float, Float32PrecisionTraits>;
+using FloatTensor = Tensor<float>;
 
 // Test fixture for GEMM operator tests
 class GEMMOperatorTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    // Setup code if needed
+    verbose_ = (std::getenv("GEMM_TEST_VERBOSE") != nullptr);
+    tpu_ = std::make_shared<SystolicArrayTPU<Float32PrecisionTraits>>(
+        "TestTPU", scheduler_, 1, 4);
+    tpu_->start();
+    if (verbose_) {
+      tpu_->setVerbose(true);
+    }
   }
 
-  void TearDown() override {
-    // Cleanup code if needed
-  }
+  void TearDown() override { tpu_.reset(); }
+
+  EventDriven::EventScheduler scheduler_;
+  std::shared_ptr<SystolicArrayTPU<Float32PrecisionTraits>> tpu_;
+  static constexpr float kTolerance = 1e-3f;
+
+  void configureVerbose(FloatGEMM& op) const { op.setVerbose(verbose_); }
+
+  bool verbose_ = false;
 };
 
 // Test small GEMM (2x2)
 TEST_F(GEMMOperatorTest, SmallGEMM_2x2) {
-  GEMMOperator<int> gemm("GEMM_2x2");
+  FloatGEMM gemm("GEMM_2x2");
+  configureVerbose(gemm);
+  gemm.bindTPU(tpu_);
 
-  Tensor<int> A(TensorShape{2, 2});
-  Tensor<int> B(TensorShape{2, 2});
+  FloatTensor A(TensorShape{2, 2});
+  FloatTensor B(TensorShape{2, 2});
 
-  // A = [[1, 2], [3, 4]]
-  A.at(0, 0) = 1;
-  A.at(0, 1) = 2;
-  A.at(1, 0) = 3;
-  A.at(1, 1) = 4;
+  A.at(0, 0) = 1.0f;
+  A.at(0, 1) = 2.0f;
+  A.at(1, 0) = 3.0f;
+  A.at(1, 1) = 4.0f;
 
-  // B = [[5, 6], [7, 8]]
-  B.at(0, 0) = 5;
-  B.at(0, 1) = 6;
-  B.at(1, 0) = 7;
-  B.at(1, 1) = 8;
+  B.at(0, 0) = 5.0f;
+  B.at(0, 1) = 6.0f;
+  B.at(1, 0) = 7.0f;
+  B.at(1, 1) = 8.0f;
 
   gemm.setInputs(A, B);
   gemm.compute();
 
-  const Tensor<int>& C = gemm.getOutput();
+  const FloatTensor& C = gemm.getOutput();
 
-  // C = [[19, 22], [43, 50]]
-  EXPECT_EQ(C.at(0, 0), 19);
-  EXPECT_EQ(C.at(0, 1), 22);
-  EXPECT_EQ(C.at(1, 0), 43);
-  EXPECT_EQ(C.at(1, 1), 50);
+  EXPECT_NEAR(C.at(0, 0), 19.0f, kTolerance);
+  EXPECT_NEAR(C.at(0, 1), 22.0f, kTolerance);
+  EXPECT_NEAR(C.at(1, 0), 43.0f, kTolerance);
+  EXPECT_NEAR(C.at(1, 1), 50.0f, kTolerance);
 
   EXPECT_TRUE(verifyGEMM(A, B, C, false));
 }
 
 // Test identity matrix multiplication
 TEST_F(GEMMOperatorTest, IdentityMultiplication) {
-  GEMMOperator<int> gemm("GEMM_Identity");
+  FloatGEMM gemm("GEMM_Identity");
+  configureVerbose(gemm);
+  gemm.bindTPU(tpu_);
 
-  Tensor<int> A(TensorShape{4, 4});
-  Tensor<int> B(TensorShape{4, 4});
+  FloatTensor A(TensorShape{4, 4});
+  FloatTensor B(TensorShape{4, 4});
 
-  // A = Identity matrix
   for (size_t i = 0; i < 4; ++i) {
     for (size_t j = 0; j < 4; ++j) {
-      A.at(i, j) = (i == j) ? 1 : 0;
+      A.at(i, j) = (i == j) ? 1.0f : 0.0f;
     }
   }
 
-  // B = Sequential values
   for (size_t i = 0; i < 4; ++i) {
     for (size_t j = 0; j < 4; ++j) {
-      B.at(i, j) = i * 4 + j + 1;
+      B.at(i, j) = static_cast<float>(i * 4 + j + 1);
     }
   }
 
   gemm.setInputs(A, B);
   gemm.compute();
 
-  const Tensor<int>& C = gemm.getOutput();
+  const FloatTensor& C = gemm.getOutput();
 
-  // C should equal B (I * B = B)
   for (size_t i = 0; i < 4; ++i) {
     for (size_t j = 0; j < 4; ++j) {
-      EXPECT_EQ(C.at(i, j), B.at(i, j));
+      EXPECT_NEAR(C.at(i, j), B.at(i, j), kTolerance);
     }
   }
 
@@ -87,20 +104,21 @@ TEST_F(GEMMOperatorTest, IdentityMultiplication) {
 
 // Test GEMM with zero matrix
 TEST_F(GEMMOperatorTest, ZeroMatrix) {
-  GEMMOperator<int> gemm("GEMM_Zero");
+  FloatGEMM gemm("GEMM_Zero");
+  configureVerbose(gemm);
+  gemm.bindTPU(tpu_);
 
-  Tensor<int> A(TensorShape{3, 3}, 0);  // Zero matrix
-  Tensor<int> B(TensorShape{3, 3}, 5);  // All 5s
+  FloatTensor A(TensorShape{3, 3}, 0.0f);
+  FloatTensor B(TensorShape{3, 3}, 5.0f);
 
   gemm.setInputs(A, B);
   gemm.compute();
 
-  const Tensor<int>& C = gemm.getOutput();
+  const FloatTensor& C = gemm.getOutput();
 
-  // C should be all zeros
   for (size_t i = 0; i < 3; ++i) {
     for (size_t j = 0; j < 3; ++j) {
-      EXPECT_EQ(C.at(i, j), 0);
+      EXPECT_NEAR(C.at(i, j), 0.0f, kTolerance);
     }
   }
 
@@ -109,40 +127,53 @@ TEST_F(GEMMOperatorTest, ZeroMatrix) {
 
 // Test 64x64 GEMM (naive)
 TEST_F(GEMMOperatorTest, GEMM_64x64_Naive) {
-  GEMMOperator<int> gemm("GEMM_64x64_Naive");
-
-  Tensor<int> A(TensorShape{64, 64});
-  Tensor<int> B(TensorShape{64, 64});
+  FloatTensor A(TensorShape{64, 64});
+  FloatTensor B(TensorShape{64, 64});
 
   // Initialize with known pattern
   for (size_t i = 0; i < 64; ++i) {
     for (size_t j = 0; j < 64; ++j) {
-      A.at(i, j) = (i == j) ? 1 : 0;  // Identity
-      B.at(i, j) = i + j;
+      A.at(i, j) = (i == j) ? 1.0f : 0.0f;  // Identity
+      B.at(i, j) = static_cast<float>(i + j);
     }
   }
 
-  gemm.setInputs(A, B);
-  gemm.disableTiling();
-  gemm.compute();
+  FloatGEMM gemm_tpu("GEMM_64x64_TPU");
+  configureVerbose(gemm_tpu);
+  gemm_tpu.bindTPU(tpu_);
+  gemm_tpu.setInputs(A, B);
+  gemm_tpu.compute();
+  const FloatTensor& C_tpu = gemm_tpu.getOutput();
 
-  const Tensor<int>& C = gemm.getOutput();
+  FloatGEMM gemm_cpu("GEMM_64x64_CPU");
+  configureVerbose(gemm_cpu);
+  gemm_cpu.setInputs(A, B);
+  gemm_cpu.disableTiling();
+  gemm_cpu.compute();
+  const FloatTensor& C_cpu = gemm_cpu.getOutput();
 
-  EXPECT_TRUE(verifyGEMM(A, B, C, false));
+  for (size_t i = 0; i < 64; ++i) {
+    for (size_t j = 0; j < 64; ++j) {
+      EXPECT_NEAR(C_tpu.at(i, j), C_cpu.at(i, j), kTolerance);
+    }
+  }
+
+  EXPECT_TRUE(verifyGEMM(A, B, C_cpu, false));
 }
 
 // Test 64x64 GEMM with 16x16 tiling
 TEST_F(GEMMOperatorTest, GEMM_64x64_Tiled_16x16) {
-  GEMMOperator<int> gemm("GEMM_64x64_Tiled_16");
+  FloatGEMM gemm("GEMM_64x64_Tiled_16");
+  configureVerbose(gemm);
 
-  Tensor<int> A(TensorShape{64, 64});
-  Tensor<int> B(TensorShape{64, 64});
+  FloatTensor A(TensorShape{64, 64});
+  FloatTensor B(TensorShape{64, 64});
 
   // Initialize with known pattern
   for (size_t i = 0; i < 64; ++i) {
     for (size_t j = 0; j < 64; ++j) {
-      A.at(i, j) = (i == j) ? 1 : 0;  // Identity
-      B.at(i, j) = i + j;
+      A.at(i, j) = (i == j) ? 1.0f : 0.0f;  // Identity
+      B.at(i, j) = static_cast<float>(i + j);
     }
   }
 
@@ -150,17 +181,18 @@ TEST_F(GEMMOperatorTest, GEMM_64x64_Tiled_16x16) {
   gemm.enableTiling(TileConfig(16, 16, 16));
   gemm.compute();
 
-  const Tensor<int>& C = gemm.getOutput();
+  const FloatTensor& C = gemm.getOutput();
 
   EXPECT_TRUE(verifyGEMM(A, B, C, false));
 }
 
 // Test 64x64 GEMM with 8x8 tiling
 TEST_F(GEMMOperatorTest, GEMM_64x64_Tiled_8x8) {
-  GEMMOperator<int> gemm("GEMM_64x64_Tiled_8");
+  FloatGEMM gemm("GEMM_64x64_Tiled_8");
+  configureVerbose(gemm);
 
-  Tensor<int> A(TensorShape{64, 64});
-  Tensor<int> B(TensorShape{64, 64});
+  FloatTensor A(TensorShape{64, 64});
+  FloatTensor B(TensorShape{64, 64});
 
   // Random initialization
   srand(123);
@@ -171,17 +203,18 @@ TEST_F(GEMMOperatorTest, GEMM_64x64_Tiled_8x8) {
   gemm.enableTiling(TileConfig(8, 8, 8));
   gemm.compute();
 
-  const Tensor<int>& C = gemm.getOutput();
+  const FloatTensor& C = gemm.getOutput();
 
   EXPECT_TRUE(verifyGEMM(A, B, C, false));
 }
 
 // Test 64x64 GEMM with 32x32 tiling
 TEST_F(GEMMOperatorTest, GEMM_64x64_Tiled_32x32) {
-  GEMMOperator<int> gemm("GEMM_64x64_Tiled_32");
+  FloatGEMM gemm("GEMM_64x64_Tiled_32");
+  configureVerbose(gemm);
 
-  Tensor<int> A(TensorShape{64, 64});
-  Tensor<int> B(TensorShape{64, 64});
+  FloatTensor A(TensorShape{64, 64});
+  FloatTensor B(TensorShape{64, 64});
 
   // Random initialization
   srand(456);
@@ -192,17 +225,18 @@ TEST_F(GEMMOperatorTest, GEMM_64x64_Tiled_32x32) {
   gemm.enableTiling(TileConfig(32, 32, 32));
   gemm.compute();
 
-  const Tensor<int>& C = gemm.getOutput();
+  const FloatTensor& C = gemm.getOutput();
 
   EXPECT_TRUE(verifyGEMM(A, B, C, false));
 }
 
 // Test non-square GEMM
 TEST_F(GEMMOperatorTest, NonSquareGEMM) {
-  GEMMOperator<int> gemm("GEMM_NonSquare");
+  FloatGEMM gemm("GEMM_NonSquare");
+  configureVerbose(gemm);
 
-  Tensor<int> A(TensorShape{64, 32});  // 64x32
-  Tensor<int> B(TensorShape{32, 64});  // 32x64
+  FloatTensor A(TensorShape{64, 32});  // 64x32
+  FloatTensor B(TensorShape{32, 64});  // 32x64
 
   A.fillRandom(0, 5);
   B.fillRandom(0, 5);
@@ -211,7 +245,7 @@ TEST_F(GEMMOperatorTest, NonSquareGEMM) {
   gemm.enableTiling(TileConfig(16, 16, 16));
   gemm.compute();
 
-  const Tensor<int>& C = gemm.getOutput();
+  const FloatTensor& C = gemm.getOutput();
 
   EXPECT_EQ(C.shape()[0], 64);
   EXPECT_EQ(C.shape()[1], 64);
@@ -220,51 +254,55 @@ TEST_F(GEMMOperatorTest, NonSquareGEMM) {
 
 // Test error handling: dimension mismatch
 TEST_F(GEMMOperatorTest, DimensionMismatch) {
-  GEMMOperator<int> gemm("GEMM_Error");
+  FloatGEMM gemm("GEMM_Error");
+  configureVerbose(gemm);
 
-  Tensor<int> A(TensorShape{4, 5});
-  Tensor<int> B(TensorShape{3, 4});  // Wrong K dimension
+  FloatTensor A(TensorShape{4, 5});
+  FloatTensor B(TensorShape{3, 4});  // Wrong K dimension
 
   EXPECT_THROW(gemm.setInputs(A, B), std::runtime_error);
 }
 
 // Test error handling: 1D tensor
 TEST_F(GEMMOperatorTest, OneDimensionalTensor) {
-  GEMMOperator<int> gemm("GEMM_1D_Error");
+  FloatGEMM gemm("GEMM_1D_Error");
+  configureVerbose(gemm);
 
-  Tensor<int> A(TensorShape{10});
-  Tensor<int> B(TensorShape{10});
+  FloatTensor A(TensorShape{10});
+  FloatTensor B(TensorShape{10});
 
   EXPECT_THROW(gemm.setInputs(A, B), std::runtime_error);
 }
 
 // Test consistency between tiled and naive implementations
 TEST_F(GEMMOperatorTest, TiledVsNaiveConsistency) {
-  Tensor<int> A(TensorShape{64, 64});
-  Tensor<int> B(TensorShape{64, 64});
+  FloatTensor A(TensorShape{64, 64});
+  FloatTensor B(TensorShape{64, 64});
 
   srand(789);
   A.fillRandom(-10, 10);
   B.fillRandom(-10, 10);
 
   // Naive computation
-  GEMMOperator<int> gemm_naive("GEMM_Naive");
+  FloatGEMM gemm_naive("GEMM_Naive");
+  configureVerbose(gemm_naive);
   gemm_naive.setInputs(A, B);
   gemm_naive.disableTiling();
   gemm_naive.compute();
-  const Tensor<int>& C_naive = gemm_naive.getOutput();
+  const FloatTensor& C_naive = gemm_naive.getOutput();
 
   // Tiled computation
-  GEMMOperator<int> gemm_tiled("GEMM_Tiled");
+  FloatGEMM gemm_tiled("GEMM_Tiled");
+  configureVerbose(gemm_tiled);
   gemm_tiled.setInputs(A, B);
   gemm_tiled.enableTiling(TileConfig(16, 16, 16));
   gemm_tiled.compute();
-  const Tensor<int>& C_tiled = gemm_tiled.getOutput();
+  const FloatTensor& C_tiled = gemm_tiled.getOutput();
 
   // Results should be identical
   for (size_t i = 0; i < 64; ++i) {
     for (size_t j = 0; j < 64; ++j) {
-      EXPECT_EQ(C_naive.at(i, j), C_tiled.at(i, j))
+      EXPECT_NEAR(C_naive.at(i, j), C_tiled.at(i, j), kTolerance)
           << "Mismatch at position (" << i << ", " << j << ")";
     }
   }
