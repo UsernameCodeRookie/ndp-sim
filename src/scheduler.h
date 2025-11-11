@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "event.h"
+#include "trace.h"
 
 namespace EventDriven {
 
@@ -30,12 +31,6 @@ class EventScheduler {
     if (event && event->getTime() >= current_time_) {
       event_queue_.push(event);
       event_count_++;
-
-      if (verbose_) {
-        std::cout << "[Schedule] Event '" << event->getName()
-                  << "' (ID: " << event->getID() << ") at time "
-                  << event->getTime() << std::endl;
-      }
     } else if (event && event->getTime() < current_time_) {
       std::cerr << "[Warning] Cannot schedule event '" << event->getName()
                 << "' in the past (time: " << event->getTime()
@@ -61,22 +56,12 @@ class EventScheduler {
    * @param max_time Maximum simulation time (0 means unlimited)
    */
   void run(uint64_t max_time = 0) {
-    if (verbose_) {
-      std::cout << "\n=== Starting Event Simulation ===" << std::endl;
-      std::cout << "Total events scheduled: " << event_queue_.size()
-                << std::endl;
-    }
-
     while (!event_queue_.empty()) {
       auto event = event_queue_.top();
       event_queue_.pop();
 
       // Check if maximum time is exceeded
       if (max_time > 0 && event->getTime() > max_time) {
-        if (verbose_) {
-          std::cout << "\n[Stop] Reached maximum simulation time: " << max_time
-                    << std::endl;
-        }
         break;
       }
 
@@ -85,19 +70,13 @@ class EventScheduler {
 
       // Skip cancelled events
       if (event->isCancelled()) {
-        if (verbose_) {
-          std::cout << "[Skip] Cancelled event '" << event->getName()
-                    << "' (ID: " << event->getID() << ")" << std::endl;
-        }
         continue;
       }
 
-      // Execute event
-      if (verbose_) {
-        std::cout << "\n[Time: " << current_time_ << "] Executing event '"
-                  << event->getName() << "' (ID: " << event->getID() << ")"
-                  << std::endl;
-      }
+      // Trace event execution
+      Tracer::getInstance().traceEvent(
+          current_time_, "Scheduler", event->getName(),
+          "ID=" + std::to_string(event->getID()), event->getPriority());
 
       event->execute(*this);
     }

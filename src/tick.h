@@ -11,6 +11,7 @@
 #include "event.h"
 #include "packet.h"
 #include "scheduler.h"
+#include "trace.h"
 
 namespace Architecture {
 
@@ -49,6 +50,11 @@ class TickingComponent : public Component {
         time,
         [this](EventDriven::EventScheduler& sched) {
           if (!enabled_) return;
+
+          // Trace tick event
+          EventDriven::Tracer::getInstance().traceTick(
+              sched.getCurrentTime(), name_,
+              "tick_count=" + std::to_string(tick_count_));
 
           // Execute tick logic
           tick();
@@ -148,6 +154,12 @@ class TickingConnection : public Connection {
         time,
         [this](EventDriven::EventScheduler& sched) {
           if (!enabled_) return;
+
+          // Trace propagate event
+          EventDriven::Tracer::getInstance().tracePropagate(
+              sched.getCurrentTime(), name_,
+              "src_ports=" + std::to_string(src_ports_.size()) +
+                  " dst_ports=" + std::to_string(dst_ports_.size()));
 
           // Execute propagate logic
           propagate();

@@ -6,6 +6,7 @@
 #include "../src/components/tpu.h"
 #include "../src/operators/gemm.h"
 #include "../src/scheduler.h"
+#include "../src/trace.h"
 
 using namespace Operators;
 using FloatGEMM = GEMMOperator<float, Float32PrecisionTraits>;
@@ -19,9 +20,6 @@ class GEMMOperatorTest : public ::testing::Test {
     tpu_ = std::make_shared<SystolicArrayTPU<Float32PrecisionTraits>>(
         "TestTPU", scheduler_, 1, 4);
     tpu_->start();
-    if (verbose_) {
-      tpu_->setVerbose(true);
-    }
   }
 
   void TearDown() override { tpu_.reset(); }
@@ -309,6 +307,27 @@ TEST_F(GEMMOperatorTest, TiledVsNaiveConsistency) {
 }
 
 int main(int argc, char** argv) {
+  // Initialize tracer with component filtering
+  EventDriven::Tracer::getInstance().initialize("test_gemm_operator_trace.log",
+                                                true);
+  EventDriven::Tracer::getInstance().setVerbose(false);
+
+  // Only trace Scheduler and specific components to reduce trace size
+  // Comment out these lines to trace all components
+  EventDriven::Tracer::getInstance().addComponentFilter("Scheduler");
+  EventDriven::Tracer::getInstance().addComponentFilter("TestTPU");
+  // Don't trace individual MACs to avoid millions of entries
+  // If you want to trace MACs, uncomment:
+  // EventDriven::Tracer::getInstance().addComponentFilter("MAC_0_0");
+  // EventDriven::Tracer::getInstance().addComponentFilter("MAC_0_1");
+
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  int result = RUN_ALL_TESTS();
+
+  // Dump trace file
+  EventDriven::Tracer::getInstance().dump();
+  std::cout << "\nTrace file saved to: "
+            << EventDriven::Tracer::getInstance().getOutputPath() << "\n";
+
+  return result;
 }

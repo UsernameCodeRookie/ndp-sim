@@ -1,5 +1,5 @@
-#ifndef precision_H
-#define precision_H
+#ifndef PRECISION_H
+#define PRECISION_H
 
 #include <bit>
 #include <cstdint>
@@ -101,4 +101,4 @@ struct DefaultPrecisionTrait<float> {
   using type = Float32PrecisionTraits;
 };
 
-#endif  // precision_H
+#endif  // PRECISION_H

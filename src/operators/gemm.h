@@ -9,7 +9,7 @@
 
 #include "../components/tpu.h"
 #include "base.h"
-#include "tile_config.h"
+#include "tile.h"
 
 namespace Operators {
 
@@ -144,11 +144,12 @@ class GEMMOperator : public OperatorBase {
 
  private:
   /**
-   * @brief Compute GEMM on TPU hardware using primitives
+   * @brief Compute GEMM on TPU hardware using event-driven execution
    *
-   * This method demonstrates software-hardware decoupling:
-   * - Operator contains the GEMM algorithm logic
-   * - TPU provides only hardware primitives (MACs, memory)
+   * This uses a hybrid approach:
+   * - Memory operations and high-level compute are event-driven
+   * - Dense computation loop runs synchronously within compute event
+   * - This avoids scheduling millions of individual MAC events
    */
   void computeOnTPU() {
     auto tpu_base = getTPU();
@@ -164,17 +165,23 @@ class GEMMOperator : public OperatorBase {
     }
 
     if (verbose_) {
-      std::cout << "Computing GEMM on TPU: (" << M_ << "x" << K_ << ") * ("
-                << K_ << "x" << N_ << ") using hardware primitives ["
+      std::cout << "Computing GEMM on TPU (event-driven): (" << M_ << "x" << K_
+                << ") * (" << K_ << "x" << N_ << ") ["
                 << tpu->getPrecisionName() << "]\n";
     }
 
-    // Memory layout: simple linear allocation
+    // Memory layout
     const uint32_t BASE_ADDR_A = 0x1000;
     const uint32_t BASE_ADDR_B = 0x2000;
     const uint32_t BASE_ADDR_C = 0x3000;
 
-    // Step 1: Flatten and load matrices A and B into TPU memory
+    // Get scheduler and timing parameters
+    auto& scheduler = tpu->getScheduler();
+    const uint64_t MEMORY_WRITE_CYCLES = tpu->getMemoryWriteLatency();
+    const uint64_t MEMORY_READ_CYCLES = tpu->getMemoryReadLatency();
+    const uint64_t MAC_COMPUTE_CYCLES = tpu->getMACLatency();
+
+    // Flatten input matrices
     std::vector<ValueType> A_flat(M_ * K_);
     std::vector<ValueType> B_flat(K_ * N_);
 
@@ -190,81 +197,150 @@ class GEMMOperator : public OperatorBase {
       }
     }
 
-    // Use TPU primitive: writeMemoryBlock
-    tpu->writeMemoryBlock(BASE_ADDR_A, A_flat);
-    tpu->writeMemoryBlock(BASE_ADDR_B, B_flat);
+    uint64_t event_time = 0;
+    bool* completion_flag = new bool(false);
 
-    // Step 2: Reset all MAC units (using TPU primitive)
-    tpu->resetAllMACs();
+    // Step 1: Schedule data loading event
+    event_time += A_flat.size() * MEMORY_WRITE_CYCLES;
+    scheduler.scheduleAt(
+        event_time,
+        [tpu, BASE_ADDR_A, A_flat](EventDriven::EventScheduler& sched) {
+          tpu->writeMemoryBlock(BASE_ADDR_A, A_flat);
+          auto& tracer = EventDriven::Tracer::getInstance();
+          tracer.traceMemoryWrite(sched.getCurrentTime(), tpu->getName(),
+                                  BASE_ADDR_A, static_cast<int>(A_flat[0]));
+        },
+        0, "LoadMatrixA");
 
-    // Step 3: Perform GEMM computation using TPU primitives
-    // Algorithm: Standard matrix multiplication with MAC units
+    event_time += B_flat.size() * MEMORY_WRITE_CYCLES;
+    scheduler.scheduleAt(
+        event_time,
+        [tpu, BASE_ADDR_B, B_flat](EventDriven::EventScheduler& sched) {
+          tpu->writeMemoryBlock(BASE_ADDR_B, B_flat);
+          auto& tracer = EventDriven::Tracer::getInstance();
+          tracer.traceMemoryWrite(sched.getCurrentTime(), tpu->getName(),
+                                  BASE_ADDR_B, static_cast<int>(B_flat[0]));
+        },
+        0, "LoadMatrixB");
+
+    // Step 2: Schedule MAC reset
+    event_time += 10;
+    scheduler.scheduleAt(
+        event_time,
+        [tpu](EventDriven::EventScheduler& sched) { tpu->resetAllMACs(); }, 0,
+        "ResetMACs");
+
+    // Step 3: Schedule GEMM computation as single event
+    // Computation time: M * N * K * (2*MEM_READ + MAC_COMPUTE)
+    uint64_t compute_cycles =
+        M_ * N_ * K_ * (2 * MEMORY_READ_CYCLES + MAC_COMPUTE_CYCLES);
+    event_time += compute_cycles;
+
+    auto C_accum = std::make_shared<std::vector<AccumulatorType>>(
+        M_ * N_, Traits::zeroAccumulator());
+
     size_t array_size = tpu->getArraySize();
-    std::vector<AccumulatorType> C_accum(M_ * N_, Traits::zeroAccumulator());
+    size_t M = M_, N = N_, K = K_;
+    bool verbose = verbose_;
 
-    // Iterate over K dimension (accumulation)
-    for (size_t k = 0; k < K_; ++k) {
-      if (verbose_ && k % std::max(size_t(1), K_ / 4) == 0) {
-        std::cout << "  K-step: " << k << "/" << K_ << "\n";
-      }
+    scheduler.scheduleAt(
+        event_time,
+        [tpu, BASE_ADDR_A, BASE_ADDR_B, M, N, K, C_accum, array_size,
+         verbose](EventDriven::EventScheduler& sched) {
+          auto& tracer = EventDriven::Tracer::getInstance();
+          uint64_t start_time = sched.getCurrentTime();
 
-      // Process all output elements
-      for (size_t i = 0; i < M_; ++i) {
-        // Read A[i][k]
-        ValueType a_val = tpu->readMemory(BASE_ADDR_A + i * K_ + k);
+          // Perform GEMM computation
+          for (size_t k = 0; k < K; ++k) {
+            for (size_t i = 0; i < M; ++i) {
+              for (size_t j = 0; j < N; ++j) {
+                auto a_val = tpu->readMemory(BASE_ADDR_A + i * K + k);
+                auto b_val = tpu->readMemory(BASE_ADDR_B + k * N + j);
 
-        for (size_t j = 0; j < N_; ++j) {
-          // Read B[k][j]
-          ValueType b_val = tpu->readMemory(BASE_ADDR_B + k * N_ + j);
+                (*C_accum)[i * N + j] =
+                    Traits::accumulate((*C_accum)[i * N + j], a_val, b_val);
 
-          // Accumulate C[i][j] += A[i][k] * B[k][j]
-          C_accum[i * N_ + j] =
-              Traits::accumulate(C_accum[i * N_ + j], a_val, b_val);
+                // Trace only first few elements
+                if (i < 2 && j < 2 && k < 2) {
+                  tracer.traceMAC(
+                      start_time,
+                      tpu->getName() + "_MAC_" + std::to_string(i) + "_" +
+                          std::to_string(j),
+                      static_cast<int>(
+                          Traits::fromAccumulator((*C_accum)[i * N + j])),
+                      static_cast<int>(a_val), static_cast<int>(b_val));
+                }
 
-          if (verbose_ && i < 4 && j < 4) {
-            auto current = Traits::fromAccumulator(C_accum[i * N_ + j]);
-            std::cout << "    TPU C[" << i << "][" << j
-                      << "] += " << Traits::toString(a_val) << " * "
-                      << Traits::toString(b_val) << " -> "
-                      << Traits::toString(current) << "\n";
-          }
-
-          // If this element fits in the MAC array, use it for demonstration
-          if (i < array_size && j < array_size) {
-            auto mac = tpu->getMAC(i, j);  // Use TPU primitive: getMAC
-            if (mac) {
-              mac->setInputA(a_val);
-              mac->setInputB(b_val);
-              // MAC will compute on next tick, but we're using software
-              // accumulation
+                // Use hardware MAC for elements within array bounds
+                if (i < array_size && j < array_size) {
+                  auto mac = tpu->getMAC(i, j);
+                  if (mac) {
+                    mac->setInputA(a_val);
+                    mac->setInputB(b_val);
+                  }
+                }
+              }
             }
           }
-        }
-      }
+
+          if (verbose) {
+            std::cout << "  [" << sched.getCurrentTime()
+                      << "] GEMM computation completed\n";
+          }
+        },
+        0, "ComputeGEMM");
+
+    // Step 4: Schedule result writeback
+    event_time += 10;
+    scheduler.scheduleAt(
+        event_time,
+        [tpu, C_accum, BASE_ADDR_C, M, N,
+         verbose](EventDriven::EventScheduler& sched) {
+          std::vector<ValueType> C_values(M * N);
+          for (size_t idx = 0; idx < C_values.size(); ++idx) {
+            C_values[idx] = Traits::fromAccumulator((*C_accum)[idx]);
+          }
+          tpu->writeMemoryBlock(BASE_ADDR_C, C_values);
+
+          if (verbose) {
+            std::cout << "  [" << sched.getCurrentTime()
+                      << "] Results written to memory\n";
+          }
+        },
+        0, "WriteResults");
+
+    // Step 5: Schedule final readback
+    event_time += M_ * N_ * MEMORY_READ_CYCLES;
+    scheduler.scheduleAt(
+        event_time,
+        [this, tpu, BASE_ADDR_C,
+         completion_flag](EventDriven::EventScheduler& sched) {
+          std::vector<ValueType> C_result =
+              tpu->readMemoryBlock(BASE_ADDR_C, M_ * N_);
+
+          for (size_t i = 0; i < M_; ++i) {
+            for (size_t j = 0; j < N_; ++j) {
+              C_.at(i, j) = static_cast<T>(C_result[i * N_ + j]);
+            }
+          }
+
+          *completion_flag = true;
+
+          if (verbose_) {
+            std::cout << "  [" << sched.getCurrentTime()
+                      << "] Results read back, GEMM completed\n";
+          }
+        },
+        0, "ReadResults");
+
+    // Step 6: Run the scheduler
+    scheduler.run(event_time + 100);
+
+    if (!*completion_flag) {
+      std::cerr << "[Warning] GEMM did not complete\n";
     }
 
-    // Step 4: Write results back to TPU memory (using TPU primitive)
-    std::vector<ValueType> C_values(M_ * N_, Traits::zeroValue());
-    for (size_t idx = 0; idx < C_values.size(); ++idx) {
-      C_values[idx] = Traits::fromAccumulator(C_accum[idx]);
-    }
-    tpu->writeMemoryBlock(BASE_ADDR_C, C_values);
-
-    // Step 5: Read results from TPU memory
-    std::vector<ValueType> C_result =
-        tpu->readMemoryBlock(BASE_ADDR_C, M_ * N_);
-
-    // Step 6: Copy to output tensor
-    for (size_t i = 0; i < M_; ++i) {
-      for (size_t j = 0; j < N_; ++j) {
-        C_.at(i, j) = static_cast<T>(C_result[i * N_ + j]);
-      }
-    }
-
-    if (verbose_) {
-      std::cout << "GEMM on TPU completed (using " << (M_ * N_ * K_)
-                << " multiply-accumulate operations)\n";
-    }
+    delete completion_flag;
   }
   /**
    * @brief Naive triple-loop GEMM implementation
@@ -279,17 +355,8 @@ class GEMMOperator : public OperatorBase {
       for (size_t j = 0; j < N_; ++j) {
         ValueType sum = Traits::zeroValue();
         for (size_t k = 0; k < K_; ++k) {
-          ValueType a_val = static_cast<ValueType>(A_.at(i, k));
-          ValueType b_val = static_cast<ValueType>(B_.at(k, j));
-          ValueType product = a_val * b_val;
-          sum += product;
-
-          if (verbose_ && i < 4 && j < 4) {
-            std::cout << "    CPU C[" << i << "][" << j
-                      << "] += " << Traits::toString(a_val) << " * "
-                      << Traits::toString(b_val) << " -> "
-                      << Traits::toString(sum) << "\n";
-          }
+          sum += static_cast<ValueType>(A_.at(i, k)) *
+                 static_cast<ValueType>(B_.at(k, j));
         }
         C_.at(i, j) = sum;
       }
@@ -358,17 +425,8 @@ class GEMMOperator : public OperatorBase {
       for (size_t j = n_start; j < n_end; ++j) {
         ValueType sum = C_.at(i, j);  // Accumulate (important for K tiling)
         for (size_t k = k_start; k < k_end; ++k) {
-          ValueType a_val = static_cast<ValueType>(A_.at(i, k));
-          ValueType b_val = static_cast<ValueType>(B_.at(k, j));
-          ValueType product = a_val * b_val;
-          sum += product;
-
-          if (verbose_ && i < 4 && j < 4) {
-            std::cout << "    CPU(tile) C[" << i << "][" << j
-                      << "] += " << Traits::toString(a_val) << " * "
-                      << Traits::toString(b_val) << " -> "
-                      << Traits::toString(sum) << "\n";
-          }
+          sum += static_cast<ValueType>(A_.at(i, k)) *
+                 static_cast<ValueType>(B_.at(k, j));
         }
         C_.at(i, j) = sum;
       }

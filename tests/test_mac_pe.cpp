@@ -3,6 +3,7 @@
 #include "../src/components/alu.h"
 #include "../src/components/pe.h"
 #include "../src/components/tpu.h"
+#include "../src/trace.h"
 
 // Test MAC operation using PE-based MACUnit
 void test_mac_pe() {
@@ -16,7 +17,6 @@ void test_mac_pe() {
   // Create a single MAC unit
   auto mac = std::make_shared<MACUnit<Float32PrecisionTraits>>(
       "MAC_0_0", scheduler, 1, 0, 0);
-  mac->setVerbose(true);
   mac->start();
 
   std::cout << "Test 1: Basic MAC operation\n";
@@ -89,7 +89,6 @@ void test_pe_mac() {
 
   // Create a PE
   auto pe = std::make_shared<ProcessingElement>("PE_0", scheduler, 1, 32, 4);
-  pe->setVerbose(true);
   pe->start();
 
   std::cout << "Test: Direct MAC instruction to PE\n";
@@ -138,7 +137,17 @@ void test_pe_mac() {
 }
 
 int main() {
+  // Initialize tracer
+  EventDriven::Tracer::getInstance().initialize("test_mac_pe_trace.log", true);
+  EventDriven::Tracer::getInstance().setVerbose(false);
+
   test_mac_pe();
   test_pe_mac();
+
+  // Dump trace file
+  EventDriven::Tracer::getInstance().dump();
+  std::cout << "\nTrace file saved to: "
+            << EventDriven::Tracer::getInstance().getOutputPath() << "\n";
+
   return 0;
 }

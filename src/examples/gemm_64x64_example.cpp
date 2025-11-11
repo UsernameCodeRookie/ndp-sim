@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "../src/operators/gemm.h"
+#include "../src/trace.h"
 
 using namespace Operators;
 
@@ -8,6 +9,10 @@ int main() {
   std::cout << "========================================\n";
   std::cout << "GEMM Operator Example - 64x64 Matrix\n";
   std::cout << "========================================\n\n";
+
+  // Initialize tracer
+  EventDriven::Tracer::getInstance().initialize("gemm_64x64_trace.log", true);
+  EventDriven::Tracer::getInstance().setVerbose(false);
 
   // Create 64x64 GEMM operator
   GEMMOperator<int> gemm_op("GEMM_64x64");
@@ -136,6 +141,11 @@ int main() {
   std::cout << "\n========================================\n";
   std::cout << "All tests completed!\n";
   std::cout << "========================================\n";
+
+  // Dump trace file
+  EventDriven::Tracer::getInstance().dump();
+  std::cout << "\nTrace file saved to: "
+            << EventDriven::Tracer::getInstance().getOutputPath() << "\n";
 
   return 0;
 }

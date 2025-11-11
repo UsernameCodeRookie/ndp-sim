@@ -10,6 +10,7 @@
 
 #include "../port.h"
 #include "../tick.h"
+#include "../trace.h"
 #include "alu.h"
 #include "int_packet.h"
 
@@ -155,12 +156,11 @@ class ProcessingElement : public Architecture::TickingComponent {
           std::dynamic_pointer_cast<PEInstructionPacket>(inst_in->read());
       if (inst_packet) {
         instruction_queue_.push(inst_packet);
-        if (verbose_) {
-          std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                    << ": Enqueued instruction, queue="
-                    << instruction_queue_.size() << "/" << queue_depth_
-                    << std::endl;
-        }
+
+        // Trace queue operation
+        EventDriven::Tracer::getInstance().traceQueueOp(
+            scheduler_.getCurrentTime(), getName(), "Enqueued",
+            instruction_queue_.size(), queue_depth_);
       }
     }
 
@@ -170,11 +170,11 @@ class ProcessingElement : public Architecture::TickingComponent {
           std::dynamic_pointer_cast<RegisterPacket>(data_in->read());
       if (reg_packet && reg_packet->isWrite()) {
         writeRegister(reg_packet->getAddress(), reg_packet->getValue());
-        if (verbose_) {
-          std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                    << ": Write R" << reg_packet->getAddress() << " = "
-                    << reg_packet->getValue() << std::endl;
-        }
+
+        // Trace register write
+        EventDriven::Tracer::getInstance().traceRegisterAccess(
+            scheduler_.getCurrentTime(), getName(), true,
+            reg_packet->getAddress(), reg_packet->getValue());
       }
     }
 
@@ -194,26 +194,24 @@ class ProcessingElement : public Architecture::TickingComponent {
         mac_accumulator_ = mac_accumulator_ + (operand_a * operand_b);
         result = mac_accumulator_;
 
-        if (verbose_) {
-          std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                    << ": MAC acc=" << mac_accumulator_ << " += R"
-                    << inst->getSrcRegA() << "(" << operand_a << ") * R"
-                    << inst->getSrcRegB() << "(" << operand_b << ")"
-                    << std::endl;
-        }
+        // Trace MAC operation
+        EventDriven::Tracer::getInstance().traceMAC(scheduler_.getCurrentTime(),
+                                                    getName(), mac_accumulator_,
+                                                    operand_a, operand_b);
       } else {
         // Regular ALU operation
         result = ALUComponent::executeOperation(operand_a, operand_b,
                                                 inst->getOperation());
 
-        if (verbose_) {
-          std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                    << ": Execute "
-                    << ALUComponent::getOpName(inst->getOperation()) << " R"
-                    << inst->getSrcRegA() << "(" << operand_a << "), R"
-                    << inst->getSrcRegB() << "(" << operand_b << ") -> R"
-                    << inst->getDstReg() << "(" << result << ")" << std::endl;
-        }
+        // Trace instruction execution
+        std::stringstream ss;
+        ss << ALUComponent::getOpName(inst->getOperation()) << " R"
+           << inst->getSrcRegA() << "(" << operand_a << "), R"
+           << inst->getSrcRegB() << "(" << operand_b << ") -> R"
+           << inst->getDstReg() << "(" << result << ")";
+        EventDriven::Tracer::getInstance().traceInstruction(
+            scheduler_.getCurrentTime(), getName(),
+            ALUComponent::getOpName(inst->getOperation()), ss.str());
       }
 
       // Write result back to register file
@@ -321,9 +319,6 @@ class ProcessingElement : public Architecture::TickingComponent {
     }
   }
 
-  // Enable/disable verbose output
-  void setVerbose(bool verbose) { verbose_ = verbose; }
-
  private:
   size_t num_registers_;            // Number of registers
   size_t queue_depth_;              // Instruction queue depth
@@ -336,7 +331,6 @@ class ProcessingElement : public Architecture::TickingComponent {
   bool input_ready_;                   // Ready to accept instruction
   bool output_valid_;                  // Has valid output
   int mac_accumulator_;                // MAC accumulator
-  bool verbose_ = false;               // Verbose output flag
 };
 
 #endif  // PE_H

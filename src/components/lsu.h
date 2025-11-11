@@ -203,6 +203,11 @@ class MemoryBank : public Architecture::TickingComponent {
  */
 class LoadStoreUnit : public Architecture::TickingComponent {
  public:
+  // Timing parameters
+  static constexpr uint64_t MEMORY_READ_LATENCY = 1;  // Cycles for memory read
+  static constexpr uint64_t MEMORY_WRITE_LATENCY =
+      1;  // Cycles for memory write
+
   LoadStoreUnit(const std::string& name, EventDriven::EventScheduler& scheduler,
                 uint64_t period, size_t num_banks = 8, size_t queue_depth = 4,
                 size_t bank_capacity = 64
@@ -268,6 +273,10 @@ class LoadStoreUnit : public Architecture::TickingComponent {
   // Statistics
   size_t getOperationsCompleted() const { return operations_completed_; }
   size_t getCyclesStalled() const { return cycles_stalled_; }
+
+  // Timing information
+  uint64_t getReadLatency() const { return MEMORY_READ_LATENCY; }
+  uint64_t getWriteLatency() const { return MEMORY_WRITE_LATENCY; }
 
   void setVerbose(bool verbose) { verbose_ = verbose; }
 

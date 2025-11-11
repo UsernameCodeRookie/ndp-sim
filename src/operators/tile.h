@@ -1,5 +1,5 @@
-#ifndef TILE_CONFIG_H
-#define TILE_CONFIG_H
+#ifndef TILE_H
+#define TILE_H
 
 #include <algorithm>
 #include <iostream>
@@ -83,4 +83,4 @@ class TileIterator {
 
 }  // namespace Operators
 
-#endif  // TILE_CONFIG_H
+#endif  // TILE_H

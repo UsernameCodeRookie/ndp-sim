@@ -4,6 +4,7 @@
 
 #include "../components/tpu.h"
 #include "../operators/gemm.h"
+#include "../trace.h"
 
 using namespace Operators;
 using Precision = Float32PrecisionTraits;
@@ -16,12 +17,15 @@ int main() {
 
   std::cout << std::fixed << std::setprecision(3);
 
+  // Initialize tracer
+  EventDriven::Tracer::getInstance().initialize("gemm_tpu_trace.log", true);
+  EventDriven::Tracer::getInstance().setVerbose(true);
+
   // Create event scheduler
   EventDriven::EventScheduler scheduler;
 
   // Create TPU (4x4 systolic array)
   auto tpu = std::make_shared<TPUPrecision>("TPU", scheduler, 1, 4);
-  tpu->setVerbose(false);
   tpu->start();
 
   // Create GEMM operator
@@ -91,9 +95,9 @@ int main() {
     }
   }
 
+  // Reduce verbosity for larger matrices
   gemm_op.setInputs(A2, B2);
-  gemm_op.setVerbose(false);  // Reduce verbosity for larger matrices
-  tpu->setVerbose(false);
+  gemm_op.setVerbose(false);
 
   std::cout << "Computing 8x8 GEMM on TPU...\n";
   gemm_op.compute();
@@ -200,6 +204,11 @@ int main() {
   std::cout << "\nThe operator abstracts the execution backend, allowing\n";
   std::cout << "flexible deployment based on hardware availability.\n";
   std::cout << "========================================\n";
+
+  // Dump trace file
+  EventDriven::Tracer::getInstance().dump();
+  std::cout << "\nTrace file saved to: "
+            << EventDriven::Tracer::getInstance().getOutputPath() << "\n";
 
   return 0;
 }

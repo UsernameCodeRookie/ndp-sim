@@ -7,6 +7,7 @@
 
 #include "../port.h"
 #include "../tick.h"
+#include "../trace.h"
 #include "int_packet.h"
 #include "lsu.h"
 #include "pe.h"
@@ -24,6 +25,9 @@ class MACUnit : public ProcessingElement {
   static constexpr int REG_INPUT_B = 1;  // Input B register
   static constexpr int REG_RESULT = 2;   // Result register
 
+  // Timing parameters
+  static constexpr uint64_t MAC_LATENCY = 1;  // Cycles for MAC operation
+
   MACUnit(const std::string& name, EventDriven::EventScheduler& scheduler,
           uint64_t period, int row, int col)
       : ProcessingElement(name, scheduler, period, 32, 4),
@@ -33,6 +37,8 @@ class MACUnit : public ProcessingElement {
     // Initialize accumulator to zero
     resetAccumulator();
   }
+
+  uint64_t getLatency() const { return MAC_LATENCY; }
 
   void tick() override {
     // Execute MAC operation using the MAC instruction
@@ -49,15 +55,15 @@ class MACUnit : public ProcessingElement {
 
     output_valid_ = true;
 
-    if (verbose_) {
-      int acc_value = getMACAccumulator();
-      int input_a = readRegister(REG_INPUT_A);
-      int input_b = readRegister(REG_INPUT_B);
-      std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                << " [" << row_ << "," << col_ << "]: acc=" << acc_value
-                << " (prev + " << input_a << " * " << input_b << ")"
-                << std::endl;
-    }
+    // Trace MAC operation
+    int acc_value = getMACAccumulator();
+    int input_a = readRegister(REG_INPUT_A);
+    int input_b = readRegister(REG_INPUT_B);
+    EventDriven::Tracer::getInstance().traceMAC(scheduler_.getCurrentTime(),
+                                                getName() + "[" +
+                                                    std::to_string(row_) + "," +
+                                                    std::to_string(col_) + "]",
+                                                acc_value, input_a, input_b);
   }
 
   void setInputA(ValueType value) {
@@ -88,16 +94,10 @@ class MACUnit : public ProcessingElement {
   int getRow() const { return row_; }
   int getCol() const { return col_; }
 
-  void setVerbose(bool verbose) {
-    verbose_ = verbose;
-    ProcessingElement::setVerbose(verbose);
-  }
-
  private:
   int row_;
   int col_;
   bool output_valid_;
-  bool verbose_ = false;
 };
 
 class SystolicArrayTPUBase : public Architecture::TickingComponent {
@@ -110,8 +110,8 @@ class SystolicArrayTPUBase : public Architecture::TickingComponent {
 
   virtual size_t getArraySize() const = 0;
   virtual void resetAllMACs() = 0;
-  virtual void setVerbose(bool verbose) = 0;
   virtual const char* getPrecisionName() const = 0;
+  virtual EventDriven::EventScheduler& getScheduler() = 0;
 };
 
 template <typename PrecisionTraits>
@@ -181,6 +181,17 @@ class SystolicArrayTPU : public SystolicArrayTPUBase {
 
   std::shared_ptr<LoadStoreUnit> getLSU() { return lsu_; }
 
+  // Get timing information from components
+  uint64_t getMACLatency() const {
+    return MACUnit<PrecisionTraits>::MAC_LATENCY;
+  }
+  uint64_t getMemoryReadLatency() const {
+    return LoadStoreUnit::MEMORY_READ_LATENCY;
+  }
+  uint64_t getMemoryWriteLatency() const {
+    return LoadStoreUnit::MEMORY_WRITE_LATENCY;
+  }
+
   // Port-based memory access with buffering for timing simulation
   void writeMemory(uint32_t address, ValueType data) {
     auto req = std::make_shared<MemoryRequestPacket>(LSUOp::STORE, address,
@@ -191,10 +202,10 @@ class SystolicArrayTPU : public SystolicArrayTPUBase {
     auto ready_port = lsu_->getPort("ready");
     auto resp_port = lsu_->getPort("resp_out");
 
-    if (verbose_) {
-      std::cout << "  [TPU Write] addr=" << address << " data=" << data
-                << std::endl;
-    }
+    // Trace memory write
+    EventDriven::Tracer::getInstance().traceMemoryWrite(
+        scheduler_.getCurrentTime(), getName(), address,
+        static_cast<int>(data));
 
     // Clear any stale responses
     while (resp_port->hasData()) {
@@ -259,18 +270,23 @@ class SystolicArrayTPU : public SystolicArrayTPUBase {
         auto resp = std::dynamic_pointer_cast<MemoryResponsePacket>(resp_data);
         if (resp && resp->getAddress() == address) {
           result = Traits::decode(resp->getData());
-          if (verbose_) {
-            std::cout << "  [TPU Read] addr=" << address << " data=" << result
-                      << std::endl;
-          }
+
+          // Trace memory read
+          EventDriven::Tracer::getInstance().traceMemoryRead(
+              scheduler_.getCurrentTime(), getName(), address,
+              static_cast<int>(result));
+
           return result;
         }
       }
     }
 
-    if (verbose_) {
-      std::cout << "  [TPU Read] addr=" << address << " TIMEOUT!" << std::endl;
-    }
+    // Timeout - trace the error
+    EventDriven::Tracer::getInstance().trace(
+        scheduler_.getCurrentTime(), EventDriven::TraceEventType::MEMORY_READ,
+        getName(), "memory_read_timeout",
+        "addr=0x" + std::to_string(address) + " TIMEOUT");
+
     return result;
   }
 
@@ -289,24 +305,15 @@ class SystolicArrayTPU : public SystolicArrayTPUBase {
     return result;
   }
 
-  void setVerbose(bool verbose) override {
-    verbose_ = verbose;
-    lsu_->setVerbose(verbose);
-    for (size_t i = 0; i < array_size_; ++i) {
-      for (size_t j = 0; j < array_size_; ++j) {
-        mac_array_[i][j]->setVerbose(verbose);
-      }
-    }
-  }
-
   const char* getPrecisionName() const override { return Traits::name(); }
+
+  EventDriven::EventScheduler& getScheduler() override { return scheduler_; }
 
  private:
   size_t array_size_;
   std::vector<std::vector<std::shared_ptr<MACUnit<PrecisionTraits>>>>
       mac_array_;
   std::shared_ptr<LoadStoreUnit> lsu_;
-  bool verbose_ = false;
 };
 
 #endif  // TPU_H
