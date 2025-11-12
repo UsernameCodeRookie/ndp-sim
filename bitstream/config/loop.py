@@ -124,13 +124,13 @@ class LCPEConfig(BaseConfigModule):
         """Map string inport modes to integers. Also accepts integers directly."""
         return {
             None: 0,
-            0: 0,  # NULL
+            0: 0,
             "buffer": 1,
-            1: 1,  # BUFFER
+            1: 1,
             "keep": 2,
-            2: 2,  # KEEP
+            2: 2,
             "constant": 3,
-            3: 3,  # CONSTANT
+            3: 3,
         }
 
     @staticmethod

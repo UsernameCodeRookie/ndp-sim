@@ -61,20 +61,25 @@ class BaseConfigModule(ConfigModule):
             mapper.register_module(resource, self)
 
     def from_json(self, cfg: dict):
-        """Populate values from a JSON dict."""
+        """Populate values from a JSON dict.
+        
+        Note: Mapper functions are NOT applied here. They will be applied
+        during encoding (to_bits/dump). This preserves the original JSON values.
+        
+        Exception: Mappers that create special objects (like Connect) that need
+        'self' context must be applied here. These are identified by taking 2 arguments.
+        """
         for entry in self.FIELD_MAP:
             name, width, *rest = entry
             mapper = rest[0] if rest else None
             if name in cfg:
                 val = cfg[name]
-                # If there's a mapper function, apply it during from_json
-                # This allows Connect objects to be created at config load time
-                if mapper:
-                    argc = mapper.__code__.co_argcount
-                    if argc == 2:
-                        val = mapper(self, val)
-                    else:
-                        val = mapper(val)
+                # Only apply mapper if it requires 'self' context (2 args)
+                # These typically create Connect objects or need module context
+                if mapper and mapper.__code__.co_argcount == 2:
+                    val = mapper(self, val)
+                # For simple mappers (1 arg), preserve the original value
+                # They will be applied during encoding
                 self.values[name] = val
 
     def _encode_list(self, val: list, width: int) -> list[tuple[int, int]]:
