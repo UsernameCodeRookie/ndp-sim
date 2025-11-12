@@ -13,14 +13,14 @@ class NodeIndex:
     _counter: int = 0
     _resolved: bool = False
 
-    def __new__(cls, name: str):
+    def __new__(cls, name: str, **metadata):
         # If a NodeIndex with the same name exists, return it
         if name in cls._registry:
             return cls._registry[name]
         instance = super().__new__(cls)
         return instance
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, **metadata):
         # Avoid re-initialization if already registered
         if hasattr(self, "_initialized"):
             return
@@ -31,13 +31,16 @@ class NodeIndex:
         NodeIndex._registry[name] = self
         self._initialized = True
         
-        NodeGraph.get().add_node(name)
+        NodeGraph.get().add_node(name, **metadata)
     
     @classmethod
-    def resolve_all(cls):
+    def resolve_all(cls, modules=None):
         """
         Resolve all node indices using the mapper to get physical resource IDs.
         This must be called after NodeGraph.allocate_resources() or NodeGraph.search_mapping().
+        
+        Args:
+            modules: Optional list of modules to register with the mapper after resolution.
         """
         if cls._resolved:
             return
@@ -56,9 +59,15 @@ class NodeIndex:
             
             if physical_resource and physical_resource != "GENERIC":
                 # Extract numeric ID from physical resource name
-                # e.g., "LC2" -> 2, "PE5" -> 5, "GROUP1" -> 1, "AG3" -> 3
-                resource_type = ''.join(ch for ch in physical_resource if ch.isalpha())
-                resource_id = int(''.join(ch for ch in physical_resource if ch.isdigit()))
+                # Handle READ_STREAM and WRITE_STREAM specially
+                if physical_resource.startswith("READ_STREAM"):
+                    resource_id = int(physical_resource[len("READ_STREAM"):])
+                elif physical_resource.startswith("WRITE_STREAM"):
+                    resource_id = int(physical_resource[len("WRITE_STREAM"):])
+                else:
+                    # e.g., "LC2" -> 2, "PE5" -> 5, "GROUP1" -> 1
+                    resource_type = ''.join(ch for ch in physical_resource if ch.isalpha())
+                    resource_id = int(''.join(ch for ch in physical_resource if ch.isdigit()))
                 node_idx._physical_id = resource_id
             else:
                 # Fallback: use sequential index if no mapping found
@@ -66,6 +75,35 @@ class NodeIndex:
         
         cls._resolved = True
         cls._queue.clear()
+        
+        # Auto-register modules to mapper if provided
+        if modules:
+            cls._register_modules(modules)
+    
+    @classmethod
+    def _register_modules(cls, modules):
+        """Register all modules with the mapper after resolution."""
+        from bitstream.config.loop import BufferLoopControlGroupConfig
+        
+        mapper = NodeGraph.get().mapping
+        
+        for module in modules:
+            # Register modules with direct node IDs
+            if hasattr(module, 'id') and module.id:
+                node_name = module.id.node_name
+                resource = mapper.get(node_name)
+                if resource:
+                    mapper.register_module(resource, module)
+            
+            # Handle BufferLoopControlGroupConfig - register parent module
+            if isinstance(module, BufferLoopControlGroupConfig):
+                if hasattr(module, 'submodules') and len(module.submodules) > 0:
+                    first_sub = module.submodules[0]
+                    if hasattr(first_sub, 'id') and first_sub.id:
+                        node_name = first_sub.id.node_name
+                        resource = mapper.get(node_name)  # Gets GROUP resource
+                        if resource:
+                            mapper.register_module(resource, module)
 
     @property
     def index(self) -> int:

@@ -29,6 +29,20 @@ class BaseConfigModule(ConfigModule):
     def __init__(self):
         # Initialize all field values with default 0
         self.values = {entry[0]: 0 for entry in self.FIELD_MAP}
+    
+    def register_to_mapper(self):
+        """Register this module to the mapper after resource allocation."""
+        from bitstream.config.mapper import NodeGraph
+        
+        if not hasattr(self, 'id') or not self.id:
+            return
+        
+        mapper = NodeGraph.get().mapping
+        node_name = self.id.node_name
+        resource = mapper.get(node_name)
+        
+        if resource:
+            mapper.register_module(resource, self)
 
     def from_json(self, cfg: dict):
         """Populate values from a JSON dict."""

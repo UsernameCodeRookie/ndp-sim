@@ -1,108 +1,413 @@
+#!/usr/bin/env python3
+"""Generate text-format bitstream."""
+
+import sys
+import os
+from enum import IntEnum
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import json
-from typing import List
-from bitstream.bit import Bit
-from bitstream.visualize import visualize_modules
+from bitstream.config.mapper import NodeGraph
 from bitstream.config import (
-    DramLoopControlConfig,
-    LCPEConfig,
-    BufferLoopControlGroupConfig,
-    NeighborStreamConfig,
-    StreamConfig,
-    BufferConfig,
-    SpecialArrayConfig,
-    NodeGraph,
+    DramLoopControlConfig, BufferLoopControlGroupConfig, LCPEConfig,
+    NeighborStreamConfig, BufferConfig, SpecialArrayConfig,
+    ReadStreamConfig, WriteStreamConfig,
 )
+from bitstream.config.stream import StreamConfig
+from bitstream.index import NodeIndex
 
-def bits_to_binfile(bits_list: List[Bit], byteorder: str = "little"):
+class ModuleID(IntEnum):
+    IGA_LC = 0
+    IGA_ROW_LC = 1
+    IGA_COL_LC = 2
+    IGA_PE = 3
+    SE_RD_MSE = 4
+    SE_WR_MSE = 5
+    SE_NSE = 6
+    BUFFER_MANAGER_CLUSTER = 7
+    SPECIAL_ARRAY = 8
+    GA_INPORT_GROUP = 9
+    GA_OUTPORT_GROUP = 10
+    GENERAL_ARRAY = 11
+
+MODULE_CFG_CHUNK_SIZES = [1, 1, 1, 1, 8, 6, 1, 1, 1, 1, 1, 4]
+MODULE_ID_TO_MASK = [0, 0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 3]
+
+def split_config(config, max_chunk=63):
+    """Split config into equal chunks."""
+    if not config:
+        return []
+    total = len(config)
+    for size in range(min(max_chunk, total), 0, -1):
+        if total % size == 0:
+            return [config[i:i+size] for i in range(0, total, size)]
+    return [config]
+
+def bitstring(bits):
+    """Convert Bit objects to binary string."""
+    return ''.join(f'{bit.value:0{bit.width}b}' for bit in bits)
+
+def load_config(config_file='./data/gemm_config_reference_aligned.json'):
+    """Load and parse JSON configuration."""
+    with open(config_file) as f:
+        return json.load(f)
+
+def init_modules(cfg):
+    """Initialize all hardware modules from config and perform resource mapping."""
+    # Reset NodeIndex state for clean initialization
+    NodeIndex._queue = []
+    NodeIndex._registry = {}
+    NodeIndex._counter = 0
+    NodeIndex._resolved = False
+    
+    # Reset NodeGraph singleton
+    NodeGraph._instance = None
+    
+    # Create all modules in a unified list
+    modules =   [DramLoopControlConfig(i) for i in range(8)] + \
+                [BufferLoopControlGroupConfig(i) for i in range(4)] + \
+                [LCPEConfig(i) for i in range(8)] + \
+                [StreamConfig(i) for i in range(4)] + \
+                [NeighborStreamConfig()] + \
+                [BufferConfig(i) for i in range(6)] + \
+                [SpecialArrayConfig()]
+    
+    # Load configurations from JSON for all modules
+    print("\n=== Loading Configurations from JSON ===")
+    for module in modules:
+        module.from_json(cfg)
+    
+    # Perform resource allocation and mapping
+    print("\n=== Resource Allocation & Mapping ===")
+    NodeGraph.get().allocate_resources()
+    
+    # Resolve node indices and auto-register modules to mapper
+    NodeIndex.resolve_all(modules)
+    
+    # Print mapping summary
+    print("\n=== Final Mapping Summary ===")
+    NodeGraph.get().mapping.summary()
+    
+    return modules
+
+def build_entries(modules):
     """
-    Write a list of Bit objects to a binary file using each Bit's to_bytes() method.
-
-    Args:
-        bits_list: List of Bit objects in order (MSB to LSB for each Bit).
-        byteorder: Byte order for writing bytes ('little' or 'big').
-
-    Each Bit object is converted to bytes using its own `to_bytes` method. 
-    Bits are concatenated in the given order, and padding is applied to align to full bytes.
+    Build bitstream entries in physical resource order.
+    Uses mapper's direct module lookup for efficient access.
     """
-    # Step 1: Flatten all bits into a single Bit object by concatenation
-    combined = None
-    for b in bits_list:
-        if combined is None:
-            combined = b
+    entries = []
+    print("\n=== Building Bitstream Entries ===")
+    
+    mapper = NodeGraph.get().mapping
+    
+    def add_entry(module_id, module):
+        """Helper to add an entry with proper bitstring conversion."""
+        if module:
+            entries.append((module_id, bitstring(module.to_bits())))
         else:
-            combined = combined.concat(b)  # concatenate using Bit.concat()
+            entries.append((module_id, ''))
+    
+    def get_submodule(group_idx, suffix):
+        """Helper to get ROW_LC or COL_LC submodule from a GROUP."""
+        parent = mapper.get_module(f"GROUP{group_idx}")
+        if parent and hasattr(parent, 'submodules'):
+            return next((sub for sub in parent.submodules 
+                        if hasattr(sub, 'id') and sub.id.node_name.endswith(suffix)), None)
+        return None
+    
+    # Get fixed-position modules from module list
+    buffer_modules = [m for m in modules if isinstance(m, BufferConfig)]
+    neighbor_module = next((m for m in modules if isinstance(m, NeighborStreamConfig)), None)
+    special_module = next((m for m in modules if isinstance(m, SpecialArrayConfig)), None)
+    
+    # Physical resource layout: (module_id, resource_pattern, count, getter_func)
+    layout = [
+        # IGA resources
+        (ModuleID.IGA_LC, "LC", 8, lambda i: mapper.get_module(f"LC{i}")),
+        (ModuleID.IGA_ROW_LC, "GROUP", 4, lambda i: get_submodule(i, 'ROW_LC')),
+        (ModuleID.IGA_COL_LC, "GROUP", 4, lambda i: get_submodule(i, 'COL_LC')),
+        (ModuleID.IGA_PE, "PE", 8, lambda i: mapper.get_module(f"PE{i}")),
+        # Stream Engine resources
+        (ModuleID.SE_RD_MSE, "READ_STREAM", 3, lambda i: mapper.get_module(f"READ_STREAM{i}")),
+        (ModuleID.SE_WR_MSE, "WRITE_STREAM", 1, lambda i: mapper.get_module(f"WRITE_STREAM{i}")),
+        (ModuleID.SE_NSE, "NEIGHBOR", 1, lambda i: neighbor_module),
+        (ModuleID.SE_NSE, "NEIGHBOR_EMPTY", 1, lambda i: None),  # Extra empty entry
+        # Buffer manager cluster
+        (ModuleID.BUFFER_MANAGER_CLUSTER, "BUFFER", len(buffer_modules), lambda i: buffer_modules[i] if i < len(buffer_modules) else None),
+        # Special array
+        (ModuleID.SPECIAL_ARRAY, "SPECIAL", 1, lambda i: special_module),
+    ]
+    
+    # Build all entries from unified layout
+    for module_id, resource_type, count, getter in layout:
+        for i in range(count):
+            add_entry(module_id, getter(i))
+    
+    return entries
 
-    if combined is None:
-        # No bits to write
-        combined = Bit(0, 0)
+def generate_bitstream(entries, config_mask):
+    """Generate bitstream from entries."""
+    bitstream = ''.join(str(x) for x in config_mask)
+    
+    for mid, config in entries:
+        if not config_mask[MODULE_ID_TO_MASK[mid]]:
+            continue
         
-    bin = combined.to_bytes(byteorder=byteorder)
+        if not config or set(config) == {'0'}:
+            bitstream += '0' * MODULE_CFG_CHUNK_SIZES[mid]
+        else:
+            for chunk in split_config(config):
+                bitstream += '1' + chunk
+    
+    # Pad to 64-bit boundary
+    bitstream += '0' * ((64 - len(bitstream) % 64) % 64)
+    return bitstream
 
-    return bin
-    
-if __name__ == "__main__":
-    # Load JSON configuration - use aligned config for testing
-    config_file = "./data/gemm_config_aligned_with_config.json"
-    with open(config_file, "r") as f:
-        cfg = json.load(f)
+def write_bitstream(bitstream, output_file='./data/generated_bitstream.txt'):
+    """Write bitstream to file in 64-bit lines."""
+    with open(output_file, 'w') as f:
+        for i in range(0, len(bitstream), 64):
+            f.write(bitstream[i:i+64] + '\n')
+    print(f'Generated {len(bitstream)} bits ({len(bitstream)//64} lines)')
 
-    # Initialize modules
-    modules = (
-        [DramLoopControlConfig(i) for i in range(8)] +
-        [BufferLoopControlGroupConfig(i) for i in range(4)] +
-        [LCPEConfig(i) for i in range(4)] +
-        [StreamConfig(i) for i in range(4)] +
-        [NeighborStreamConfig()] +
-        [BufferConfig(i) for i in range(6)] +
-        [SpecialArrayConfig()]
-    )
+def dump_modules_detailed(modules, output_file=None):
+    """
+    Dump detailed field-by-field encoding information for all modules.
+    Calls each module's dump() method to show values and their binary encodings.
+    """
+    print("\n=== Detailed Module Configuration Dump ===")
+    
+    for module in modules:
+        if hasattr(module, 'dump'):
+            module.dump()
+            print()  # Add blank line between modules
+    
+    # Optionally write to file
+    if output_file:
+        import sys
+        from io import StringIO
+        
+        # Capture stdout
+        old_stdout = sys.stdout
+        sys.stdout = captured_output = StringIO()
+        
+        for module in modules:
+            if hasattr(module, 'dump'):
+                module.dump()
+                print()
+        
+        # Restore stdout
+        sys.stdout = old_stdout
+        
+        # Write captured output to file
+        with open(output_file, 'w') as f:
+            f.write(captured_output.getvalue())
+        
+        print(f"Detailed dump written to {output_file}")
 
-    total_bits = []
-    print("Configuration Bitstream:")
-    # Process each module - first load all JSON to register all nodes
-    for m in modules:
-        m.from_json(cfg)
+def dump_modules_to_binary(modules, output_file='./data/modules_dump.bin'):
+    """
+    Unified function to dump all modules to binary format.
+    Processes all modules in the unified list, calls to_bits() on each,
+    and writes the result to a binary file.
+    """
+    print("\n=== Dumping All Modules to Binary ===")
+    all_bits = []
     
-    # Now allocate resources and resolve node indices BEFORE generating bits
-    from bitstream.index import NodeIndex
-    node_graph = NodeGraph.get()
-    node_graph.allocate_resources()
-    node_graph.search_mapping()
-    # Resolve all logical node indices to physical resource IDs ahead of encoding
-    NodeIndex.resolve_all()
-    
-    # Separate modules by type for physical-order output
-    dram_lc_modules = [m for m in modules if isinstance(m, DramLoopControlConfig)]
-    buffer_lc_modules = [m for m in modules if isinstance(m, BufferLoopControlGroupConfig)]
-    lc_pe_modules = [m for m in modules if isinstance(m, LCPEConfig)]
-    stream_modules = [m for m in modules if isinstance(m, StreamConfig)]
-    other_modules = [m for m in modules if not isinstance(m, (DramLoopControlConfig, BufferLoopControlGroupConfig, LCPEConfig, StreamConfig))]
-    
-    # Sort DRAM LC modules by physical_index
-    dram_lc_modules.sort(key=lambda m: m.physical_index if hasattr(m, 'physical_index') and m.physical_index is not None else 999)
-    
-    # Reconstruct modules in physical order
-    ordered_modules = dram_lc_modules + buffer_lc_modules + lc_pe_modules + stream_modules + other_modules
-    
-    # Now generate bits with resolved node IDs in physical order
-    for m in ordered_modules:
-        bits = m.to_bits()
-        total_bits.extend(bits)
+    for module in modules:
+        module_name = type(module).__name__
+        bits = module.to_bits()
+        bit_count = len(bits)
         
-        # Dump field values vs binary
-        m.dump(indent=2)
+        if bit_count > 0:
+            print(f"{module_name:30s}: {bit_count:4d} bits")
+            all_bits.extend(bits)
+    
+    # Convert bits to binary string
+    binary_string = bitstring(all_bits)
+    
+    # Write to file
+    with open(output_file, 'w') as f:
+        # Write as hex for readability
+        for i in range(0, len(binary_string), 64):
+            chunk = binary_string[i:i+64]
+            f.write(chunk + '\n')
+    
+    print(f"\nTotal: {len(all_bits)} bits written to {output_file}")
+    return binary_string
+
+def main():
+    """Main entry point."""
+    cfg = load_config()
+    modules = init_modules(cfg)
+    
+    # TODO: Visualize the resource mapping (currently disabled due to performance issues)
+    # from bitstream.config.mapper import visualize_mapping
+    # print("\n=== Generating Placement Visualization ===")
+    # mapper = NodeGraph.get().mapping
+    # connections = NodeGraph.get().connections
+    # visualize_mapping(mapper, connections)
+    
+    # Option 1: Unified dump of all modules (new approach)
+    unified_binary = dump_modules_to_binary(modules)
+    
+    # Option 2: Traditional bitstream generation (for comparison with reference)
+    entries = build_entries(modules)
+    config_mask = [1, 1, 1, 0, 1, 1, 1, 0]  # Enable: IGA, SE, Buffer, Special
+    bitstream = generate_bitstream(entries, config_mask)
+    write_bitstream(bitstream)
+    
+    return {
+        'bitstream': bitstream, 
+        'entries': entries, 
+        'config_mask': config_mask,
+        'unified_binary': unified_binary,
+        'modules': modules
+    }
+
+def compare_bitstreams(generated_info, reference_file=None):
+    """Compare generated bitstream with reference section by section."""
+    bitstream = generated_info['bitstream']
+    entries = generated_info['entries']
+    config_mask = generated_info['config_mask']
+    
+    # Get reference file from generated_info or use provided parameter
+    if reference_file is None:
+        reference_file = generated_info.get('reference_file', 'data/bitstream.txt')
+    
+    # Load reference
+    try:
+        with open(reference_file) as f:
+            ref = ''.join(line.strip() for line in f)
+    except FileNotFoundError:
+        print(f"Reference file not found: {reference_file}")
+        return
+    
+    print(f"\n{'='*80}")
+    print(f"BITSTREAM COMPARISON")
+    print(f"{'='*80}")
+    print(f"Generated: {len(bitstream)} bits ({len(bitstream)//64} lines)")
+    print(f"Reference: {len(ref)} bits ({len(ref)//64} lines)")
+    print(f"Difference: {len(ref) - len(bitstream)} bits")
+    
+    # Compare config mask
+    print(f"\n{'='*80}")
+    print(f"CONFIG MASK (8 bits)")
+    print(f"{'='*80}")
+    gen_mask = bitstream[:8]
+    ref_mask = ref[:8]
+    print(f"Generated: {gen_mask}")
+    print(f"Reference: {ref_mask}")
+    print(f"Match: {'✓' if gen_mask == ref_mask else '✗'}")
+    
+    # Track bit position
+    gen_pos = 8
+    ref_pos = 8
+    
+    # Module names for display
+    module_names = {
+        ModuleID.IGA_LC: "IGA_LC",
+        ModuleID.IGA_ROW_LC: "IGA_ROW_LC",
+        ModuleID.IGA_COL_LC: "IGA_COL_LC",
+        ModuleID.IGA_PE: "IGA_PE",
+        ModuleID.SE_RD_MSE: "SE_RD_MSE",
+        ModuleID.SE_WR_MSE: "SE_WR_MSE",
+        ModuleID.SE_NSE: "SE_NSE",
+        ModuleID.BUFFER_MANAGER_CLUSTER: "BUFFER_MANAGER_CLUSTER",
+        ModuleID.SPECIAL_ARRAY: "SPECIAL_ARRAY",
+    }
+    
+    # Group entries by module type
+    from collections import defaultdict
+    module_groups = defaultdict(list)
+    for mid, config in entries:
+        module_groups[mid].append(config)
+    
+    # Compare each module type
+    for mid in [ModuleID.IGA_LC, ModuleID.IGA_ROW_LC, ModuleID.IGA_COL_LC, 
+                ModuleID.IGA_PE, ModuleID.SE_RD_MSE, ModuleID.SE_WR_MSE, 
+                ModuleID.SE_NSE, ModuleID.BUFFER_MANAGER_CLUSTER, ModuleID.SPECIAL_ARRAY]:
         
-    # Write to binary file
-    bin = bits_to_binfile(total_bits, byteorder="little")
-    
-    with open("./data/config_bitstream.bin", "wb") as f:
-        f.write(bin)
+        if not config_mask[MODULE_ID_TO_MASK[mid]]:
+            continue
+            
+        configs = module_groups[mid]
+        print(f"\n{'='*80}")
+        print(f"{module_names[mid]} ({len(configs)} entries)")
+        print(f"{'='*80}")
         
-    # Visualize the configuration
-    # visualize_modules(modules, save_path="./data/bitstream.png")
+        for idx, config in enumerate(configs):
+            # Calculate expected bits for this entry
+            if not config or set(config) == {'0'}:
+                # Empty config
+                gen_bits = '0' * MODULE_CFG_CHUNK_SIZES[mid]
+                gen_section = bitstream[gen_pos:gen_pos+MODULE_CFG_CHUNK_SIZES[mid]]
+                ref_section = ref[ref_pos:ref_pos+MODULE_CFG_CHUNK_SIZES[mid]]
+                
+                match = gen_section == ref_section
+                print(f"\n  [{idx}] Empty config ({MODULE_CFG_CHUNK_SIZES[mid]} enable bits)")
+                print(f"    Generated: {gen_section}")
+                print(f"    Reference: {ref_section}")
+                print(f"    Match: {'✓' if match else '✗'}")
+                
+                gen_pos += MODULE_CFG_CHUNK_SIZES[mid]
+                ref_pos += MODULE_CFG_CHUNK_SIZES[mid]
+            else:
+                # Has data
+                chunks = split_config(config)
+                print(f"\n  [{idx}] {len(config)} bits -> {len(chunks)} chunks")
+                
+                all_match = True
+                for chunk_idx, chunk in enumerate(chunks):
+                    chunk_with_enable = '1' + chunk
+                    gen_section = bitstream[gen_pos:gen_pos+len(chunk_with_enable)]
+                    ref_section = ref[ref_pos:ref_pos+len(chunk_with_enable)]
+                    
+                    match = gen_section == ref_section
+                    all_match = all_match and match
+                    
+                    if not match or chunk_idx == 0:  # Always show first chunk, and mismatches
+                        print(f"    Chunk {chunk_idx}: {len(chunk)} bits (+1 enable)")
+                        print(f"      Generated: {gen_section}")
+                        print(f"      Reference: {ref_section}")
+                        print(f"      Match: {'✓' if match else '✗'}")
+                    
+                    gen_pos += len(chunk_with_enable)
+                    ref_pos += len(chunk_with_enable)
+                
+                if len(chunks) > 1:
+                    print(f"    Overall: {'✓ All chunks match' if all_match else '✗ Some chunks differ'}")
     
-    # Print NodeGraph summary
-    # NodeGraph.get().summary()
+    # Check remaining bits (padding)
+    if gen_pos < len(bitstream) or ref_pos < len(ref):
+        print(f"\n{'='*80}")
+        print(f"PADDING")
+        print(f"{'='*80}")
+        gen_padding = bitstream[gen_pos:]
+        ref_padding = ref[ref_pos:]
+        print(f"Generated padding: {len(gen_padding)} bits")
+        print(f"Reference padding: {len(ref_padding)} bits")
+        if gen_padding or ref_padding:
+            print(f"Generated: {gen_padding[:64]}{'...' if len(gen_padding) > 64 else ''}")
+            print(f"Reference: {ref_padding[:64]}{'...' if len(ref_padding) > 64 else ''}")
+            print(f"Match: {'✓' if gen_padding == ref_padding else '✗'}")
     
-    
-    
+    # Summary
+    print(f"\n{'='*80}")
+    print(f"SUMMARY")
+    print(f"{'='*80}")
+    total_match = bitstream == ref
+    if total_match:
+        print("✓ PERFECT MATCH! Generated bitstream matches reference exactly.")
+    else:
+        # Find first difference
+        for i in range(min(len(bitstream), len(ref))):
+            if bitstream[i] != ref[i]:
+                print(f"✗ First difference at bit {i}")
+                print(f"  Context (bits {max(0,i-20)}:{i+20}):")
+                print(f"    Generated: {bitstream[max(0,i-20):i+20]}")
+                print(f"    Reference: {ref[max(0,i-20):i+20]}")
+                break
+        else:
+            if len(bitstream) != len(ref):
+                print(f"✗ Bitstreams match up to bit {min(len(bitstream), len(ref))}, but lengths differ")

@@ -4,8 +4,13 @@ from bitstream.bit import Bit
 from bitstream.index import Connect, NodeIndex
 from math import log2
 
-class ReadStreamConfig(BaseConfigModule):
-    # Field order must match config_generator_ver2.py se_rd_mse bit_fields order
+
+class ReadStreamEngineConfig(BaseConfigModule):
+    """
+    Read stream engine configuration with padding and tailing fields.
+    This is a submodule of StreamConfig.
+    """
+    
     FIELD_MAP = [
         # Padding (4 bits, not used but needed for alignment)
         ("_padding", 4),  
@@ -41,14 +46,32 @@ class ReadStreamConfig(BaseConfigModule):
         ("spatial_stride", 80),                  # mse_buf_spatial_stride
         ("spatial_size", 5),                     # mse_buf_spatial_size
     ]
-
+    
+    def __init__(self, stream_key: str):
+        super().__init__()
+        self.stream_key = stream_key
+        self.id: Optional[NodeIndex] = None
+    
+    @property
+    def physical_index(self) -> int:
+        """Get physical index from NodeIndex.physical_id."""
+        if self.id is not None:
+            return self.id.physical_id
+        return 0
+    
     def from_json(self, cfg: dict):
+        """Load read stream configuration from JSON."""
+        self.id = NodeIndex(f"STREAM.{self.stream_key}", stream_type="read")
         cfg = cfg.get("memory_AG", cfg)
         super().from_json(cfg)
 
 
-class WriteStreamConfig(BaseConfigModule):
-    # Field order must match config_generator_ver2.py se_wr_mse bit_fields order
+class WriteStreamEngineConfig(BaseConfigModule):
+    """
+    Write stream engine configuration without padding and tailing fields.
+    This is a submodule of StreamConfig.
+    """
+    
     FIELD_MAP = [
         # Memory AG fields
         ("idx_mode", 6),                         # mse_mem_idx_keep_mode
@@ -73,10 +96,129 @@ class WriteStreamConfig(BaseConfigModule):
         ("spatial_stride", 80),                   # mse_buf_spatial_stride
         ("spatial_size", 5),                      # mse_buf_spatial_size
     ]
-
+    
+    def __init__(self, stream_key: str):
+        super().__init__()
+        self.stream_key = stream_key
+        self.id: Optional[NodeIndex] = None
+    
+    @property
+    def physical_index(self) -> int:
+        """Get physical index from NodeIndex.physical_id."""
+        if self.id is not None:
+            return self.id.physical_id
+        return 0
+    
     def from_json(self, cfg: dict):
+        """Load write stream configuration from JSON."""
+        self.id = NodeIndex(f"STREAM.{self.stream_key}", stream_type="write")
         cfg = cfg.get("memory_AG", cfg)
         super().from_json(cfg)
+
+
+class StreamConfig(BaseConfigModule):
+    """
+    Container for stream configurations.
+    Similar to BufferLoopControlGroupConfig, this holds submodules.
+    Determines read/write type from JSON and creates appropriate submodule.
+    
+    Can be initialized with either an index (int) or stream_key (str).
+    """
+    
+    def __init__(self, idx_or_key):
+        super().__init__()
+        # Support both int index and string key for flexibility
+        if isinstance(idx_or_key, int):
+            self.idx = idx_or_key
+            self.stream_key = None  # Will be set in from_json
+        else:
+            self.idx = None
+            self.stream_key = idx_or_key
+        
+        self._stream_type: Optional[str] = None
+        self.submodules: List[BaseConfigModule] = []
+    
+    @property
+    def physical_index(self) -> int:
+        """Get physical index from the submodule's NodeIndex."""
+        if self.submodules and hasattr(self.submodules[0], 'physical_index'):
+            return self.submodules[0].physical_index
+        return 0
+    
+    @property
+    def id(self) -> Optional[NodeIndex]:
+        """Get NodeIndex from the submodule."""
+        if self.submodules and hasattr(self.submodules[0], 'id'):
+            return self.submodules[0].id
+        return None
+    
+    @property
+    def stream_type(self) -> Optional[str]:
+        """Get stream type (read/write)."""
+        return self._stream_type
+    
+    @stream_type.setter
+    def stream_type(self, value: Optional[str]):
+        """Set stream type."""
+        self._stream_type = value
+    
+    def from_json(self, cfg: dict):
+        """
+        Load stream configuration from JSON.
+        If initialized with index, finds the idx-th stream from stream_engine.
+        Determines type from memory_AG.mode and creates appropriate submodule.
+        """
+        # Get stream_engine from config
+        stream_engine = cfg.get('stream_engine', cfg)
+        
+        # If initialized with index, find the corresponding stream key
+        if self.stream_key is None:
+            # Get all stream keys except n2n, sorted
+            stream_keys = sorted([k for k in stream_engine.keys() if k != 'n2n'])
+            if self.idx < len(stream_keys):
+                self.stream_key = stream_keys[self.idx]
+            else:
+                # No valid stream at this index, create empty config
+                self.submodules = []
+                return
+        
+        # Get the specific stream configuration
+        if self.stream_key not in stream_engine:
+            self.submodules = []
+            return
+        
+        stream_cfg = stream_engine[self.stream_key]
+        
+        # Extract stream type from memory_AG.mode
+        memory_ag = stream_cfg.get("memory_AG", {})
+        self.stream_type = memory_ag.get("mode", "read")
+        
+        # Create appropriate submodule based on stream type
+        if self.stream_type == "write":
+            submodule = WriteStreamEngineConfig(self.stream_key)
+        else:
+            submodule = ReadStreamEngineConfig(self.stream_key)
+        
+        # Load configuration into submodule
+        submodule.from_json(stream_cfg)
+        self.submodules = [submodule]
+    
+    def to_bits(self) -> List[Bit]:
+        """Return bits from the submodule."""
+        if self.submodules:
+            return self.submodules[0].to_bits()
+        return []
+
+
+# Legacy aliases for backward compatibility
+class ReadStreamConfig(StreamConfig):
+    """Legacy alias - use StreamConfig instead."""
+    pass
+
+
+class WriteStreamConfig(StreamConfig):
+    """Legacy alias - use StreamConfig instead."""
+    pass
 
 
 

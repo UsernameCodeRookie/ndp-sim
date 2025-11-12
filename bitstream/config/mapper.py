@@ -18,10 +18,12 @@ class Mapper:
     def __init__(self):
         # Predefined physical resource pools
         self.resource_pools = {
-            "LC":   [f"LC{i}" for i in range(8)],     # 8 LC resources
-            "GROUP":[f"GROUP{i}" for i in range(4)],  # 4 GROUP resources
-            "AG":   [f"AG{i}" for i in range(4)],     # 4 AG (Address Generator) resources
-            "PE":   [f"PE{i}" for i in range(8)],     # 8 Processing Elements
+            "LC":         [f"LC{i}" for i in range(8)],           # 8 LC resources
+            "GROUP":      [f"GROUP{i}" for i in range(4)],        # 4 GROUP resources
+            "AG":         [f"AG{i}" for i in range(4)],           # 4 AG (Address Generator) resources
+            "PE":         [f"PE{i}" for i in range(8)],           # 8 Processing Elements
+            "READ_STREAM": [f"READ_STREAM{i}" for i in range(3)], # 3 Read Streams (physical)
+            "WRITE_STREAM":[f"WRITE_STREAM{i}" for i in range(1)],# 1 Write Stream (physical)
         }
 
         # Track how many of each resource type have been used
@@ -29,6 +31,9 @@ class Mapper:
 
         # Mapping: node name → assigned physical resource
         self.node_to_resource: Dict[str, str] = {}
+        
+        # Mapping: physical resource → module object (for direct access)
+        self.resource_to_module: Dict[str, any] = {}
         
         # List of all nodes registered for allocation
         self.nodes: List[str] = []
@@ -40,17 +45,22 @@ class Mapper:
         elif node.startswith("GROUP"):
             return "GROUP"
         elif node.startswith("STREAM"):
-            return "AG"
+            # Stream type is determined during allocation based on JSON mode
+            return "STREAM"  # Will be refined to READ_STREAM or WRITE_STREAM
         elif node.startswith("LC_PE"):
             return "PE"
         else:
             return None
 
-    def allocate(self, node: str) -> str:
+    def allocate(self, node: str, stream_type: Optional[str] = None) -> str:
         """
         Allocate a physical resource for a node based on its type.
         If the node name indicates a special type (ROW_LC), it may reuse
-        its parent GROUP’s resource.
+        its parent GROUP's resource.
+        
+        Args:
+            node: Node name to allocate
+            stream_type: For STREAM nodes, specify "read" or "write" to determine pool
         """        
         # Return existing allocation if present
         if node in self.node_to_resource:
@@ -63,17 +73,31 @@ class Mapper:
             self.node_to_resource[node] = "GENERIC"
             return "GENERIC"
 
-        # Special case: ROW_LC shares its parent GROUP’s resource
+        # Special case: ROW_LC shares its parent GROUP's resource
         if node.endswith("ROW_LC") or node.endswith("COL_LC"):
             group_prefix = node.split(".")[0]  # e.g., GROUP0 from GROUP0.ROW_LC
             # Ensure the parent group is allocated and reuse its resource.
             parent_res = self.allocate(group_prefix)
             self.node_to_resource[node] = parent_res
             return parent_res
+        
+        # Special case: STREAM nodes need to know read vs write
+        if res_type == "STREAM":
+            if stream_type == "read":
+                res_type = "READ_STREAM"
+            elif stream_type == "write":
+                res_type = "WRITE_STREAM"
+            else:
+                # Default to READ_STREAM if not specified
+                res_type = "READ_STREAM"
 
         # Normal allocation — pick the next available resource from the pool
         idx = self.resource_counters[res_type]
-        pool = self.resource_pools[res_type]
+        pool = self.resource_pools.get(res_type)
+        
+        if pool is None:
+            raise RuntimeError(f"[Error] Unknown resource type: {res_type} for node {node})")
+        
         self.nodes.append(node)
 
         # Pool exhausted check
@@ -113,11 +137,13 @@ class Mapper:
                 return abs(dst_idx - (src_idx // 2)) in [0, 1]
             return True
         
-    class LCtoAGConstraint(Constraint):
-        """LC i → AG j constraint: j in [i//2 - 1, i//2 + 1]"""
+    class LCtoSTREAMConstraint(Constraint):
+        """LC i → STREAM j constraint: READ_STREAM has 3 slots [0-2], WRITE_STREAM has 1 slot [0]"""
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "LC" and dst_type == "AG":
-                return abs(dst_idx - (src_idx // 2)) in [0, 1]
+            # LC can connect to any READ_STREAM or WRITE_STREAM
+            if src_type == "LC" and dst_type in ["READ_STREAM", "WRITE_STREAM"]:
+                # No specific positional constraint for streams
+                return True
             return True
     
     class PEtoPEConstraint(Constraint):
@@ -128,11 +154,12 @@ class Mapper:
             return True
     
     
-    class PEtoAGConstraint(Constraint):
-        """PE i → AG j constraint: j in [i//2 - 1, i//2 + 1]"""
+    class PEtoSTREAMConstraint(Constraint):
+        """PE i → STREAM j constraint: PE can connect to any READ_STREAM or WRITE_STREAM"""
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "PE" and dst_type == "AG":
-                return abs(dst_idx - (src_idx // 2)) in [0, 1]
+            # PE can connect to any READ_STREAM or WRITE_STREAM
+            if src_type == "PE" and dst_type in ["READ_STREAM", "WRITE_STREAM"]:
+                return True
             return True
 
     
@@ -142,9 +169,9 @@ class Mapper:
             self.LCtoLCConstraint(),
             self.LCtoPEConstraint(),
             self.LCtoGROUPConstraint(),
-            self.LCtoAGConstraint(),
+            self.LCtoSTREAMConstraint(),
             self.PEtoPEConstraint(),
-            self.PEtoAGConstraint(),
+            self.PEtoSTREAMConstraint(),
         ]
 
         def backtrack(index: int, current_mapping: Dict[str, str], used_resources: Set[str]) -> Optional[Dict[str, str]]:
@@ -160,8 +187,31 @@ class Mapper:
                         dst = dst.split(".")[0]
                     
                     if src in current_mapping and dst in current_mapping:
-                        src_type, src_idx = self.get_type(src), int(current_mapping[src][len(self.get_type(src)):])
-                        dst_type, dst_idx = self.get_type(dst), int(current_mapping[dst][len(self.get_type(dst)):])
+                        # Extract resource type and index
+                        src_res = current_mapping[src]
+                        dst_res = current_mapping[dst]
+                        
+                        # Handle READ_STREAM and WRITE_STREAM specially
+                        if src_res.startswith("READ_STREAM"):
+                            src_type = "READ_STREAM"
+                            src_idx = int(src_res[len("READ_STREAM"):])
+                        elif src_res.startswith("WRITE_STREAM"):
+                            src_type = "WRITE_STREAM"
+                            src_idx = int(src_res[len("WRITE_STREAM"):])
+                        else:
+                            src_type = ''.join(ch for ch in src_res if ch.isalpha())
+                            src_idx = int(''.join(ch for ch in src_res if ch.isdigit()))
+                        
+                        if dst_res.startswith("READ_STREAM"):
+                            dst_type = "READ_STREAM"
+                            dst_idx = int(dst_res[len("READ_STREAM"):])
+                        elif dst_res.startswith("WRITE_STREAM"):
+                            dst_type = "WRITE_STREAM"
+                            dst_idx = int(dst_res[len("WRITE_STREAM"):])
+                        else:
+                            dst_type = ''.join(ch for ch in dst_res if ch.isalpha())
+                            dst_idx = int(''.join(ch for ch in dst_res if ch.isdigit()))
+                        
                         if not all(constraint.check(src_type, src_idx, dst_type, dst_idx) for constraint in self.constraints):
                             return None
                 existing_mapping.update(current_mapping)
@@ -194,6 +244,21 @@ class Mapper:
     def get(self, node: str) -> Optional[str]:
         """Return the physical resource assigned to a given node."""
         return self.node_to_resource.get(node)
+    
+    def get_node_by_resource(self, resource: str) -> Optional[str]:
+        """Reverse lookup: Return the logical node assigned to a physical resource."""
+        for node, res in self.node_to_resource.items():
+            if res == resource:
+                return node
+        return None
+    
+    def register_module(self, resource: str, module: any):
+        """Register a module object for a physical resource."""
+        self.resource_to_module[resource] = module
+    
+    def get_module(self, resource: str) -> Optional[any]:
+        """Get the module object for a physical resource."""
+        return self.resource_to_module.get(resource)
 
     def summary(self):
         """Print all node-to-resource mappings."""
@@ -216,6 +281,7 @@ class NodeGraph:
         self.nodes: List[str] = []
         self.connections: List[Dict[str, str]] = []
         self.mapping = Mapper()  # Replaces node_to_resource
+        self.node_metadata: Dict[str, Dict] = {}  # Store metadata like stream_type
 
     @staticmethod
     def get() -> "NodeGraph":
@@ -224,10 +290,12 @@ class NodeGraph:
             NodeGraph._instance = NodeGraph()
         return NodeGraph._instance
 
-    def add_node(self, name: str):
-        """Add a node to the graph if it does not already exist."""
+    def add_node(self, name: str, **metadata):
+        """Add a node to the graph with optional metadata (e.g., stream_type)."""
         if name not in self.nodes:
             self.nodes.append(name)
+        if metadata:
+            self.node_metadata[name] = metadata
 
     def connect(self, src: str, dst: str):
         """Add a directed connection (src → dst) if it doesn't already exist."""
@@ -240,7 +308,15 @@ class NodeGraph:
     def allocate_resources(self):
         """Allocate physical resources for all registered nodes."""
         for node in self.nodes:
-            self.mapping.allocate(node)
+            # Get metadata for this node (e.g., stream_type)
+            metadata = self.node_metadata.get(node, {})
+            stream_type = metadata.get('stream_type')
+            
+            # Allocate with stream_type if available
+            if stream_type:
+                self.mapping.allocate(node, stream_type=stream_type)
+            else:
+                self.mapping.allocate(node)
             
     def search_mapping(self):
         """Search for a valid node→resource mapping satisfying constraints."""
@@ -266,14 +342,14 @@ class NodeGraph:
 
 def visualize_mapping(mapper, connections, save_path="data/placement.png"):
     """
-    Visualize the physical layout of hardware resources (LC, GROUP, PE, AG)
+    Visualize the physical layout of hardware resources (LC, GROUP, PE, STREAM)
     and draw mapped logical connections between them.
 
     Each row represents a physical resource layer:
         Row 3: LC0-LC7
         Row 2: GROUP0-GROUP3
         Row 1: PE0-PE7
-        Row 0: AG0-AG3
+        Row 0: READ_STREAM0-2, WRITE_STREAM0
 
     The function automatically adjusts connection lines to avoid overlapping,
     especially for same-row (e.g., LC→LC) connections, by drawing smooth curves.
@@ -285,10 +361,11 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
 
     # Define fixed layout positions
     layout = {
-        "LC":    [(i, 3) for i in range(8)],               # LC0–LC7
-        "GROUP": [(i * 2 + 0.5, 2) for i in range(4)],     # between every 2 LCs
-        "PE":    [(i, 1) for i in range(8)],               # aligned with LC
-        "AG":    [(i * 2 + 0.5, 0) for i in range(4)],     # aligned with GROUP
+        "LC":           [(i, 3) for i in range(8)],               # LC0–LC7
+        "GROUP":        [(i * 2 + 0.5, 2) for i in range(4)],     # between every 2 LCs
+        "PE":           [(i, 1) for i in range(8)],               # aligned with LC
+        "READ_STREAM":  [(i * 2 + 0.5, 0) for i in range(3)],     # READ_STREAM0-2
+        "WRITE_STREAM": [(7, 0)],                                  # WRITE_STREAM0
     }
 
     # Draw resource nodes
@@ -302,10 +379,21 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
                 ""
             )
 
+            # Use different colors for READ and WRITE streams
+            if res_type == "READ_STREAM":
+                facecolor = "lightblue"
+                label_text = "READ_STREAM" if i == 0 else ""
+            elif res_type == "WRITE_STREAM":
+                facecolor = "lightcoral"
+                label_text = "WRITE_STREAM"
+            else:
+                facecolor = "lightgray"
+                label_text = res_type if i == 0 else ""
+
             ax.scatter(
                 x, y, s=500, marker="s",
-                label=res_type if i == 0 else "",
-                edgecolor="black", facecolor="lightgray", zorder=3
+                label=label_text,
+                edgecolor="black", facecolor=facecolor, zorder=3
             )
 
             # Show node name (logical node) or leave blank if unassigned
@@ -357,10 +445,26 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
         if src_res is dst_res:
             continue  # skip self-loops
 
-        src_type = ''.join(ch for ch in src_res if ch.isalpha())
-        dst_type = ''.join(ch for ch in dst_res if ch.isalpha())
-        src_idx = int(''.join(ch for ch in src_res if ch.isdigit()))
-        dst_idx = int(''.join(ch for ch in dst_res if ch.isdigit()))
+        # Handle READ_STREAM and WRITE_STREAM specially
+        if src_res.startswith("READ_STREAM"):
+            src_type = "READ_STREAM"
+            src_idx = int(src_res[len("READ_STREAM"):])
+        elif src_res.startswith("WRITE_STREAM"):
+            src_type = "WRITE_STREAM"
+            src_idx = int(src_res[len("WRITE_STREAM"):])
+        else:
+            src_type = ''.join(ch for ch in src_res if ch.isalpha())
+            src_idx = int(''.join(ch for ch in src_res if ch.isdigit()))
+        
+        if dst_res.startswith("READ_STREAM"):
+            dst_type = "READ_STREAM"
+            dst_idx = int(dst_res[len("READ_STREAM"):])
+        elif dst_res.startswith("WRITE_STREAM"):
+            dst_type = "WRITE_STREAM"
+            dst_idx = int(dst_res[len("WRITE_STREAM"):])
+        else:
+            dst_type = ''.join(ch for ch in dst_res if ch.isalpha())
+            dst_idx = int(''.join(ch for ch in dst_res if ch.isdigit()))
 
         if src_type not in layout or dst_type not in layout:
             continue

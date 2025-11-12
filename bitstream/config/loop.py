@@ -19,7 +19,13 @@ class DramLoopControlConfig(BaseConfigModule):
         super().__init__()
         self.idx = idx
         self.id : Optional[NodeIndex] = None
-        self.physical_index : Optional[int] = None  # Physical output position
+    
+    @property
+    def physical_index(self) -> int:
+        """Get physical index from NodeIndex.physical_id."""
+        if self.id is not None:
+            return self.id.physical_id
+        return self.idx  # Fallback to logical index
 
     def set_empty(self):
         """Set all fields to None so that to_bits produces zeros."""
@@ -42,12 +48,10 @@ class DramLoopControlConfig(BaseConfigModule):
         if self.idx < len(stride_entries):
             key, entry = stride_entries[self.idx]
             self.id = NodeIndex("DRAM_LC." + key)
-            # Extract physical_index if present
-            self.physical_index = entry.get("physical_index", self.idx)
+            # Physical index will be resolved automatically from NodeIndex.physical_id
             super().from_json(entry)
         else:
             # No valid entry: treat as empty
-            self.physical_index = self.idx
             self.set_empty()
             
 class LCPEConfig(BaseConfigModule):
