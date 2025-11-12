@@ -23,6 +23,10 @@ target_include_directories(gemm_64x64_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_executable(gemm_operator_tpu_example src/examples/gemm_operator_tpu_example.cpp)
 target_include_directories(gemm_operator_tpu_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+# --- Precision demo example ---
+add_executable(precision_demo src/examples/precision_demo.cpp)
+target_include_directories(precision_demo PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 # --- DRAMsim3 library ---
 add_subdirectory(third_party/DRAMsim3)
 
@@ -52,6 +56,12 @@ add_executable(test_pe tests/test_pe.cpp)
 target_include_directories(test_pe PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_pe gtest gtest_main pthread)
 add_test(NAME test_pe COMMAND test_pe)
+
+# --- PE Dual ALU tests ---
+add_executable(test_pe_dual_alu tests/test_pe_dual_alu.cpp)
+target_include_directories(test_pe_dual_alu PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_pe_dual_alu gtest gtest_main pthread)
+add_test(NAME test_pe_dual_alu COMMAND test_pe_dual_alu)
 
 # --- Pipeline tests ---
 add_executable(test_pipeline tests/test_pipeline.cpp)

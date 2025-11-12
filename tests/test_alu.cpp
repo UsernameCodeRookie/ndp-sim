@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cstring>
+
 #include "../src/components/alu.h"
 #include "../src/scheduler.h"
 #include "../src/trace.h"
@@ -16,107 +18,108 @@ class ALUTest : public ::testing::Test {
 };
 
 TEST_F(ALUTest, BasicAddition) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<INTUComponent>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test: 5 + 3 = 8
-  int result = ALUComponent::executeOperation(5, 3, ALUOp::ADD);
+  int result = INTUComponent::executeOperation(5, 3, ALUOp::ADD);
   EXPECT_EQ(result, 8);
 }
 
 TEST_F(ALUTest, BasicSubtraction) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<INTUComponent>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test: 10 - 4 = 6
-  int result = ALUComponent::executeOperation(10, 4, ALUOp::SUB);
+  int result = INTUComponent::executeOperation(10, 4, ALUOp::SUB);
   EXPECT_EQ(result, 6);
 }
 
 TEST_F(ALUTest, BasicMultiplication) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<INTUComponent>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test: 7 * 6 = 42
-  int result = ALUComponent::executeOperation(7, 6, ALUOp::MUL);
+  int result = INTUComponent::executeOperation(7, 6, ALUOp::MUL);
   EXPECT_EQ(result, 42);
 }
 
 TEST_F(ALUTest, BasicDivision) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<INTUComponent>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test: 20 / 4 = 5
-  int result = ALUComponent::executeOperation(20, 4, ALUOp::DIV);
+  int result = INTUComponent::executeOperation(20, 4, ALUOp::DIV);
   EXPECT_EQ(result, 5);
 }
 
 TEST_F(ALUTest, BitwiseOperations) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<INTUComponent>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test AND: 0b1100 & 0b1010 = 0b1000 (12 & 10 = 8)
-  EXPECT_EQ(ALUComponent::executeOperation(12, 10, ALUOp::AND), 8);
+  EXPECT_EQ(INTUComponent::executeOperation(12, 10, ALUOp::AND), 8);
 
   // Test OR: 0b1100 | 0b1010 = 0b1110 (12 | 10 = 14)
-  EXPECT_EQ(ALUComponent::executeOperation(12, 10, ALUOp::OR), 14);
+  EXPECT_EQ(INTUComponent::executeOperation(12, 10, ALUOp::OR), 14);
 
   // Test XOR: 0b1100 ^ 0b1010 = 0b0110 (12 ^ 10 = 6)
-  EXPECT_EQ(ALUComponent::executeOperation(12, 10, ALUOp::XOR), 6);
+  EXPECT_EQ(INTUComponent::executeOperation(12, 10, ALUOp::XOR), 6);
 }
 
 TEST_F(ALUTest, ShiftOperations) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<INTUComponent>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test SLL: 4 << 2 = 16
-  EXPECT_EQ(ALUComponent::executeOperation(4, 2, ALUOp::SLL), 16);
+  EXPECT_EQ(INTUComponent::executeOperation(4, 2, ALUOp::SLL), 16);
 
   // Test SRL: 16 >> 2 = 4
-  EXPECT_EQ(ALUComponent::executeOperation(16, 2, ALUOp::SRL), 4);
+  EXPECT_EQ(INTUComponent::executeOperation(16, 2, ALUOp::SRL), 4);
 }
 
 TEST_F(ALUTest, ComparisonOperations) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<INTUComponent>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test SLT: 3 < 5 = 1 (true)
-  EXPECT_EQ(ALUComponent::executeOperation(3, 5, ALUOp::SLT), 1);
+  EXPECT_EQ(INTUComponent::executeOperation(3, 5, ALUOp::SLT), 1);
 
   // Test SLT: 5 < 3 = 0 (false)
-  EXPECT_EQ(ALUComponent::executeOperation(5, 3, ALUOp::SLT), 0);
+  EXPECT_EQ(INTUComponent::executeOperation(5, 3, ALUOp::SLT), 0);
 
   // Test MAX
-  EXPECT_EQ(ALUComponent::executeOperation(3, 5, ALUOp::MAX), 5);
-  EXPECT_EQ(ALUComponent::executeOperation(5, 3, ALUOp::MAX), 5);
+  EXPECT_EQ(INTUComponent::executeOperation(3, 5, ALUOp::MAX), 5);
+  EXPECT_EQ(INTUComponent::executeOperation(5, 3, ALUOp::MAX), 5);
 
   // Test MIN
-  EXPECT_EQ(ALUComponent::executeOperation(3, 5, ALUOp::MIN), 3);
-  EXPECT_EQ(ALUComponent::executeOperation(5, 3, ALUOp::MIN), 3);
+  EXPECT_EQ(INTUComponent::executeOperation(3, 5, ALUOp::MIN), 3);
+  EXPECT_EQ(INTUComponent::executeOperation(5, 3, ALUOp::MIN), 3);
 }
 
 TEST_F(ALUTest, UnaryOperations) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<INTUComponent>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test ABS: abs(-5) = 5
-  EXPECT_EQ(ALUComponent::executeOperation(-5, 0, ALUOp::ABS), 5);
-  EXPECT_EQ(ALUComponent::executeOperation(5, 0, ALUOp::ABS), 5);
+  EXPECT_EQ(INTUComponent::executeOperation(-5, 0, ALUOp::ABS), 5);
+  EXPECT_EQ(INTUComponent::executeOperation(5, 0, ALUOp::ABS), 5);
 
   // Test NEG: -5 = -5
-  EXPECT_EQ(ALUComponent::executeOperation(5, 0, ALUOp::NEG), -5);
-  EXPECT_EQ(ALUComponent::executeOperation(-5, 0, ALUOp::NEG), 5);
+  EXPECT_EQ(INTUComponent::executeOperation(5, 0, ALUOp::NEG), -5);
+  EXPECT_EQ(INTUComponent::executeOperation(-5, 0, ALUOp::NEG), 5);
 }
 
 TEST_F(ALUTest, PipelineOperation) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<INTUComponent>("test_alu", *scheduler, 1);
   alu->start();
 
   auto input_port = alu->getPort("in");
   auto output_port = alu->getPort("out");
 
   // Send operation through pipeline
-  auto packet = std::make_shared<ALUDataPacket>(10, 5, ALUOp::ADD);
+  auto packet =
+      std::make_shared<ALUDataPacket<Int32Precision>>(10, 5, ALUOp::ADD);
   input_port->write(packet);
 
   // Execute pipeline stages (3 stages + 1 to output = 4 ticks)
@@ -133,7 +136,7 @@ TEST_F(ALUTest, PipelineOperation) {
 }
 
 TEST_F(ALUTest, AccumulatorMACOperation) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<INTUComponent>("test_alu", *scheduler, 1);
   alu->start();
 
   // Reset accumulator
@@ -143,7 +146,8 @@ TEST_F(ALUTest, AccumulatorMACOperation) {
   // MAC: acc = 0 + (3 * 4) = 12
   alu->setAccumulator(0);
   auto input_port = alu->getPort("in");
-  auto packet1 = std::make_shared<ALUDataPacket>(3, 4, ALUOp::MAC);
+  auto packet1 =
+      std::make_shared<ALUDataPacket<Int32Precision>>(3, 4, ALUOp::MAC);
   input_port->write(packet1);
 
   for (int i = 0; i < 3; i++) {
@@ -153,7 +157,8 @@ TEST_F(ALUTest, AccumulatorMACOperation) {
   EXPECT_EQ(alu->getAccumulator(), 12);
 
   // MAC: acc = 12 + (2 * 5) = 22
-  auto packet2 = std::make_shared<ALUDataPacket>(2, 5, ALUOp::MAC);
+  auto packet2 =
+      std::make_shared<ALUDataPacket<Int32Precision>>(2, 5, ALUOp::MAC);
   input_port->write(packet2);
 
   for (int i = 0; i < 3; i++) {
@@ -169,8 +174,8 @@ TEST_F(ALUTest, EventDrivenExecution) {
   EventDriven::Tracer::getInstance().initialize("test_alu_event_driven.log",
                                                 true);
 
-  auto alu =
-      std::make_shared<ALUComponent>("test_alu_ed", *scheduler, 2);  // period=2
+  auto alu = std::make_shared<INTUComponent>("test_alu_ed", *scheduler,
+                                             2);  // period=2
   alu->start();
 
   auto input_port = alu->getPort("in");
@@ -178,7 +183,8 @@ TEST_F(ALUTest, EventDrivenExecution) {
 
   // Schedule input at time 0
   scheduler->scheduleAt(0, [&](EventDriven::EventScheduler& sched) {
-    auto packet = std::make_shared<ALUDataPacket>(10, 3, ALUOp::ADD);
+    auto packet =
+        std::make_shared<ALUDataPacket<Int32Precision>>(10, 3, ALUOp::ADD);
     input_port->write(packet);
     EventDriven::Tracer::getInstance().traceEvent(
         sched.getCurrentTime(), "Test", "InputWrite", "ADD 10+3");
@@ -207,8 +213,8 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
   EventDriven::Tracer::getInstance().initialize("test_alu_multiple_ops.log",
                                                 true);
 
-  auto alu = std::make_shared<ALUComponent>("test_alu_multi", *scheduler,
-                                            2);  // period=2
+  auto alu = std::make_shared<INTUComponent>("test_alu_multi", *scheduler,
+                                             2);  // period=2
   alu->start();
 
   auto input_port = alu->getPort("in");
@@ -220,21 +226,24 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
   // With period=2, ticks happen at t=0,2,4,6,8,10,12,...
   // Write at t=1, t=11, t=21 (between ticks, so they'll be seen on next tick)
   scheduler->scheduleAt(1, [&](EventDriven::EventScheduler& sched) {
-    auto packet = std::make_shared<ALUDataPacket>(5, 3, ALUOp::ADD);
+    auto packet =
+        std::make_shared<ALUDataPacket<Int32Precision>>(5, 3, ALUOp::ADD);
     input_port->write(packet);
     EventDriven::Tracer::getInstance().traceCompute(sched.getCurrentTime(),
                                                     "Test", "Op1", "5+3");
   });
 
   scheduler->scheduleAt(11, [&](EventDriven::EventScheduler& sched) {
-    auto packet = std::make_shared<ALUDataPacket>(10, 2, ALUOp::MUL);
+    auto packet =
+        std::make_shared<ALUDataPacket<Int32Precision>>(10, 2, ALUOp::MUL);
     input_port->write(packet);
     EventDriven::Tracer::getInstance().traceCompute(sched.getCurrentTime(),
                                                     "Test", "Op2", "10*2");
   });
 
   scheduler->scheduleAt(21, [&](EventDriven::EventScheduler& sched) {
-    auto packet = std::make_shared<ALUDataPacket>(20, 4, ALUOp::DIV);
+    auto packet =
+        std::make_shared<ALUDataPacket<Int32Precision>>(20, 4, ALUOp::DIV);
     input_port->write(packet);
     EventDriven::Tracer::getInstance().traceCompute(sched.getCurrentTime(),
                                                     "Test", "Op3", "20/4");
@@ -295,6 +304,72 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
 
   EventDriven::Tracer::getInstance().dump();
   EventDriven::Tracer::getInstance().setEnabled(false);
+}
+
+// FPU tests
+TEST_F(ALUTest, FPUBasicOperations) {
+  auto fpu = std::make_shared<FPUComponent>("test_fpu", *scheduler, 1);
+  fpu->start();
+
+  // Test: 5.5 + 3.2 = 8.7
+  float result = FPUComponent::executeOperation(5.5f, 3.2f, ALUOp::ADD);
+  EXPECT_FLOAT_EQ(result, 8.7f);
+
+  // Test: 10.0 - 4.5 = 5.5
+  result = FPUComponent::executeOperation(10.0f, 4.5f, ALUOp::SUB);
+  EXPECT_FLOAT_EQ(result, 5.5f);
+
+  // Test: 2.5 * 4.0 = 10.0
+  result = FPUComponent::executeOperation(2.5f, 4.0f, ALUOp::MUL);
+  EXPECT_FLOAT_EQ(result, 10.0f);
+
+  // Test: 20.0 / 4.0 = 5.0
+  result = FPUComponent::executeOperation(20.0f, 4.0f, ALUOp::DIV);
+  EXPECT_FLOAT_EQ(result, 5.0f);
+}
+
+TEST_F(ALUTest, FPUPipelineDepth) {
+  auto intu = std::make_shared<INTUComponent>("test_intu", *scheduler, 1);
+  auto fpu = std::make_shared<FPUComponent>("test_fpu", *scheduler, 1);
+
+  // Verify different pipeline depths
+  EXPECT_EQ(PrecisionTraits<Int32Precision>::pipeline_stages, 3);
+  EXPECT_EQ(PrecisionTraits<Float32Precision>::pipeline_stages, 5);
+
+  std::cout << "\n=== Pipeline Depth Test ===" << std::endl;
+  std::cout << "INTU (INT32) pipeline stages: "
+            << PrecisionTraits<Int32Precision>::pipeline_stages << std::endl;
+  std::cout << "FPU (FP32) pipeline stages: "
+            << PrecisionTraits<Float32Precision>::pipeline_stages << std::endl;
+}
+
+TEST_F(ALUTest, FPUPipelineOperation) {
+  auto fpu = std::make_shared<FPUComponent>("test_fpu", *scheduler, 1);
+  fpu->start();
+
+  auto input_port = fpu->getPort("in");
+  auto output_port = fpu->getPort("out");
+
+  // Send operation through pipeline
+  auto packet = std::make_shared<ALUDataPacket<Float32Precision>>(10.5f, 5.2f,
+                                                                  ALUOp::ADD);
+  input_port->write(packet);
+
+  // Execute pipeline stages (5 stages + 1 to output = 6 ticks for FP32)
+  for (int i = 0; i < 6; i++) {
+    fpu->tick();
+  }
+
+  // Check output
+  ASSERT_TRUE(output_port->hasData());
+  auto result_packet =
+      std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+  ASSERT_NE(result_packet, nullptr);
+
+  // Convert int back to float
+  int int_val = result_packet->getValue();
+  float result = *reinterpret_cast<float*>(&int_val);
+  EXPECT_FLOAT_EQ(result, 15.7f);
 }
 
 int main(int argc, char** argv) {
