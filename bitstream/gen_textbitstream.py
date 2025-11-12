@@ -15,11 +15,10 @@ from bitstream.config import (
     NeighborStreamConfig,
     BufferConfig,
     SpecialArrayConfig,
+    ReadStreamConfig,
+    WriteStreamConfig,
 )
 from bitstream.index import NodeIndex
-
-# Import component_config modules for stream engines
-from config.component_config import se_rd_mse, se_wr_mse, se_nse
 
 class ModuleID(IntEnum):
     IGA_LC = 0
@@ -117,76 +116,29 @@ def main():
     # 5. Final resolution
     NodeIndex.resolve_all()
     
-    # 6. Initialize stream engine configs using component_config with JSON data
-    # Convert JSON stream_engine configs to component_config format
-    def json_to_hw_params(stream_cfg, is_write=False):
-        """Convert JSON stream config to hardware params format."""
-        mem_ag = stream_cfg.get('memory_AG', {})
-        buf_ag = stream_cfg.get('buffer_AG', {})
-        stream = stream_cfg.get('stream', {})
-        hw = stream_cfg.get('_hw_params', {})
-        
-        # Map AGMode values from JSON (using the encoding from config_parameters.py)
-        # NULL=0, BUFFER=1, KEEP=2, CONSTANT=3
-        idx_keep_mode = mem_ag.get('idx_keep_mode', [0, 0, 0])
-        
-        return {
-            "mse_enable": 1,
-            "mse_mem_idx_mode": idx_keep_mode,
-            "mse_mem_idx_keep_last_index": mem_ag.get('idx_keep_last_index', [0, 0, 0]),
-            "mem_inport_src_id": mem_ag.get('idx', [0, 0, 0]),
-            "mse_mem_idx_constant": mem_ag.get('idx_constant', [0, 0, 0]),
-            "mse_buf_idx_mode": buf_ag.get('idx_keep_mode', [0, 0]),
-            "mse_buf_idx_keep_last_index": buf_ag.get('idx_keep_last_index', [0, 0]),
-            "mse_pingpong_enable": stream.get('ping_pong', 0),
-            "mse_pingpong_last_index": stream.get('pingpong_last_index', 0),
-            "mse_stream_base_addr": mem_ag.get('base_addr', 0),
-            "mse_transaciton_layout_size": mem_ag.get('idx_size', [0, 0, 0]),
-            "mse_transaciton_layout_size_log": hw.get('mse_transaciton_layout_size_log', [0, 0, 0]),
-            "mse_transaciton_total_size": hw.get('mse_transaciton_total_size', 0),
-            "mse_transaciton_mult": mem_ag.get('dim_stride', [0, 0, 0]),
-            "mse_map_matrix_b": mem_ag.get('address_remapping', list(range(16))),
-            "mse_padding_reg_value": mem_ag.get('padding_reg_value', 0),
-            "mse_padding_valid": mem_ag.get('padding_enable', [0, 0, 0]),
-            "mse_padding_low_bound": mem_ag.get('idx_padding_range', {}).get('low_bound', [0, 0, 0]) if isinstance(mem_ag.get('idx_padding_range'), dict) else [0, 0, 0],
-            "mse_padding_up_bound": mem_ag.get('idx_padding_range', {}).get('up_bound', [0, 0, 0]) if isinstance(mem_ag.get('idx_padding_range'), dict) else [0, 0, 0],
-            "mse_branch_valid": mem_ag.get('tailing_enable', [0, 0, 0]),
-            "mse_branch_low_bound": mem_ag.get('idx_tailing_range', {}).get('low', [0, 0, 0]) if isinstance(mem_ag.get('idx_tailing_range'), dict) else [0, 0, 0],
-            "mse_branch_up_bound": mem_ag.get('idx_tailing_range', {}).get('up', [0, 0, 0]) if isinstance(mem_ag.get('idx_tailing_range'), dict) else [0, 0, 0],
-            "mse_buf_spatial_stride": buf_ag.get('spatial_stride', list(range(16))),
-            "mse_buf_spatial_size": buf_ag.get('spatial_size', 0),
-        }
+    # 6. Initialize stream engine configs using config.stream module
+    # Mapping between JSON and hardware indices:
+    # JSON stream0 (weight) -> hardware index 0 (SE_RD_MSE[0])
+    # JSON stream1 (activation) -> hardware index 1 (SE_RD_MSE[1])
+    # JSON stream2 (output, write) -> hardware index 0 (SE_WR_MSE[0])
+    #
+    # But config_generator_ver2.py uses:
+    # rd_mse_params_1 (weight) -> index 0
+    # rd_mse_params_0 (activation) -> index 1
+    # wr_mse_params_0 (output) -> index 0
     
-    # Reset component_config arrays
-    se_rd_mse.config_bits = [[ModuleID.SE_RD_MSE, None] for _ in range(3)]
-    se_wr_mse.config_bits = [[ModuleID.SE_WR_MSE, None] for _ in range(1)]
-    se_nse.config_bits = [[ModuleID.SE_NSE, None] for _ in range(2)]
+    # Create stream configs - 3 read streams and 1 write stream
+    read_stream_weight = ReadStreamConfig(0)  # JSON stream0 -> weight
+    read_stream_activation = ReadStreamConfig(1)  # JSON stream1 -> activation
+    read_stream_unused = ReadStreamConfig(2)  # Unused stream (can be empty)
+    write_stream_output = WriteStreamConfig(2)  # JSON stream2 -> output (write)
     
-    # Process stream configs from JSON
-    # According to config_generator_ver2.py:
-    # - stream0 (weight, read) -> SE_RD_MSE index 0
-    # - stream1 (activations, read) -> SE_RD_MSE index 1
-    # - stream2 (output, write) -> SE_WR_MSE index 0
-    stream_engine = cfg.get('stream_engine', {})
+    # Parse from JSON
+    for stream in [read_stream_weight, read_stream_activation, write_stream_output]:
+        stream.from_json(cfg)
     
-    if 'stream0' in stream_engine:  # Weight stream
-        stream_cfg = stream_engine['stream0']
-        hw_params = json_to_hw_params(stream_cfg)
-        se_rd_mse.get_config_bits(hw_params, 0)
-    
-    if 'stream1' in stream_engine:  # Activation stream
-        stream_cfg = stream_engine['stream1']
-        hw_params = json_to_hw_params(stream_cfg)
-        se_rd_mse.get_config_bits(hw_params, 1)
-    
-    if 'stream2' in stream_engine:  # Output stream (write)
-        stream_cfg = stream_engine['stream2']
-        mode = stream_cfg.get('memory_AG', {}).get('mode', 'write')
-        hw_params = json_to_hw_params(stream_cfg, is_write=(mode=='write'))
-        if mode == 'write':
-            se_wr_mse.get_config_bits(hw_params, 0)
-        else:
-            se_rd_mse.get_config_bits(hw_params, 2)
+    # Resolve any remaining indices
+    NodeIndex.resolve_all()
     
     # Build entries list with (ModuleID, bitstring) tuples
     entries = []
@@ -208,18 +160,22 @@ def main():
     # PE configs (IGA_PE)
     entries.extend((ModuleID.IGA_PE, bitstring(m.to_bits())) for m in pe_modules)
     
-    # Stream engines - use component_config generated bitstreams
-    # SE_RD_MSE entries (3 engines: indices 0, 1, 2)
-    for mid, config_bits in se_rd_mse.config_bits:
-        entries.append((mid, config_bits if config_bits else ''))
+    # Stream engines - using config.stream module
+    # SE_RD_MSE entries (3 engines)
+    # Note: config_generator_ver2.py has weight at index 0, activation at index 1
+    entries.append((ModuleID.SE_RD_MSE, bitstring(read_stream_weight.to_bits())))  # index 0: weight
+    entries.append((ModuleID.SE_RD_MSE, bitstring(read_stream_activation.to_bits())))  # index 1: activation
+    entries.append((ModuleID.SE_RD_MSE, ''))  # index 2: unused
     
-    # SE_WR_MSE entries (1 engine: index 0)
-    for mid, config_bits in se_wr_mse.config_bits:
-        entries.append((mid, config_bits if config_bits else ''))
+    # SE_WR_MSE entries (1 engine)
+    entries.append((ModuleID.SE_WR_MSE, bitstring(write_stream_output.to_bits())))  # index 0: output (write)
     
-    # SE_NSE entries (2 engines: indices 0, 1)
-    for mid, config_bits in se_nse.config_bits:
-        entries.append((mid, config_bits if config_bits else ''))
+    # SE_NSE entries (2 engines: neighbor streams, currently not used in this config)
+    # Add empty configs for NSE
+    neighbor_stream = NeighborStreamConfig()
+    neighbor_stream.from_json(cfg)
+    entries.append((ModuleID.SE_NSE, bitstring(neighbor_stream.to_bits())))
+    entries.append((ModuleID.SE_NSE, ''))  # Second NSE is empty
     
     # Buffer manager
     entries.extend((ModuleID.BUFFER_MANAGER_CLUSTER, bitstring(m.to_bits())) for m in buffer_configs)
