@@ -85,18 +85,10 @@ def init_modules(cfg):
     print("\n=== Running Constraint Search ===")
     NodeGraph.get().search_mapping()
     
-    # Print detailed mapping results after constraint search
-    print("\n=== Mapping Results After Constraint Search ===")
-    mapper = NodeGraph.get().mapping
-    for node in sorted(mapper.node_to_resource.keys()):
-        resource = mapper.node_to_resource[node]
-        print(f"  {node:30s} -> {resource}")
-    
     # Resolve node indices and auto-register modules to mapper
     NodeIndex.resolve_all(modules)
-    
+
     # Print mapping summary
-    print("\n=== Final Mapping Summary ===")
     NodeGraph.get().mapping.summary()
     
     return modules

@@ -365,6 +365,8 @@ class Mapper:
         """Print all node-to-resource mappings."""
         print("=== Resource Mapping Summary ===")
         for node, res in self.node_to_resource.items():
+            if node.endswith("ROW_LC") or node.endswith("COL_LC"):
+                continue
             print(f"{node:25s} -> {res}")
         print("===============================")
 
