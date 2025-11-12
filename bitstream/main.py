@@ -46,8 +46,8 @@ Examples:
     parser.add_argument(
         '-c', '--config',
         type=str,
-        default='./data/gemm_config_reference_aligned.json',
-        help='Path to JSON configuration file (default: ./data/gemm_config_reference_aligned.json)'
+        default='./data/gemm.json',
+        help='Path to JSON configuration file (default: ./data/gemm.json)'
     )
     
     parser.add_argument(
