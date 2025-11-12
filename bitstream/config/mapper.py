@@ -598,7 +598,7 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
     ax.set_ylim(-1, 4)
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.legend(loc="upper right", fontsize=9)
+    plt.legend(loc="upper right", fontsize=9, frameon=True, markerscale=0.5, labelspacing=0.5)
     ax.grid(False)
 
     plt.tight_layout()
