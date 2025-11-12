@@ -1,26 +1,9 @@
 from bitstream.config.base import BaseConfigModule
-
-from bitstream.config.base import BaseConfigModule
 from typing import List
 from bitstream.bit import Bit
 
-class SpecialConfig(BaseConfigModule):
-    # Based on register_map:
-    # data_type(2) + index_end(3) = 5 bits
-    FIELD_MAP = [
-        ("data_type", 2, lambda x: SpecialConfig.data_type_map()[x] if x is not None else 0),
-        ("index_end", 3),  # sa_pe_config_last_index in hardware
-    ]
-    
-    @classmethod
-    def data_type_map(cls):
-        return {
-            "int8": 0,
-            "fp16": 1,
-        }
-
 class InportConfig(BaseConfigModule):
-    # Based on register_map:
+    # Based on component_config/special_array.py:
     # enable(1) + pingpong_en(1) + pingpong_last_index(3) = 5 bits (per inport)
     FIELD_MAP = [
         ("enable", 1),  # sa_inport_enable
@@ -30,18 +13,40 @@ class InportConfig(BaseConfigModule):
     
     def __init__(self, idx: int):
         super().__init__()
-        self.idx = idx  # buffer index
+        self.idx = idx
         
     def from_json(self, cfg: dict):
         key = f"inport{self.idx}"
         cfg = cfg.get(key, cfg)
         super().from_json(cfg)
 
-class OutportConfig(BaseConfigModule):
-    # Based on register_map:
-    # mode(1) + fp32to16(1) = 2 bits
+class PEConfig(BaseConfigModule):
+    # Based on component_config/special_array.py:
+    # data_type(2) + transout_last_index(3) + bias_enable(1) = 6 bits
     FIELD_MAP = [
-        ("mode", 1, lambda x: 1 if x == "col" else 0),  # sa_outport_major: col=1, row=0
+        ("data_type", 2, lambda x: PEConfig.data_type_map()[x] if x is not None else 0),
+        ("index_end", 3),  # sa_pe_transout_last_index in hardware
+        ("bias_enable", 1),  # sa_pe_bias_enable (default 0)
+    ]
+    
+    @classmethod
+    def data_type_map(cls):
+        return {
+            "int8": 0,
+            "fp16": 1,
+        }
+    
+    def from_json(self, cfg: dict):
+        super().from_json(cfg)
+        # Default bias_enable to 0 if not provided
+        if "bias_enable" not in self.values:
+            self.values["bias_enable"] = 0
+
+class OutportConfig(BaseConfigModule):
+    # Based on component_config/special_array.py:
+    # outport_major(1) + fp32to16(1) = 2 bits
+    FIELD_MAP = [
+        ("mode", 1, lambda x: 0 if x == "col" else 1),  # sa_outport_major: col=0, row=1
         ("fp32to16", 1, lambda x: 1 if str(x).lower() == "true" else 0),  # sa_outport_fp32to16
     ]
     
@@ -50,12 +55,27 @@ class OutportConfig(BaseConfigModule):
         super().from_json(cfg)
         
 class SpecialArrayConfig(BaseConfigModule):
-    """Special array composed of PE, multiple inports, and one outport."""
+    """Special array composed of PE, multiple inports, and one outport.
+    
+    Bit order (high to low, matching component_config/special_array.py):
+    - inport2 (5 bits)
+    - inport1 (5 bits)
+    - inport0 (5 bits)
+    - PE config (6 bits)
+    - outport (2 bits)
+    Total: 23 bits
+    """
 
     def __init__(self):
         super().__init__()
-        # submodules: (json_key, module_instance)
-        self.submodules = [SpecialConfig()] + [InportConfig(i) for i in range(3)] + [OutportConfig()]
+        # Order matters! Must match component_config bit order (high to low)
+        self.submodules = [
+            InportConfig(2),  # inport2 first (high bits)
+            InportConfig(1),  # inport1
+            InportConfig(0),  # inport0
+            PEConfig(),       # PE config
+            OutportConfig(),  # outport last (low bits)
+        ]
 
     def from_json(self, cfg: dict):
         cfg = cfg.get("special_array", cfg)

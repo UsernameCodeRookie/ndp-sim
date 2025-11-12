@@ -3,6 +3,7 @@
 
 import sys
 import os
+from enum import IntEnum
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import json
@@ -16,13 +17,68 @@ from bitstream.config import (
     SpecialArrayConfig,
 )
 from bitstream.index import NodeIndex
-from config.utils.module_idx import ModuleID, MODULE_CFG_CHUNK_SIZES, ModuleID2Mask
-from config.config_generator_ver2 import split_config
-from config.component_config import se_rd_mse, se_wr_mse, se_nse
-from config.component_config import se_rd_mse, se_wr_mse, se_nse
 
 # Import component_config modules for stream engines
-from config.component_config import se_rd_mse, se_wr_mse, se_nse, buffer_manager_cluster, special_array as special_array_config
+from config.component_config import se_rd_mse, se_wr_mse, se_nse
+
+class ModuleID(IntEnum):
+    IGA_LC = 0
+    IGA_ROW_LC = 1
+    IGA_COL_LC = 2
+    IGA_PE = 3
+    SE_RD_MSE = 4
+    SE_WR_MSE = 5
+    SE_NSE = 6
+    BUFFER_MANAGER_CLUSTER = 7
+    SPECIAL_ARRAY = 8
+    GA_INPORT_GROUP = 9
+    GA_OUTPORT_GROUP = 10
+    GENERAL_ARRAY = 11
+
+# IGA_LC_CFG_CHUNK_SIZE                              42  1
+# IGA_ROW_LC_CFG_CHUNK_SIZE                          12  1
+# IGA_COL_LC_CFG_CHUNK_SIZE                          21  1
+# IGA_PE_CFG_CHUNK_SIZE                              62  1
+# SE_RD_MSE_CFG_CHUNK_SIZE                           63  8
+# SE_WR_MSE_CFG_CHUNK_SIZE                           57  6
+# SE_NSE_CFG_CHUNK_SIZE                              8  1
+# BUFFER_MANAGER_CLUSTER_CFG_CHUNK_SIZE              13  1
+# SPECIAL_ARRAY_CFG_CHUNK_SIZE                       22  1
+# GA_INPORT_GROUP_CFG_CHUNK_SIZE                     15  1
+# GA_OUTPORT_GROUP_CFG_CHUNK_SIZE                    11  1
+# GENERAL_ARRAY_CFG_CHUNK_SIZE                       32  4
+
+MODULE_CFG_CHUNK_SIZES = [1] * 12
+MODULE_CFG_CHUNK_SIZES[ModuleID.SE_RD_MSE] = 8
+MODULE_CFG_CHUNK_SIZES[ModuleID.SE_WR_MSE] = 6
+MODULE_CFG_CHUNK_SIZES[ModuleID.GENERAL_ARRAY] = 4
+
+ModuleID2Mask = [0]*12
+
+ModuleID2Mask[ModuleID.IGA_LC] = 0
+ModuleID2Mask[ModuleID.IGA_ROW_LC] = 0
+ModuleID2Mask[ModuleID.IGA_COL_LC] = 0
+ModuleID2Mask[ModuleID.IGA_PE] = 0
+ModuleID2Mask[ModuleID.SE_RD_MSE] = 1
+ModuleID2Mask[ModuleID.SE_WR_MSE] = 1
+ModuleID2Mask[ModuleID.SE_NSE] = 1
+ModuleID2Mask[ModuleID.BUFFER_MANAGER_CLUSTER] = 1 
+ModuleID2Mask[ModuleID.SPECIAL_ARRAY] = 2
+ModuleID2Mask[ModuleID.GA_INPORT_GROUP] = 3
+
+def split_config(config):
+    """Split config string into chunks of up to 63 bits each."""
+    total_len = len(config)
+    if total_len == 0:
+        return []
+
+    for i in range(min(63, total_len), 0, -1):
+        if total_len % i == 0:
+            chunk_size = i
+            break
+        
+    chunks = [config[i:i + chunk_size] for i in range(0, total_len, chunk_size)]
+    return chunks
 
 def bitstring(bits):
     """Convert list of Bit objects to string."""
@@ -61,17 +117,22 @@ def main():
     # 5. Final resolution
     NodeIndex.resolve_all()
     
-    # 6. Convert JSON stream_engine configs to component_config format
-    def json_to_hw_params(stream_cfg):
+    # 6. Initialize stream engine configs using component_config with JSON data
+    # Convert JSON stream_engine configs to component_config format
+    def json_to_hw_params(stream_cfg, is_write=False):
         """Convert JSON stream config to hardware params format."""
         mem_ag = stream_cfg.get('memory_AG', {})
         buf_ag = stream_cfg.get('buffer_AG', {})
         stream = stream_cfg.get('stream', {})
         hw = stream_cfg.get('_hw_params', {})
         
+        # Map AGMode values from JSON (using the encoding from config_parameters.py)
+        # NULL=0, BUFFER=1, KEEP=2, CONSTANT=3
+        idx_keep_mode = mem_ag.get('idx_keep_mode', [0, 0, 0])
+        
         return {
             "mse_enable": 1,
-            "mse_mem_idx_mode": mem_ag.get('idx_keep_mode', [0, 0, 0]),
+            "mse_mem_idx_mode": idx_keep_mode,
             "mse_mem_idx_keep_last_index": mem_ag.get('idx_keep_last_index', [0, 0, 0]),
             "mem_inport_src_id": mem_ag.get('idx', [0, 0, 0]),
             "mse_mem_idx_constant": mem_ag.get('idx_constant', [0, 0, 0]),
@@ -102,24 +163,30 @@ def main():
     se_nse.config_bits = [[ModuleID.SE_NSE, None] for _ in range(2)]
     
     # Process stream configs from JSON
+    # According to config_generator_ver2.py:
+    # - stream0 (weight, read) -> SE_RD_MSE index 0
+    # - stream1 (activations, read) -> SE_RD_MSE index 1
+    # - stream2 (output, write) -> SE_WR_MSE index 0
     stream_engine = cfg.get('stream_engine', {})
-    for stream_key in ['stream0', 'stream1', 'stream2']:
-        if stream_key in stream_engine:
-            stream_cfg = stream_engine[stream_key]
-            mode = stream_cfg.get('memory_AG', {}).get('mode', 'read')
-            hw_params = json_to_hw_params(stream_cfg)
-            
-            if mode == 'read':
-                # Determine which SE_RD_MSE index to use
-                # stream0 -> index 0, stream1 -> index 1
-                idx = 0 if stream_key == 'stream0' else 1
-                se_rd_mse.get_config_bits(hw_params, idx)
-            elif mode == 'write':
-                # stream2 -> SE_WR_MSE index 0
-                se_wr_mse.get_config_bits(hw_params, 0)
     
-    # SE_NSE from n2n config (currently disabled)
-    # neighbor_module already loaded from JSON
+    if 'stream0' in stream_engine:  # Weight stream
+        stream_cfg = stream_engine['stream0']
+        hw_params = json_to_hw_params(stream_cfg)
+        se_rd_mse.get_config_bits(hw_params, 0)
+    
+    if 'stream1' in stream_engine:  # Activation stream
+        stream_cfg = stream_engine['stream1']
+        hw_params = json_to_hw_params(stream_cfg)
+        se_rd_mse.get_config_bits(hw_params, 1)
+    
+    if 'stream2' in stream_engine:  # Output stream (write)
+        stream_cfg = stream_engine['stream2']
+        mode = stream_cfg.get('memory_AG', {}).get('mode', 'write')
+        hw_params = json_to_hw_params(stream_cfg, is_write=(mode=='write'))
+        if mode == 'write':
+            se_wr_mse.get_config_bits(hw_params, 0)
+        else:
+            se_rd_mse.get_config_bits(hw_params, 2)
     
     # Build entries list with (ModuleID, bitstring) tuples
     entries = []
@@ -186,18 +253,158 @@ def main():
             f.write(bitstream[i:i+64] + '\n')
     
     print(f'Generated {len(bitstream)} bits ({len(bitstream)//64} lines)')
-    return bitstream
-
-if __name__ == '__main__':
-    bitstream = main()
     
-    # Debug: show bit 333 context
-    if bitstream:
+    # Return detailed section info for comparison
+    section_info = {
+        'bitstream': bitstream,
+        'entries': entries,
+        'config_mask': config_mask,
+    }
+    return section_info
+
+def compare_bitstreams(generated_info):
+    """Compare generated bitstream with reference section by section."""
+    bitstream = generated_info['bitstream']
+    entries = generated_info['entries']
+    config_mask = generated_info['config_mask']
+    
+    # Load reference
+    try:
         with open('data/bitstream.txt') as f:
             ref = ''.join(line.strip() for line in f)
-        print(f'\nBit 333 context (bits 320-350):')
-        print(f'  Generated: {bitstream[320:350]}')
-        print(f'  Reference: {ref[320:350]}')
-        print(f'\nBit 333:')
-        print(f'  Generated: {bitstream[333]}')
-        print(f'  Reference: {ref[333]}')
+    except FileNotFoundError:
+        print("Reference file not found!")
+        return
+    
+    print(f"\n{'='*80}")
+    print(f"BITSTREAM COMPARISON")
+    print(f"{'='*80}")
+    print(f"Generated: {len(bitstream)} bits ({len(bitstream)//64} lines)")
+    print(f"Reference: {len(ref)} bits ({len(ref)//64} lines)")
+    print(f"Difference: {len(ref) - len(bitstream)} bits")
+    
+    # Compare config mask
+    print(f"\n{'='*80}")
+    print(f"CONFIG MASK (8 bits)")
+    print(f"{'='*80}")
+    gen_mask = bitstream[:8]
+    ref_mask = ref[:8]
+    print(f"Generated: {gen_mask}")
+    print(f"Reference: {ref_mask}")
+    print(f"Match: {'✓' if gen_mask == ref_mask else '✗'}")
+    
+    # Track bit position
+    gen_pos = 8
+    ref_pos = 8
+    
+    # Module names for display
+    module_names = {
+        ModuleID.IGA_LC: "IGA_LC",
+        ModuleID.IGA_ROW_LC: "IGA_ROW_LC",
+        ModuleID.IGA_COL_LC: "IGA_COL_LC",
+        ModuleID.IGA_PE: "IGA_PE",
+        ModuleID.SE_RD_MSE: "SE_RD_MSE",
+        ModuleID.SE_WR_MSE: "SE_WR_MSE",
+        ModuleID.SE_NSE: "SE_NSE",
+        ModuleID.BUFFER_MANAGER_CLUSTER: "BUFFER_MANAGER_CLUSTER",
+        ModuleID.SPECIAL_ARRAY: "SPECIAL_ARRAY",
+    }
+    
+    # Group entries by module type
+    from collections import defaultdict
+    module_groups = defaultdict(list)
+    for mid, config in entries:
+        module_groups[mid].append(config)
+    
+    # Compare each module type
+    for mid in [ModuleID.IGA_LC, ModuleID.IGA_ROW_LC, ModuleID.IGA_COL_LC, 
+                ModuleID.IGA_PE, ModuleID.SE_RD_MSE, ModuleID.SE_WR_MSE, 
+                ModuleID.SE_NSE, ModuleID.BUFFER_MANAGER_CLUSTER, ModuleID.SPECIAL_ARRAY]:
+        
+        if not config_mask[ModuleID2Mask[mid]]:
+            continue
+            
+        configs = module_groups[mid]
+        print(f"\n{'='*80}")
+        print(f"{module_names[mid]} ({len(configs)} entries)")
+        print(f"{'='*80}")
+        
+        for idx, config in enumerate(configs):
+            # Calculate expected bits for this entry
+            if not config or set(config) == {'0'}:
+                # Empty config
+                gen_bits = '0' * MODULE_CFG_CHUNK_SIZES[mid]
+                gen_section = bitstream[gen_pos:gen_pos+MODULE_CFG_CHUNK_SIZES[mid]]
+                ref_section = ref[ref_pos:ref_pos+MODULE_CFG_CHUNK_SIZES[mid]]
+                
+                match = gen_section == ref_section
+                print(f"\n  [{idx}] Empty config ({MODULE_CFG_CHUNK_SIZES[mid]} enable bits)")
+                print(f"    Generated: {gen_section}")
+                print(f"    Reference: {ref_section}")
+                print(f"    Match: {'✓' if match else '✗'}")
+                
+                gen_pos += MODULE_CFG_CHUNK_SIZES[mid]
+                ref_pos += MODULE_CFG_CHUNK_SIZES[mid]
+            else:
+                # Has data
+                chunks = split_config(config)
+                print(f"\n  [{idx}] {len(config)} bits -> {len(chunks)} chunks")
+                
+                all_match = True
+                for chunk_idx, chunk in enumerate(chunks):
+                    chunk_with_enable = '1' + chunk
+                    gen_section = bitstream[gen_pos:gen_pos+len(chunk_with_enable)]
+                    ref_section = ref[ref_pos:ref_pos+len(chunk_with_enable)]
+                    
+                    match = gen_section == ref_section
+                    all_match = all_match and match
+                    
+                    if not match or chunk_idx == 0:  # Always show first chunk, and mismatches
+                        print(f"    Chunk {chunk_idx}: {len(chunk)} bits (+1 enable)")
+                        print(f"      Generated: {gen_section}")
+                        print(f"      Reference: {ref_section}")
+                        print(f"      Match: {'✓' if match else '✗'}")
+                    
+                    gen_pos += len(chunk_with_enable)
+                    ref_pos += len(chunk_with_enable)
+                
+                if len(chunks) > 1:
+                    print(f"    Overall: {'✓ All chunks match' if all_match else '✗ Some chunks differ'}")
+    
+    # Check remaining bits (padding)
+    if gen_pos < len(bitstream) or ref_pos < len(ref):
+        print(f"\n{'='*80}")
+        print(f"PADDING")
+        print(f"{'='*80}")
+        gen_padding = bitstream[gen_pos:]
+        ref_padding = ref[ref_pos:]
+        print(f"Generated padding: {len(gen_padding)} bits")
+        print(f"Reference padding: {len(ref_padding)} bits")
+        if gen_padding or ref_padding:
+            print(f"Generated: {gen_padding[:64]}{'...' if len(gen_padding) > 64 else ''}")
+            print(f"Reference: {ref_padding[:64]}{'...' if len(ref_padding) > 64 else ''}")
+            print(f"Match: {'✓' if gen_padding == ref_padding else '✗'}")
+    
+    # Summary
+    print(f"\n{'='*80}")
+    print(f"SUMMARY")
+    print(f"{'='*80}")
+    total_match = bitstream == ref
+    if total_match:
+        print("✓ PERFECT MATCH! Generated bitstream matches reference exactly.")
+    else:
+        # Find first difference
+        for i in range(min(len(bitstream), len(ref))):
+            if bitstream[i] != ref[i]:
+                print(f"✗ First difference at bit {i}")
+                print(f"  Context (bits {max(0,i-20)}:{i+20}):")
+                print(f"    Generated: {bitstream[max(0,i-20):i+20]}")
+                print(f"    Reference: {ref[max(0,i-20):i+20]}")
+                break
+        else:
+            if len(bitstream) != len(ref):
+                print(f"✗ Bitstreams match up to bit {min(len(bitstream), len(ref))}, but lengths differ")
+
+if __name__ == '__main__':
+    result = main()
+    compare_bitstreams(result)

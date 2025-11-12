@@ -10,9 +10,11 @@ class MemoryAGConfig0(BaseConfigModule):
         ("base_addr", 29),
         ("idx_size", 24),
         ("dim_stride", 60),
+        ("padding_enable", 3),
         ("padding_reg_value", 8),
         ("idx_padding_low", 36),
         ("idx_padding_up", 36),
+        ("tailing_enable", 3),
         ("idx_tailing_low", 36),
         ("idx_tailing_up", 36),
         ("address_remapping", 64),
@@ -34,7 +36,7 @@ class StreamCtrlConfig0(BaseConfigModule):
 
 class MemoryAGConfig1(BaseConfigModule):
     FIELD_MAP = [
-        ("transcation_spatial_size_log", 9),
+        ("transcation_spatial_size_log", 6),
         ("transcation_total_size", 10),
         ("idx", 15, lambda self, lst: [Connect(x, self.id) if x else None for x in lst] if lst else None),
         ("idx_enable", 3),
@@ -70,12 +72,14 @@ class MemoryAGConfig1(BaseConfigModule):
         '''Map string/int idx_keep_mode names to integers matching hardware encoding.'''
         return {
             None: 0,
-            0: 0,  # BUFFER
-            1: 1,  # KEEP
-            2: 2,  # CONSTANT
-            "buffer": 0,
-            "keep": 1,
-            "constant": 2,
+            0: 0,  # NULL
+            1: 1,  # BUFFER
+            2: 2,  # KEEP
+            3: 3,  # CONSTANT
+            "null": 0,
+            "buffer": 1,
+            "keep": 2,
+            "constant": 3,
         }
 
 class BufferAGConfig(BaseConfigModule):
@@ -101,18 +105,8 @@ class BufferAGConfig(BaseConfigModule):
             "buffer": 0,
             "keep": 1,
         }
-
-class StreamCtrlConfig1(BaseConfigModule):
-    FIELD_MAP = [
-        ("ping_buffer", 3),
-        ("pong_buffer", 3),
-    ]
-
-    def from_json(self, cfg: dict):
-        cfg = cfg.get("stream", cfg)
-        super().from_json(cfg)
-
-class StreamConfig(BaseConfigModule):
+        
+class ReadStreamConfig(BaseConfigModule):
     """Stream composed of multiple sub-config instances."""
 
     def __init__(self, idx: int):
@@ -124,7 +118,6 @@ class StreamConfig(BaseConfigModule):
             StreamCtrlConfig0(),
             MemoryAGConfig1(idx),
             BufferAGConfig(),
-            StreamCtrlConfig1(),
         ]
 
     def from_json(self, cfg: dict):
@@ -136,6 +129,47 @@ class StreamConfig(BaseConfigModule):
             # Let each submodule handle its own JSON parsing
             submodule.from_json(cfg)
 
+    def to_bits(self) -> List[Bit]:
+        """Concatenate all sub-config bitstreams in fixed order."""
+        return sum((sub.to_bits() for sub in self.submodules), [])
+    
+class MemoryAGConfig2(BaseConfigModule):
+    FIELD_MAP = [
+        ("mode", 1, lambda x: 0 if x == "read" else 1),
+        ("base_addr", 29),
+        ("idx_size", 24),
+        ("dim_stride", 60),
+        ("address_remapping", 64),
+    ]
+
+    def from_json(self, cfg: dict):
+        cfg = cfg.get("memory_AG", cfg)
+        super().from_json(cfg)
+    
+    
+class WriteStreamConfig(ReadStreamConfig):
+    """Write Stream composed of multiple sub-config instances."""
+    
+    def __init__(self, idx: int):
+        super().__init__(idx)
+        self.idx = idx
+        # Each submodule is a config instance, order matters for to_bits()
+        self.submodules: List[BaseConfigModule] = [
+            MemoryAGConfig2(),
+            StreamCtrlConfig0(),
+            MemoryAGConfig1(idx),
+            BufferAGConfig(),
+        ]
+        
+    def from_json(self, cfg: dict):
+        cfg = cfg.get("stream_engine", cfg)
+        key = f"stream{self.idx}"
+        cfg = cfg.get(key, cfg)
+        
+        for submodule in self.submodules:
+            # Let each submodule handle its own JSON parsing
+            submodule.from_json(cfg)
+            
     def to_bits(self) -> List[Bit]:
         """Concatenate all sub-config bitstreams in fixed order."""
         return sum((sub.to_bits() for sub in self.submodules), [])
