@@ -104,7 +104,7 @@ class ReadyValidConnection : public Connection {
               [dst_port_copy, data_copy](EventDriven::EventScheduler&) {
                 dst_port_copy->setData(data_copy);
               },
-              0, name_ + "_Deliver");
+              -1, name_ + "_Deliver");  // Priority -1 (before components)
           scheduler_.schedule(deliver_event);
         } else {
           // Immediate delivery

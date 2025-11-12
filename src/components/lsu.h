@@ -303,11 +303,11 @@ class LoadStoreUnit : public Architecture::TickingComponent {
     bool is_ready = (request_queue_.size() < queue_depth_) &&
                     (current_state_ == State::IDLE);
 
-    if (is_ready) {
+    if (is_ready && valid_in->hasData()) {
       auto valid_data = valid_in->read();
       auto valid_int = std::dynamic_pointer_cast<IntDataPacket>(valid_data);
 
-      if (valid_int && valid_int->getValue() == 1) {
+      if (valid_int && valid_int->getValue() == 1 && req_in->hasData()) {
         auto req_data = req_in->read();
         auto mem_req = std::dynamic_pointer_cast<MemoryRequestPacket>(req_data);
 
