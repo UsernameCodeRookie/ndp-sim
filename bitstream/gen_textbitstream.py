@@ -84,8 +84,8 @@ def bitstring(bits):
     return ''.join(format(bit.value, f'0{bit.width}b') for bit in bits)
 
 def main():
-    # Load configuration
-    with open('./data/gemm_config_reference_aligned.json') as f:
+    # Load configuration - use converted config with aligned stream structure
+    with open('./data/gemm_config_reference_aligned_aligned_with_config.json') as f:
         cfg = json.load(f)
     
     # Initialize modules in dependency order:
@@ -128,14 +128,19 @@ def main():
     # wr_mse_params_0 (output) -> index 0
     
     # Create stream configs - 3 read streams and 1 write stream
-    read_stream_weight = ReadStreamConfig(0)  # JSON stream0 -> weight
-    read_stream_activation = ReadStreamConfig(1)  # JSON stream1 -> activation
-    read_stream_unused = ReadStreamConfig(2)  # Unused stream (can be empty)
-    write_stream_output = WriteStreamConfig(2)  # JSON stream2 -> output (write)
+    read_stream_weight = ReadStreamConfig()  # JSON stream0 -> weight
+    read_stream_activation = ReadStreamConfig()  # JSON stream1 -> activation
+    read_stream_unused = ReadStreamConfig()  # Unused stream (can be empty)
+    write_stream_output = WriteStreamConfig()  # JSON stream2 -> output (write)
     
-    # Parse from JSON
-    for stream in [read_stream_weight, read_stream_activation, write_stream_output]:
-        stream.from_json(cfg)
+    # Parse from JSON - each stream from its corresponding stream_engine entry
+    stream_engine = cfg.get('stream_engine', {})
+    if 'stream0' in stream_engine:
+        read_stream_weight.from_json(stream_engine['stream0'])
+    if 'stream1' in stream_engine:
+        read_stream_activation.from_json(stream_engine['stream1'])
+    if 'stream2' in stream_engine:
+        write_stream_output.from_json(stream_engine['stream2'])
     
     # Resolve any remaining indices
     NodeIndex.resolve_all()
