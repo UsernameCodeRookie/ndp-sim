@@ -120,6 +120,92 @@ def get_component_groups(entries):
     return groups
 
 
+def create_gantt_chart(entries, output_file='trace_gantt.html', title="Component Activity Timeline"):
+    """
+    Create Gantt chart showing component activity periods
+    """
+    if not entries:
+        return
+    
+    print(f"Creating Gantt chart...")
+    
+    # Group events by component
+    component_events = defaultdict(list)
+    for entry in entries:
+        if entry.event_type in ['COMPUTE', 'MAC', 'INSTR', 'MEM_READ', 'MEM_WRITE']:
+            component_events[entry.component].append(entry)
+    
+    # Create activity blocks
+    tasks = []
+    for component, events in sorted(component_events.items()):
+        for event in events:
+            tasks.append(dict(
+                Task=component,
+                Start=event.timestamp,
+                Finish=event.timestamp + 1,  # Duration of 1 cycle
+                Resource=event.event_type,
+                Description=f"{event.event}: {event.details[:50]}"
+            ))
+    
+    if tasks:
+        fig = px.timeline(tasks, x_start="Start", x_end="Finish", y="Task", color="Resource",
+                         hover_data=["Description"], title=title)
+        fig.update_yaxes(categoryorder="total ascending")
+        fig.update_layout(height=max(600, len(component_events) * 30), template='plotly_white')
+        fig.write_html(output_file)
+        print(f"✓ Gantt chart saved to: {output_file}")
+
+
+def create_pipeline_view(entries, output_file='trace_pipeline.html', title="Pipeline Stages View"):
+    """
+    Create pipeline stages visualization showing instruction flow
+    """
+    print(f"Creating pipeline view...")
+    
+    # Extract pipeline-related events
+    pipeline_events = [e for e in entries if e.event_type in ['INSTR', 'COMPUTE', 'MAC', 'QUEUE']]
+    
+    if not pipeline_events:
+        print("No pipeline events found")
+        return
+    
+    # Create figure with instruction trace
+    fig = go.Figure()
+    
+    # Group by instruction type
+    instr_by_type = defaultdict(list)
+    for event in pipeline_events:
+        instr_by_type[event.event_type].append(event)
+    
+    colors = {'INSTR': '#2ca02c', 'COMPUTE': '#ff7f0e', 'MAC': '#d62728', 'QUEUE': '#9467bd'}
+    
+    for instr_type, events in instr_by_type.items():
+        timestamps = [e.timestamp for e in events]
+        components = [e.component for e in events]
+        details = [f"{e.event}: {e.details}" for e in events]
+        
+        fig.add_trace(go.Scatter(
+            x=timestamps,
+            y=components,
+            mode='markers+lines',
+            name=instr_type,
+            marker=dict(size=10, color=colors.get(instr_type, '#cccccc')),
+            text=details,
+            hoverinfo='text'
+        ))
+    
+    fig.update_layout(
+        title=title,
+        xaxis_title='Time (cycles)',
+        yaxis_title='Component',
+        height=600,
+        template='plotly_white'
+    )
+    
+    fig.write_html(output_file)
+    print(f"✓ Pipeline view saved to: {output_file}")
+
+
 def create_timeline_visualization(entries, output_file='trace_timeline.html', 
                                   max_components=50, title="Simulation Trace Timeline"):
     """
@@ -249,8 +335,66 @@ def create_timeline_visualization(entries, output_file='trace_timeline.html',
     print(f"\n✓ Visualization saved to: {output_path.absolute()}")
     print(f"  Open in browser: file://{output_path.absolute()}")
     
-    # Also create a summary statistics figure
-    create_statistics_view(entries, output_file.replace('.html', '_stats.html'))
+    # Create additional views
+    base_name = output_file.replace('.html', '')
+    create_statistics_view(entries, f"{base_name}_stats.html")
+    create_gantt_chart(entries, f"{base_name}_gantt.html")
+    create_pipeline_view(entries, f"{base_name}_pipeline.html")
+    create_timing_diagram(entries, f"{base_name}_timing.html")
+
+
+def create_timing_diagram(entries, output_file='trace_timing.html', title="Timing Diagram"):
+    """
+    Create timing diagram showing signal changes over time
+    """
+    print(f"Creating timing diagram...")
+    
+    # Extract state changes and important events
+    timing_events = [e for e in entries if e.event_type in ['TICK', 'STATE', 'COMPUTE', 'INSTR', 'MAC']]
+    
+    if not timing_events:
+        print("No timing events found")
+        return
+    
+    # Group by component
+    component_signals = defaultdict(list)
+    for event in timing_events:
+        component_signals[event.component].append(event)
+    
+    fig = go.Figure()
+    
+    # Create traces for each component (like signal lines)
+    for idx, (component, events) in enumerate(sorted(component_signals.items())[:20]):  # Limit to 20 components
+        timestamps = [e.timestamp for e in events]
+        # Create step function (binary high/low for each event)
+        values = [idx + 0.2 + (0.3 if e.event_type != 'TICK' else 0) for e in events]
+        
+        fig.add_trace(go.Scatter(
+            x=timestamps,
+            y=values,
+            mode='lines+markers',
+            name=component,
+            line=dict(shape='hv'),  # Step function
+            marker=dict(size=4),
+            hovertext=[f"{e.event_type}: {e.details[:30]}" for e in events],
+            hoverinfo='text'
+        ))
+    
+    fig.update_layout(
+        title=title,
+        xaxis_title='Time (cycles)',
+        yaxis=dict(
+            title='Components',
+            ticktext=list(sorted(component_signals.keys())[:20]),
+            tickvals=list(range(len(list(component_signals.keys())[:20]))),
+        ),
+        height=800,
+        template='plotly_white',
+        showlegend=True
+    )
+    
+    fig.write_html(output_file)
+    print(f"✓ Timing diagram saved to: {output_file}")
 
 
 def create_statistics_view(entries, output_file='trace_stats.html'):

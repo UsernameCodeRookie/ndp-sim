@@ -1,12 +1,12 @@
 #ifndef ALU_H
 #define ALU_H
 
-#include <iostream>
 #include <memory>
 #include <string>
 
 #include "../port.h"
 #include "../tick.h"
+#include "../trace.h"
 #include "int_packet.h"
 #include "pipeline.h"
 
@@ -84,13 +84,6 @@ class ALUComponent : public PipelineComponent {
         accumulator_(0) {
     // Stage 0: Decode - just pass through (could add operation validation)
     setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      auto alu_data = std::dynamic_pointer_cast<ALUDataPacket>(data);
-      if (alu_data && verbose_) {
-        std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                  << " [Decode]: Op=" << getOpName(alu_data->getOperation())
-                  << ", A=" << alu_data->getOperandA()
-                  << ", B=" << alu_data->getOperandB() << std::endl;
-      }
       return data;
     });
 
@@ -105,18 +98,11 @@ class ALUComponent : public PipelineComponent {
 
         operations_executed_++;
 
-        if (verbose_) {
-          std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                    << " [Execute]: ";
-          if (alu_data->getOperation() == ALUOp::MAC) {
-            std::cout << "MAC: acc=" << accumulator_ << " += " << a << " * "
-                      << b;
-          } else {
-            std::cout << a << " " << getOpSymbol(alu_data->getOperation())
-                      << " " << b << " = " << result;
-          }
-          std::cout << std::endl;
-        }
+        TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(),
+                      getOpName(alu_data->getOperation()),
+                      a << " " << getOpSymbol(alu_data->getOperation()) << " "
+                        << b << " = " << result
+                        << " | ops=" << operations_executed_);
 
         // Convert result to IntDataPacket for output
         auto result_packet = std::make_shared<IntDataPacket>(result);
@@ -129,12 +115,6 @@ class ALUComponent : public PipelineComponent {
 
     // Stage 2: Write back - just pass through (could add result validation)
     setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      auto int_data = std::dynamic_pointer_cast<IntDataPacket>(data);
-      if (int_data && verbose_) {
-        std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                  << " [WriteBack]: Result=" << int_data->getValue()
-                  << std::endl;
-      }
       return data;
     });
   }

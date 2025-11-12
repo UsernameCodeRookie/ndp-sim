@@ -415,4 +415,54 @@ inline void Tracer::trace(uint64_t timestamp, TraceEventType type,
 
 }  // namespace EventDriven
 
+// ===========================================================================
+// Trace Macros - Convenience macros for cleaner trace calls in components
+// ===========================================================================
+
+// Macro for tracing events
+#define TRACE_EVENT(time, component, event_type, details)                      \
+  do {                                                                         \
+    std::stringstream _ss;                                                     \
+    _ss << details;                                                            \
+    EventDriven::Tracer::getInstance().traceEvent(time, component, event_type, \
+                                                  _ss.str());                  \
+  } while (0)
+
+// Macro for tracing compute operations
+#define TRACE_COMPUTE(time, component, op_type, details)                      \
+  do {                                                                        \
+    std::stringstream _ss;                                                    \
+    _ss << details;                                                           \
+    EventDriven::Tracer::getInstance().traceCompute(time, component, op_type, \
+                                                    _ss.str());               \
+  } while (0)
+
+// Macro for tracing instructions
+#define TRACE_INSTRUCTION(time, component, instr, details)                 \
+  do {                                                                     \
+    std::stringstream _ss;                                                 \
+    _ss << details;                                                        \
+    EventDriven::Tracer::getInstance().traceInstruction(time, component,   \
+                                                        instr, _ss.str()); \
+  } while (0)
+
+// Macro for tracing MAC operations
+#define TRACE_MAC(time, component, acc, a, b, details_unused) \
+  EventDriven::Tracer::getInstance().traceMAC(time, component, acc, a, b)
+
+// Macro for tracing memory read operations
+#define TRACE_MEM_READ(time, component, addr, value)                        \
+  EventDriven::Tracer::getInstance().traceMemoryRead(time, component, addr, \
+                                                     value)
+
+// Macro for tracing memory write operations
+#define TRACE_MEM_WRITE(time, component, addr, value)                        \
+  EventDriven::Tracer::getInstance().traceMemoryWrite(time, component, addr, \
+                                                      value)
+
+// Macro for tracing queue operations
+#define TRACE_QUEUE_OP(time, component, op, size, depth)                     \
+  EventDriven::Tracer::getInstance().traceQueueOp(time, component, op, size, \
+                                                  depth)
+
 #endif  // TRACE_H

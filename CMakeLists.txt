@@ -27,23 +27,43 @@ target_include_directories(gemm_operator_tpu_example PRIVATE ${CMAKE_SOURCE_DIR}
 add_subdirectory(third_party/DRAMsim3)
 
 # --- GoogleTest configuration ---
-if(WIN32)
-    add_subdirectory(third_party/googletest)
-else()
-    find_package(GTest REQUIRED)
-endif()
-include_directories(${GTEST_INCLUDE_DIRS})
+add_subdirectory(third_party/googletest)
+include_directories(${gtest_SOURCE_DIR}/include ${gtest_SOURCE_DIR})
 
 
 # --- GEMM Operator tests ---
 add_executable(gemm_operator_tests tests/test_gemm_operator.cpp)
 target_include_directories(gemm_operator_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(gemm_operator_tests GTest::gtest GTest::gtest_main)
+target_link_libraries(gemm_operator_tests gtest gtest_main pthread)
 add_test(NAME gemm_operator_tests COMMAND gemm_operator_tests)
 
 # --- MAC PE tests ---
 add_executable(test_mac_pe tests/test_mac_pe.cpp)
 target_include_directories(test_mac_pe PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# --- ALU tests ---
+add_executable(test_alu tests/test_alu.cpp)
+target_include_directories(test_alu PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_alu gtest gtest_main pthread)
+add_test(NAME test_alu COMMAND test_alu)
+
+# --- PE tests ---
+add_executable(test_pe tests/test_pe.cpp)
+target_include_directories(test_pe PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_pe gtest gtest_main pthread)
+add_test(NAME test_pe COMMAND test_pe)
+
+# --- Pipeline tests ---
+add_executable(test_pipeline tests/test_pipeline.cpp)
+target_include_directories(test_pipeline PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_pipeline gtest gtest_main pthread)
+add_test(NAME test_pipeline COMMAND test_pipeline)
+
+# --- LSU tests ---
+add_executable(test_lsu tests/test_lsu.cpp)
+target_include_directories(test_lsu PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_lsu gtest gtest_main pthread)
+add_test(NAME test_lsu COMMAND test_lsu)
 
 enable_testing()
 

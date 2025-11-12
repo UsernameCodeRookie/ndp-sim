@@ -3,13 +3,13 @@
 
 #include <deque>
 #include <functional>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "../port.h"
 #include "../tick.h"
+#include "../trace.h"
 #include "int_packet.h"
 
 /**
@@ -66,20 +66,10 @@ class PipelineComponent : public Architecture::TickingComponent {
       };
     }
 
-    // Create input port
-    auto in = std::make_shared<Architecture::Port>(
-        "in", Architecture::PortDirection::INPUT, this);
-    addPort(in);
-
-    // Create output port
-    auto out = std::make_shared<Architecture::Port>(
-        "out", Architecture::PortDirection::OUTPUT, this);
-    addPort(out);
-
-    // Create stall control port (optional)
-    auto stall_ctrl = std::make_shared<Architecture::Port>(
-        "stall", Architecture::PortDirection::INPUT, this);
-    addPort(stall_ctrl);
+    // Create ports
+    addPort("in", Architecture::PortDirection::INPUT);
+    addPort("out", Architecture::PortDirection::OUTPUT);
+    addPort("stall", Architecture::PortDirection::INPUT);
   }
 
   /**
@@ -112,10 +102,6 @@ class PipelineComponent : public Architecture::TickingComponent {
 
     if (stall_) {
       total_stalls_++;
-      if (verbose_) {
-        std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                  << ": Pipeline stalled" << std::endl;
-      }
       return;
     }
 
@@ -128,14 +114,18 @@ class PipelineComponent : public Architecture::TickingComponent {
         out->write(processed_data);
         total_processed_++;
 
-        if (verbose_) {
-          auto int_data =
-              std::dynamic_pointer_cast<IntDataPacket>(processed_data);
-          if (int_data) {
-            std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                      << ": Stage " << (num_stages_ - 1)
-                      << " -> Output: " << int_data->getValue() << std::endl;
-          }
+        // Enhanced pipeline output trace
+        auto int_data =
+            std::dynamic_pointer_cast<IntDataPacket>(processed_data);
+        if (int_data) {
+          TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "PIPELINE_OUT",
+                        "Stage[" << (num_stages_ - 1)
+                                 << "]->OUT value=" << int_data->getValue()
+                                 << " cycle=" << scheduler_.getCurrentTime()
+                                 << " latency="
+                                 << (scheduler_.getCurrentTime() -
+                                     stages_[num_stages_ - 1].stage_entry_time)
+                                 << " total_processed=" << total_processed_);
         }
       }
       stages_[num_stages_ - 1].valid = false;
@@ -149,14 +139,15 @@ class PipelineComponent : public Architecture::TickingComponent {
         stages_[i] =
             PipelineStageData(processed_data, scheduler_.getCurrentTime());
 
-        if (verbose_) {
-          auto int_data =
-              std::dynamic_pointer_cast<IntDataPacket>(processed_data);
-          if (int_data) {
-            std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                      << ": Stage " << (i - 1) << " -> Stage " << i << ": "
-                      << int_data->getValue() << std::endl;
-          }
+        // Enhanced stage transition trace
+        auto int_data =
+            std::dynamic_pointer_cast<IntDataPacket>(processed_data);
+        if (int_data) {
+          TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "STAGE_PROP",
+                        "Stage[" << (i - 1) << "]->Stage[" << i
+                                 << "] value=" << int_data->getValue()
+                                 << " cycle=" << scheduler_.getCurrentTime()
+                                 << " period=" << getPeriod());
         }
 
         stages_[i - 1].valid = false;
@@ -172,14 +163,16 @@ class PipelineComponent : public Architecture::TickingComponent {
         stages_[0] =
             PipelineStageData(processed_data, scheduler_.getCurrentTime());
 
-        if (verbose_) {
-          auto int_data =
-              std::dynamic_pointer_cast<IntDataPacket>(processed_data);
-          if (int_data) {
-            std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                      << ": Input -> Stage 0: " << int_data->getValue()
-                      << std::endl;
-          }
+        // Enhanced input trace
+        auto int_data =
+            std::dynamic_pointer_cast<IntDataPacket>(processed_data);
+        if (int_data) {
+          TRACE_COMPUTE(
+              scheduler_.getCurrentTime(), getName(), "PIPELINE_IN",
+              "IN->Stage[0] value=" << int_data->getValue()
+                                    << " cycle=" << scheduler_.getCurrentTime()
+                                    << " period=" << getPeriod()
+                                    << " depth=" << num_stages_);
         }
       }
     }
@@ -194,10 +187,6 @@ class PipelineComponent : public Architecture::TickingComponent {
       stage.data = nullptr;
     }
     flush_ = false;
-    if (verbose_) {
-      std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                << ": Pipeline flushed" << std::endl;
-    }
   }
 
   /**
@@ -237,9 +226,6 @@ class PipelineComponent : public Architecture::TickingComponent {
   uint64_t getTotalStalls() const { return total_stalls_; }
   bool isStalled() const { return stall_; }
 
-  // Enable/disable verbose output
-  void setVerbose(bool verbose) { verbose_ = verbose; }
-
   /**
    * @brief Print pipeline statistics
    */
@@ -264,7 +250,6 @@ class PipelineComponent : public Architecture::TickingComponent {
   bool flush_;                // Pipeline flush flag
   uint64_t total_processed_;  // Total items processed
   uint64_t total_stalls_;     // Total stall cycles
-  bool verbose_ = false;      // Verbose output flag
 };
 
 /**

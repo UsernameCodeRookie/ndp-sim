@@ -2,7 +2,6 @@
 #define LSU_H
 
 #include <array>
-#include <iostream>
 #include <memory>
 #include <queue>
 #include <string>
@@ -10,6 +9,7 @@
 
 #include "../port.h"
 #include "../tick.h"
+#include "../trace.h"
 #include "int_packet.h"
 
 // Conditional include for DRAMsim3
@@ -232,9 +232,6 @@ class LoadStoreUnit : public Architecture::TickingComponent {
       dram_ = std::make_shared<DRAMsim3Wrapper>(name + "_DRAM", config_file,
                                                 output_dir);
       use_dramsim3_ = true;
-      if (verbose_) {
-        std::cout << "[LSU] Using DRAMsim3 for memory simulation\n";
-      }
     } else {
       use_dramsim3_ = false;
       createMemoryBanks(bank_capacity);
@@ -278,8 +275,6 @@ class LoadStoreUnit : public Architecture::TickingComponent {
   uint64_t getReadLatency() const { return MEMORY_READ_LATENCY; }
   uint64_t getWriteLatency() const { return MEMORY_WRITE_LATENCY; }
 
-  void setVerbose(bool verbose) { verbose_ = verbose; }
-
  private:
   enum class State { IDLE, PROCESSING, WAITING_BANK };
 
@@ -294,16 +289,11 @@ class LoadStoreUnit : public Architecture::TickingComponent {
   }
 
   void createPorts() {
-    addPort(std::make_shared<Architecture::Port>(
-        "req_in", Architecture::PortDirection::INPUT, this));
-    addPort(std::make_shared<Architecture::Port>(
-        "resp_out", Architecture::PortDirection::OUTPUT, this));
-    addPort(std::make_shared<Architecture::Port>(
-        "ready", Architecture::PortDirection::OUTPUT, this));
-    addPort(std::make_shared<Architecture::Port>(
-        "valid", Architecture::PortDirection::INPUT, this));
-    addPort(std::make_shared<Architecture::Port>(
-        "done", Architecture::PortDirection::OUTPUT, this));
+    addPort("req_in", Architecture::PortDirection::INPUT);
+    addPort("resp_out", Architecture::PortDirection::OUTPUT);
+    addPort("ready", Architecture::PortDirection::OUTPUT);
+    addPort("valid", Architecture::PortDirection::INPUT);
+    addPort("done", Architecture::PortDirection::OUTPUT);
   }
 
   void handlePortIO() {
@@ -323,19 +313,20 @@ class LoadStoreUnit : public Architecture::TickingComponent {
 
         if (mem_req) {
           request_queue_.push(mem_req);
-          if (verbose_) {
-            std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                      << ": Enqueued request, addr=" << mem_req->getAddress()
-                      << " queue_size=" << request_queue_.size()
-                      << " state=" << static_cast<int>(current_state_)
-                      << std::endl;
-          }
+
+          TRACE_EVENT(
+              scheduler_.getCurrentTime(), getName(), "MEM_REQ",
+              (mem_req->getOperation() == LSUOp::LOAD ? "LOAD" : "STORE")
+                  << " addr=0x" << std::hex << mem_req->getAddress() << std::dec
+                  << " bank=" << (mem_req->getAddress() % num_banks_)
+                  << " queue=" << request_queue_.size() << "/" << queue_depth_
+                  << " cycle=" << scheduler_.getCurrentTime()
+                  << " period=" << getPeriod()
+                  << (mem_req->getOperation() == LSUOp::STORE
+                          ? " data=" + std::to_string(mem_req->getData())
+                          : ""));
         }
       }
-    } else if (verbose_) {
-      std::cout << "[" << scheduler_.getCurrentTime() << "] " << getName()
-                << ": NOT ready, queue_size=" << request_queue_.size()
-                << " state=" << static_cast<int>(current_state_) << std::endl;
     }
   }
 
@@ -384,6 +375,17 @@ class LoadStoreUnit : public Architecture::TickingComponent {
     if (element_index_ >= vector_length_) {
       current_state_ = State::IDLE;
       operations_completed_++;
+
+      TRACE_EVENT(
+          scheduler_.getCurrentTime(), getName(), "MEM_DONE",
+          (current_request_->getOperation() == LSUOp::LOAD ? "LOAD_DONE"
+                                                           : "STORE_DONE")
+              << " addr=0x" << std::hex << current_request_->getAddress()
+              << std::dec << " length=" << vector_length_ << " ops="
+              << operations_completed_ << " stalls=" << cycles_stalled_
+              << " cycle=" << scheduler_.getCurrentTime()
+              << " period=" << getPeriod());
+
       return;
     }
 
@@ -401,8 +403,32 @@ class LoadStoreUnit : public Architecture::TickingComponent {
           current_request_->getData(), 1, 1, current_request_->getMask());
       bank->processRequest(bank_request);
       current_state_ = State::WAITING_BANK;
+
+      if (current_request_->getOperation() == LSUOp::LOAD) {
+        TRACE_MEM_READ(scheduler_.getCurrentTime(), getName(), address,
+                       bank_id);
+      } else {
+        TRACE_MEM_WRITE(scheduler_.getCurrentTime(), getName(), address,
+                        current_request_->getData());
+      }
+      TRACE_EVENT(
+          scheduler_.getCurrentTime(), getName(), "BANK_ACCESS",
+          (current_request_->getOperation() == LSUOp::LOAD ? "BANK_READ"
+                                                           : "BANK_WRITE")
+              << " bank=" << bank_id << " addr=0x" << std::hex << address
+              << std::dec << " elem=" << element_index_ << "/" << vector_length_
+              << " cycle=" << scheduler_.getCurrentTime()
+              << " period=" << getPeriod());
+
     } else {
       cycles_stalled_++;
+
+      TRACE_EVENT(
+          scheduler_.getCurrentTime(), getName(), "STALL",
+          "BANK_CONFLICT bank=" << bank_id << " addr=0x" << std::hex << address
+                                << std::dec << " elem=" << element_index_
+                                << " total_stalls=" << cycles_stalled_
+                                << " cycle=" << scheduler_.getCurrentTime());
     }
   }
 
@@ -461,7 +487,6 @@ class LoadStoreUnit : public Architecture::TickingComponent {
   size_t vector_length_;
   size_t operations_completed_;
   size_t cycles_stalled_;
-  bool verbose_ = false;
 
 #ifdef USE_DRAMSIM3
   std::shared_ptr<DRAMsim3Wrapper> dram_;

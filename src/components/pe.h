@@ -2,7 +2,6 @@
 #define PE_H
 
 #include <array>
-#include <iostream>
 #include <memory>
 #include <queue>
 #include <string>
@@ -106,30 +105,22 @@ class ProcessingElement : public Architecture::TickingComponent {
     alu_ = std::make_shared<ALUComponent>(name + "_ALU", scheduler, period);
 
     // Create ports
-    // Instruction input port
-    auto inst_in = std::make_shared<Architecture::Port>(
-        "inst_in", Architecture::PortDirection::INPUT, this);
-    addPort(inst_in);
-
-    // Data input port (for loading registers from external)
-    auto data_in = std::make_shared<Architecture::Port>(
-        "data_in", Architecture::PortDirection::INPUT, this);
-    addPort(data_in);
-
-    // Data output port
-    auto data_out = std::make_shared<Architecture::Port>(
-        "data_out", Architecture::PortDirection::OUTPUT, this);
-    addPort(data_out);
-
-    // Ready signal output (indicates PE can accept new instruction)
-    auto ready_out = std::make_shared<Architecture::Port>(
-        "ready", Architecture::PortDirection::OUTPUT, this);
-    addPort(ready_out);
-
-    // Valid signal input (indicates input has valid instruction)
-    auto valid_in = std::make_shared<Architecture::Port>(
-        "valid", Architecture::PortDirection::INPUT, this);
-    addPort(valid_in);
+    addPort("inst_in",
+            Architecture::PortDirection::INPUT);  // Instruction input port
+    addPort(
+        "data_in",
+        Architecture::PortDirection::INPUT);  // Data input port (for loading
+                                              // registers from external)
+    addPort("data_out",
+            Architecture::PortDirection::OUTPUT);  // Data output port
+    addPort(
+        "ready",
+        Architecture::PortDirection::OUTPUT);  // Ready signal output (indicates
+                                               // PE can accept new instruction)
+    addPort(
+        "valid",
+        Architecture::PortDirection::INPUT);  // Valid signal input (indicates
+                                              // input has valid instruction)
   }
 
   /**
@@ -157,10 +148,15 @@ class ProcessingElement : public Architecture::TickingComponent {
       if (inst_packet) {
         instruction_queue_.push(inst_packet);
 
-        // Trace queue operation
-        EventDriven::Tracer::getInstance().traceQueueOp(
-            scheduler_.getCurrentTime(), getName(), "Enqueued",
-            instruction_queue_.size(), queue_depth_);
+        TRACE_QUEUE_OP(scheduler_.getCurrentTime(), getName(), "Enqueued",
+                       instruction_queue_.size(), queue_depth_);
+        TRACE_EVENT(scheduler_.getCurrentTime(), getName(), "QUEUE_DETAIL",
+                    "Enqueued "
+                        << ALUComponent::getOpName(inst_packet->getOperation())
+                        << " | size=" << instruction_queue_.size() << "/"
+                        << queue_depth_
+                        << " cycle=" << scheduler_.getCurrentTime() << " ready="
+                        << (instruction_queue_.size() < queue_depth_));
       }
     }
 
@@ -191,27 +187,31 @@ class ProcessingElement : public Architecture::TickingComponent {
       int result;
       if (inst->getOperation() == ALUOp::MAC) {
         // MAC operation: accumulator = accumulator + (a * b)
+        int prev_acc = mac_accumulator_;
         mac_accumulator_ = mac_accumulator_ + (operand_a * operand_b);
         result = mac_accumulator_;
 
-        // Trace MAC operation
-        EventDriven::Tracer::getInstance().traceMAC(scheduler_.getCurrentTime(),
-                                                    getName(), mac_accumulator_,
-                                                    operand_a, operand_b);
+        TRACE_MAC(scheduler_.getCurrentTime(), getName(), mac_accumulator_,
+                  operand_a, operand_b, "");
+        TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "MAC_DETAIL",
+                      "acc=" << mac_accumulator_ << " (prev=" << prev_acc
+                             << " + " << operand_a << "*" << operand_b
+                             << ") | cycle=" << scheduler_.getCurrentTime()
+                             << " period=" << getPeriod());
       } else {
         // Regular ALU operation
         result = ALUComponent::executeOperation(operand_a, operand_b,
                                                 inst->getOperation());
 
-        // Trace instruction execution
-        std::stringstream ss;
-        ss << ALUComponent::getOpName(inst->getOperation()) << " R"
-           << inst->getSrcRegA() << "(" << operand_a << "), R"
-           << inst->getSrcRegB() << "(" << operand_b << ") -> R"
-           << inst->getDstReg() << "(" << result << ")";
-        EventDriven::Tracer::getInstance().traceInstruction(
+        TRACE_INSTRUCTION(
             scheduler_.getCurrentTime(), getName(),
-            ALUComponent::getOpName(inst->getOperation()), ss.str());
+            ALUComponent::getOpName(inst->getOperation()),
+            ALUComponent::getOpName(inst->getOperation())
+                << " R" << inst->getSrcRegA() << "(" << operand_a << "), R"
+                << inst->getSrcRegB() << "(" << operand_b << ") -> R"
+                << inst->getDstReg() << "(" << result << ")"
+                << " | cycle=" << scheduler_.getCurrentTime() << " period="
+                << getPeriod() << " queue_depth=" << instruction_queue_.size());
       }
 
       // Write result back to register file

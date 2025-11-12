@@ -29,7 +29,15 @@ class Component {
   void setEnabled(bool enabled) { enabled_ = enabled; }
 
   // Port management
-  void addPort(std::shared_ptr<Port> port) { ports_[port->getName()] = port; }
+  /**
+   * @brief Create and add a port in one step
+   * @param port_name Name of the port
+   * @param direction Direction of the port (INPUT or OUTPUT)
+   */
+  void addPort(const std::string& port_name, PortDirection direction) {
+    auto port = std::make_shared<Port>(port_name, direction, this);
+    addPortInternal(port);
+  }
 
   std::shared_ptr<Port> getPort(const std::string& name) {
     auto it = ports_.find(name);
@@ -50,6 +58,11 @@ class Component {
   EventDriven::EventScheduler& scheduler_;
   bool enabled_;
   std::unordered_map<std::string, std::shared_ptr<Port>> ports_;
+
+  // Internal helper for adding a port object directly
+  void addPortInternal(std::shared_ptr<Port> port) {
+    ports_[port->getName()] = port;
+  }
 };
 
 }  // namespace Architecture
