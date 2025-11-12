@@ -32,6 +32,7 @@ class DramLoopControlConfig(BaseConfigModule):
         for field_info in self.FIELD_MAP:
             name = field_info[0]
             self.values[name] = None  # None will encode as 0 in to_bits
+        self.mark_empty()
 
     def from_json(self, cfg: dict):
         """
@@ -47,9 +48,15 @@ class DramLoopControlConfig(BaseConfigModule):
         
         if self.idx < len(stride_entries):
             key, entry = stride_entries[self.idx]
-            self.id = NodeIndex("DRAM_LC." + key)
-            # Physical index will be resolved automatically from NodeIndex.physical_id
-            super().from_json(entry)
+            # Check if this entry has meaningful data (not just stride: 0)
+            has_data = entry.get("stride", 0) != 0 or entry.get("src_id") is not None
+            if has_data:
+                self.id = NodeIndex("DRAM_LC." + key)
+                # Physical index will be resolved automatically from NodeIndex.physical_id
+                super().from_json(entry)
+            else:
+                # Empty configuration
+                self.set_empty()
         else:
             # No valid entry: treat as empty
             self.set_empty()
@@ -98,6 +105,7 @@ class LCPEConfig(BaseConfigModule):
         for field_info in self.FIELD_MAP:
             name = field_info[0]
             self.values[name] = None  # None will encode as 0 in to_bits
+        self.mark_empty()
 
     @staticmethod
     def opcode_map():
@@ -145,14 +153,14 @@ class LCPEConfig(BaseConfigModule):
         if self.idx < len(keys):
             key = keys[self.idx]
             entry = cfg[key]
-            # Assign NodeIndex
-            self.id = NodeIndex(f'LC_PE.{key}')
             
             # Check if this PE has configuration data
             if not entry or ('alu_opcode' not in entry and 'inport' not in entry):
                 # Empty PE configuration
                 self.set_empty()
             else:
+                # Assign NodeIndex only if PE has data
+                self.id = NodeIndex(f'LC_PE.{key}')
                 # Parse JSON format into FIELD_MAP format
                 # JSON has: {alu_opcode, inport: [{src_id, mode, keep_last_index, cfg_constant_pos}, ...]}
                 
@@ -165,7 +173,16 @@ class LCPEConfig(BaseConfigModule):
                 
                 # Extract fields for each port (note: reversed order - port2, port1, port0)
                 for i, port in enumerate(inport_list):
-                    self.values[f'inport{i}_src'] = port.get('src_id', 0)
+                    src_id = port.get('src_id')
+                    # If src_id is a string (node name), create a Connect object
+                    if isinstance(src_id, str):
+                        self.values[f'inport{i}_src'] = Connect(src_id, self.id)
+                    elif src_id is None:
+                        self.values[f'inport{i}_src'] = 0
+                    else:
+                        # Keep integer src_id as is for backward compatibility
+                        self.values[f'inport{i}_src'] = src_id
+                    
                     self.values[f'inport{i}_last_index'] = port.get('keep_last_index', 0)
                     self.values[f'inport{i}_mode'] = port.get('mode', 0)
                     self.values[f'constant{i}'] = port.get('cfg_constant_pos', 0)
@@ -199,6 +216,7 @@ class BufferRowLCConfig(BaseConfigModule):
         for field_info in self.FIELD_MAP:
             name = field_info[0]
             self.values[name] = None
+        self.mark_empty()
 
 
 class BufferColLCConfig(BaseConfigModule):
@@ -227,6 +245,7 @@ class BufferColLCConfig(BaseConfigModule):
         for field_info in self.FIELD_MAP:
             name = field_info[0]
             self.values[name] = None
+        self.mark_empty()
     
 class BufferLoopControlGroupConfig(BaseConfigModule):
     """Group of buffer loop controls (row and column)."""
@@ -246,13 +265,22 @@ class BufferLoopControlGroupConfig(BaseConfigModule):
         if self.idx < len(keys):
             # Get the group key corresponding to the idx
             key = keys[self.idx]
-            self.submodules = [BufferRowLCConfig(key), BufferColLCConfig(key)]
             cfg = cfg.get(key, cfg)
-            super().from_json(cfg)
             
-            # Initialize each submodule using the group configuration
-            for submodule in self.submodules:
-                submodule.from_json(cfg)
+            # Check if this group has meaningful data (not just a comment)
+            has_data = any(k in cfg for k in ["ROW_LC", "COL_LC"])
+            
+            if has_data:
+                self.submodules = [BufferRowLCConfig(key), BufferColLCConfig(key)]
+                super().from_json(cfg)
+                
+                # Initialize each submodule using the group configuration
+                for submodule in self.submodules:
+                    submodule.from_json(cfg)
+            else:
+                # Empty group
+                self.submodules = [BufferRowLCConfig(""), BufferColLCConfig("")]
+                self.set_empty()
         else:
             # If idx is out of range, treat it as an empty configuration
             self.submodules = [BufferRowLCConfig(""), BufferColLCConfig("")]
@@ -266,3 +294,4 @@ class BufferLoopControlGroupConfig(BaseConfigModule):
         """Set all submodules to empty configurations."""
         for submodule in self.submodules:
             submodule.set_empty()
+        self.mark_empty()

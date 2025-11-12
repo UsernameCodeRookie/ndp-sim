@@ -29,12 +29,28 @@ class BaseConfigModule(ConfigModule):
     def __init__(self):
         # Initialize all field values with default 0
         self.values = {entry[0]: 0 for entry in self.FIELD_MAP}
+        self._is_empty = False
+    
+    def is_empty(self) -> bool:
+        """Check if this module is empty (all fields are None or 0)."""
+        if hasattr(self, '_is_empty'):
+            return self._is_empty
+        # Check if all values are None or 0
+        return all(v is None or v == 0 for v in self.values.values())
+    
+    def mark_empty(self):
+        """Mark this module as empty."""
+        self._is_empty = True
     
     def register_to_mapper(self):
         """Register this module to the mapper after resource allocation."""
         from bitstream.config.mapper import NodeGraph
         
         if not hasattr(self, 'id') or not self.id:
+            return
+        
+        # Skip empty modules
+        if self.is_empty():
             return
         
         mapper = NodeGraph.get().mapping
@@ -47,9 +63,19 @@ class BaseConfigModule(ConfigModule):
     def from_json(self, cfg: dict):
         """Populate values from a JSON dict."""
         for entry in self.FIELD_MAP:
-            name = entry[0]
+            name, width, *rest = entry
+            mapper = rest[0] if rest else None
             if name in cfg:
-                self.values[name] = cfg[name]
+                val = cfg[name]
+                # If there's a mapper function, apply it during from_json
+                # This allows Connect objects to be created at config load time
+                if mapper:
+                    argc = mapper.__code__.co_argcount
+                    if argc == 2:
+                        val = mapper(self, val)
+                    else:
+                        val = mapper(val)
+                self.values[name] = val
 
     def _encode_list(self, val: list, width: int) -> list[tuple[int, int]]:
         """Encode a list of integers (or NodeIndex/NodeIndexFuture) into chunks of <=64-bit ints."""

@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Set, Tuple
 from collections import defaultdict
 import os
+import time
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -51,6 +52,44 @@ class Mapper:
             return "PE"
         else:
             return None
+        
+    def get_type_from_resource(self, resource: str) -> Optional[str]:
+        """Infer the resource type from a physical resource name."""
+        if resource.startswith("LC"):
+            return "LC"
+        elif resource.startswith("GROUP"):
+            return "GROUP"
+        elif resource.startswith("READ_STREAM"):
+            return "READ_STREAM"
+        elif resource.startswith("WRITE_STREAM"):
+            return "WRITE_STREAM"
+        elif resource.startswith("PE"):
+            return "PE"
+        else:
+            return None
+
+    def parse_resource(self, resource: str):
+        """Parse resource string to extract its type and index.
+        
+        Args:
+            resource: The resource string, e.g., 'READ_STREAM0', 'WRITE_STREAM1', 'LC0', etc.
+            
+        Returns:
+            A tuple (res_type, res_idx), where res_type is the type (e.g., 'STREAM', 'LC', etc.)
+            and res_idx is the integer index extracted from the resource string.
+        """
+        if resource.startswith("READ_STREAM"):
+            res_type = "STREAM"
+            res_idx = int(resource[len("READ_STREAM"):])
+        elif resource.startswith("WRITE_STREAM"):
+            res_type = "STREAM"
+            res_idx = 3 + int(resource[len("WRITE_STREAM"):])  # Offset for WRITE_STREAM resources
+        else:
+            res_type = ''.join(ch for ch in resource if ch.isalpha())
+            res_idx = int(''.join(ch for ch in resource if ch.isdigit()))
+        
+        return res_type, res_idx
+
 
     def allocate(self, node: str, stream_type: Optional[str] = None) -> str:
         """
@@ -121,7 +160,7 @@ class Mapper:
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "LC" and dst_type == "LC":
                 return abs(dst_idx - src_idx) in [1, 2]
-            return True  # not applicable
+            return True
         
     class LCtoPEConstraint(Constraint):
         """LC i → PE j constraint: j in [i, i+1]"""
@@ -138,12 +177,13 @@ class Mapper:
             return True
         
     class LCtoSTREAMConstraint(Constraint):
-        """LC i → STREAM j constraint: READ_STREAM has 3 slots [0-2], WRITE_STREAM has 1 slot [0]"""
+        """LC i → STREAM j constraint: 
+        Unified STREAM indexing: READ_STREAM0,1,2 → 0,1,2; WRITE_STREAM0 → 3
+        """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            # LC can connect to any READ_STREAM or WRITE_STREAM
-            if src_type == "LC" and dst_type in ["READ_STREAM", "WRITE_STREAM"]:
-                # No specific positional constraint for streams
-                return True
+            if src_type == "LC" and dst_type == "STREAM":
+                # LC can connect to streams with reasonable topology constraints
+                return abs(dst_idx - (src_idx // 2)) in [0, 1]
             return True
     
     class PEtoPEConstraint(Constraint):
@@ -155,16 +195,32 @@ class Mapper:
     
     
     class PEtoSTREAMConstraint(Constraint):
-        """PE i → STREAM j constraint: PE can connect to any READ_STREAM or WRITE_STREAM"""
+        """PE i → STREAM j constraint:
+        Unified STREAM indexing: READ_STREAM0,1,2 → 0,1,2; WRITE_STREAM0 → 3
+        """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            # PE can connect to any READ_STREAM or WRITE_STREAM
-            if src_type == "PE" and dst_type in ["READ_STREAM", "WRITE_STREAM"]:
-                return True
+            if src_type == "PE" and dst_type == "STREAM":
+                # PE can connect to streams with reasonable topology constraints
+                return abs(dst_idx - (src_idx // 2)) in [1, 2]
             return True
 
     
-    def search(self, connections: List[Dict[str, str]]) -> Optional[Dict[str, str]]:
-        """Backtracking search for a valid node→resource mapping."""
+    def search(self, connections: List[Dict[str, str]], timeout_seconds: int = 600) -> Optional[Dict[str, str]]:
+        """
+        Perform a backtracking search to find a valid mapping between nodes and resources
+        that satisfies all architectural constraints.
+
+        Args:
+            connections (List[Dict[str, str]]): List of connection dictionaries (e.g., {"src": ..., "dst": ...})
+            timeout_seconds (int): Maximum search duration in seconds (default: 600)
+
+        Returns:
+            Optional[Dict[str, str]]: Valid node→resource mapping if found; otherwise None
+        """
+        start_time = time.time()
+        self._timeout = False
+
+        # Define all structural constraints that must hold between mapped resources
         self.constraints: List[Mapper.Constraint] = [
             self.LCtoLCConstraint(),
             self.LCtoPEConstraint(),
@@ -174,60 +230,101 @@ class Mapper:
             self.PEtoSTREAMConstraint(),
         ]
 
-        def backtrack(index: int, current_mapping: Dict[str, str], used_resources: Set[str]) -> Optional[Dict[str, str]]:
-            if index >= len(self.nodes):
-                existing_mapping = self.node_to_resource.copy()
+        # === Collect all nodes participating in the connection graph ===
+        nodes_in_connections = set()
+        for c in connections:
+            src, dst = c["src"], c["dst"]
+            # Normalize LC suffixes (e.g., "NODE.ROW_LC" → "NODE")
+            if src.endswith("ROW_LC") or src.endswith("COL_LC"):
+                src = src.split(".")[0]
+            if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
+                dst = dst.split(".")[0]
+            nodes_in_connections.add(src)
+            nodes_in_connections.add(dst)
 
+        # Debug: show which nodes are involved in constraints
+        print(f"[Debug] Checking nodes in connections:")
+        for node in sorted(nodes_in_connections):
+            res = self.node_to_resource.get(node)
+            res_type = self.get_type(node)
+            print(f"  {node}: type={res_type}, mapped_to={res}")
+        
+        # Keep only nodes that are both known and connected
+        unique_nodes = [node for node in self.nodes if node in nodes_in_connections]
+        print(f"[Debug] Search has {len(unique_nodes)} nodes to map (from {len(nodes_in_connections)} nodes in connections)")
+
+        attempt_count = [0]  # mutable counter shared across recursion
+
+        # === Recursive backtracking ===
+        def backtrack(index: int, current_mapping: Dict[str, str], used_resources: Set[str]) -> Optional[Dict[str, str]]:
+            attempt_count[0] += 1
+
+            # Periodic progress logging
+            if attempt_count[0] % 10000 == 0:
+                print(f"[Debug] Search attempts: {attempt_count[0]}, at node index {index}/{len(unique_nodes)}")
+            
+            # Check timeout condition
+            if time.time() - start_time > timeout_seconds:
+                if not self._timeout:
+                    print(f"[Warning] Constraint search timeout after {timeout_seconds} seconds ({attempt_count[0]} attempts)")
+                    self._timeout = True
+                return None
+            
+            # === Base case: all nodes assigned ===
+            if index >= len(unique_nodes):
+                full_mapping = self.node_to_resource.copy()
+                full_mapping.update(current_mapping)
+
+                # Verify all constraints across connected pairs
                 for c in connections:
                     src, dst = c["src"], c["dst"]
-                    
                     if src.endswith("ROW_LC") or src.endswith("COL_LC"):
                         src = src.split(".")[0]
                     if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
                         dst = dst.split(".")[0]
                     
-                    if src in current_mapping and dst in current_mapping:
-                        # Extract resource type and index
-                        src_res = current_mapping[src]
-                        dst_res = current_mapping[dst]
-                        
-                        # Handle READ_STREAM and WRITE_STREAM specially
-                        if src_res.startswith("READ_STREAM"):
-                            src_type = "READ_STREAM"
-                            src_idx = int(src_res[len("READ_STREAM"):])
-                        elif src_res.startswith("WRITE_STREAM"):
-                            src_type = "WRITE_STREAM"
-                            src_idx = int(src_res[len("WRITE_STREAM"):])
-                        else:
-                            src_type = ''.join(ch for ch in src_res if ch.isalpha())
-                            src_idx = int(''.join(ch for ch in src_res if ch.isdigit()))
-                        
-                        if dst_res.startswith("READ_STREAM"):
-                            dst_type = "READ_STREAM"
-                            dst_idx = int(dst_res[len("READ_STREAM"):])
-                        elif dst_res.startswith("WRITE_STREAM"):
-                            dst_type = "WRITE_STREAM"
-                            dst_idx = int(dst_res[len("WRITE_STREAM"):])
-                        else:
-                            dst_type = ''.join(ch for ch in dst_res if ch.isalpha())
-                            dst_idx = int(''.join(ch for ch in dst_res if ch.isdigit()))
-                        
-                        if not all(constraint.check(src_type, src_idx, dst_type, dst_idx) for constraint in self.constraints):
-                            return None
-                existing_mapping.update(current_mapping)
-                self.node_to_resource = existing_mapping
-                return self.node_to_resource
+                    if src in full_mapping and dst in full_mapping:
+                        src_res = full_mapping[src]
+                        dst_res = full_mapping[dst]
+                        src_type, src_idx = self.parse_resource(src_res)
+                        dst_type, dst_idx = self.parse_resource(dst_res)
 
-            node = self.nodes[index]
-            node_type = self.get_type(node)
+                        # Check each constraint between these resources
+                        failed = False
+                        for constraint in self.constraints:
+                            if not constraint.check(src_type, src_idx, dst_type, dst_idx):
+                                failed = True
+                                break
+                        if failed:
+                            return None  # violate constraint → backtrack
+
+                # All constraints satisfied → success
+                self.node_to_resource = full_mapping
+                return full_mapping
+
+            # === Recursive case: assign resource for next node ===
+            node = unique_nodes[index]
+            existing_res = self.node_to_resource.get(node)
+            node_type = self.get_type(node) if not existing_res else self.get_type_from_resource(existing_res)
             
             if node_type is None:
                 raise RuntimeError(f"[Error] Cannot allocate resource for node: {node}")
             
             pool = self.resource_pools.get(node_type, [])
 
+            # 1. Try existing resource (if defined and available)
+            if existing_res and existing_res not in used_resources and existing_res in pool:
+                current_mapping[node] = existing_res
+                used_resources.add(existing_res)
+                solution = backtrack(index + 1, current_mapping, used_resources)
+                if solution:
+                    return solution
+                used_resources.remove(existing_res)
+                del current_mapping[node]
+
+            # 2. Try all alternative resources from the pool
             for res in pool:
-                if res in used_resources:
+                if res in used_resources or res == existing_res:
                     continue
                 current_mapping[node] = res
                 used_resources.add(res)
@@ -236,9 +333,13 @@ class Mapper:
                     return solution
                 used_resources.remove(res)
                 del current_mapping[node]
+
+            # No valid assignment found for this path
             return None
 
+        # Start the recursive search with an empty resource set
         return backtrack(0, {}, set())
+
 
 
     def get(self, node: str) -> Optional[str]:
@@ -320,10 +421,15 @@ class NodeGraph:
             
     def search_mapping(self):
         """Search for a valid node→resource mapping satisfying constraints."""
-        result = self.mapping.search(self.connections)
+        print(f"[Debug] Starting constraint search with {len(self.connections)} connections")
+        for c in self.connections:
+            print(f"  Connection: {c['src']} -> {c['dst']}")
+        result = self.mapping.search(self.connections, timeout_seconds=300)
         if result is None or len(result) == 0:
-            print("[Error] No valid resource mapping found!")
-        # self.mapping.node_to_resource = result
+            print("[Warning] Constraint search failed or timed out, keeping initial allocation")
+        else:
+            print(f"[Success] Found valid mapping with {len(result)} nodes")
+            self.mapping.node_to_resource = result
 
     def summary(self):
         """Print nodes, connections, and their corresponding physical resources."""
@@ -356,7 +462,9 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
 
     Output is saved to 'data/placement.png'.
     """
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    dir_path = os.path.dirname(save_path)
+    if dir_path:  # Only create directory if path is not empty
+        os.makedirs(dir_path, exist_ok=True)
     fig, ax = plt.subplots(figsize=(10, 6))
 
     # Define fixed layout positions
@@ -395,15 +503,24 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
                 label=label_text,
                 edgecolor="black", facecolor=facecolor, zorder=3
             )
-
-            # Show node name (logical node) or leave blank if unassigned
-            ax.text(
-                x, y - 0.20,  # shift text slightly downward
-                node_name,
-                ha="center", va="top",   # align text to the top edge of the text box
-                fontsize=8, weight="bold",
-                color="black" if node_name else "gray"
-            )
+            
+            # Logical node name (e.g., DRAM_LC.LC7)
+            if node_name:
+                ax.text(
+                    x, y - 0.25,  # shift text slightly downward
+                    node_name,
+                    ha="center", va="center",
+                    fontsize=9, style="normal",
+                    color="darkgreen"
+                )
+            else:
+                ax.text(
+                    x, y - 0.25,
+                    "(unused)",
+                    ha="center", va="center",
+                    fontsize=9, style="normal",
+                    color="gray"
+                )
 
     # Helper: draw straight or curved connection
     def draw_connection(x1, y1, x2, y2, color="black"):

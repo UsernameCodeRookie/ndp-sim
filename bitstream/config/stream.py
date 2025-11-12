@@ -17,7 +17,7 @@ class ReadStreamEngineConfig(BaseConfigModule):
         # Memory AG fields
         ("idx_mode", 6),                        # mse_mem_idx_keep_mode
         ("idx_keep_last_index", 9),              # mse_mem_idx_keep_last_index
-        ("idx", 12),                             # mem_inport_src_id
+        ("idx", 12, lambda self, x: ReadStreamEngineConfig._encode_idx(self, x)),  # mem_inport_src_id
         ("idx_constant", 24),                    # mse_mem_idx_constant
         # Buffer AG fields
         ("buf_idx_mode", 2),                     # mse_buf_idx_keep_mode
@@ -59,12 +59,34 @@ class ReadStreamEngineConfig(BaseConfigModule):
             return self.id.physical_id
         return 0
     
+    @staticmethod
+    def _encode_idx(self, x):
+        """Encode idx field, converting string node names to Connect objects."""
+        if isinstance(x, list):
+            result = []
+            for item in x:
+                if isinstance(item, str):
+                    result.append(Connect(item, self.id))
+                elif item is None:
+                    result.append(0)
+                else:
+                    result.append(item)
+            return result
+        return x
+    
     def from_json(self, cfg: dict):
         """Load read stream configuration from JSON."""
+        if not cfg.get("memory_AG", {}):
+            self.set_empty()
+            return
+        
         self.id = NodeIndex(f"STREAM.{self.stream_key}", stream_type="read")
         cfg = cfg.get("memory_AG", cfg)
         super().from_json(cfg)
 
+    def set_empty(self):
+        """Set to empty configuration."""
+        self.mark_empty()
 
 class WriteStreamEngineConfig(BaseConfigModule):
     """
@@ -76,7 +98,7 @@ class WriteStreamEngineConfig(BaseConfigModule):
         # Memory AG fields
         ("idx_mode", 6),                         # mse_mem_idx_keep_mode
         ("idx_keep_last_index", 9),               # mse_mem_idx_keep_last_index
-        ("idx", 12),                              # mem_inport_src_id
+        ("idx", 12, lambda self, x: WriteStreamEngineConfig._encode_idx(self, x)),  # mem_inport_src_id
         ("mse_mem_idx_constant", 24),             # mse_mem_idx_constant
         # Buffer AG fields
         ("buf_idx_mode", 2),                      # mse_buf_idx_keep_mode
@@ -108,6 +130,21 @@ class WriteStreamEngineConfig(BaseConfigModule):
         if self.id is not None:
             return self.id.physical_id
         return 0
+    
+    @staticmethod
+    def _encode_idx(self, x):
+        """Encode idx field, converting string node names to Connect objects."""
+        if isinstance(x, list):
+            result = []
+            for item in x:
+                if isinstance(item, str):
+                    result.append(Connect(item, self.id))
+                elif item is None:
+                    result.append(0)
+                else:
+                    result.append(item)
+            return result
+        return x
     
     def from_json(self, cfg: dict):
         """Load write stream configuration from JSON."""
@@ -161,6 +198,11 @@ class StreamConfig(BaseConfigModule):
     def stream_type(self, value: Optional[str]):
         """Set stream type."""
         self._stream_type = value
+        
+    def set_empty(self):
+        """Set to empty configuration (no submodules)."""
+        self.submodules = []
+        self.mark_empty()
     
     def from_json(self, cfg: dict):
         """
@@ -180,17 +222,23 @@ class StreamConfig(BaseConfigModule):
             else:
                 # No valid stream at this index, create empty config
                 self.submodules = []
+                self.set_empty()
                 return
         
         # Get the specific stream configuration
         if self.stream_key not in stream_engine:
             self.submodules = []
+            self.set_empty()
             return
         
         stream_cfg = stream_engine[self.stream_key]
         
         # Extract stream type from memory_AG.mode
         memory_ag = stream_cfg.get("memory_AG", {})
+        
+        if memory_ag is {}:
+            self.set_empty()
+        
         self.stream_type = memory_ag.get("mode", "read")
         
         # Create appropriate submodule based on stream type
@@ -208,17 +256,6 @@ class StreamConfig(BaseConfigModule):
         if self.submodules:
             return self.submodules[0].to_bits()
         return []
-
-
-# Legacy aliases for backward compatibility
-class ReadStreamConfig(StreamConfig):
-    """Legacy alias - use StreamConfig instead."""
-    pass
-
-
-class WriteStreamConfig(StreamConfig):
-    """Legacy alias - use StreamConfig instead."""
-    pass
 
 
 

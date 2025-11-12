@@ -10,8 +10,7 @@ import json
 from bitstream.config.mapper import NodeGraph
 from bitstream.config import (
     DramLoopControlConfig, BufferLoopControlGroupConfig, LCPEConfig,
-    NeighborStreamConfig, BufferConfig, SpecialArrayConfig,
-    ReadStreamConfig, WriteStreamConfig,
+    NeighborStreamConfig, BufferConfig, SpecialArrayConfig
 )
 from bitstream.config.stream import StreamConfig
 from bitstream.index import NodeIndex
@@ -60,7 +59,8 @@ def init_modules(cfg):
     NodeIndex._counter = 0
     NodeIndex._resolved = False
     
-    # Reset NodeGraph singleton
+    # Reset NodeGraph singleton BEFORE creating modules
+    # This must happen before from_json is called, as Connect() will populate it
     NodeGraph._instance = None
     
     # Create all modules in a unified list
@@ -73,6 +73,7 @@ def init_modules(cfg):
                 [SpecialArrayConfig()]
     
     # Load configurations from JSON for all modules
+    # During this process, Connect() objects will populate NodeGraph.connections
     print("\n=== Loading Configurations from JSON ===")
     for module in modules:
         module.from_json(cfg)
@@ -80,6 +81,16 @@ def init_modules(cfg):
     # Perform resource allocation and mapping
     print("\n=== Resource Allocation & Mapping ===")
     NodeGraph.get().allocate_resources()
+    # Run constraint search to optimize resource placement
+    print("\n=== Running Constraint Search ===")
+    NodeGraph.get().search_mapping()
+    
+    # Print detailed mapping results after constraint search
+    print("\n=== Mapping Results After Constraint Search ===")
+    mapper = NodeGraph.get().mapping
+    for node in sorted(mapper.node_to_resource.keys()):
+        resource = mapper.node_to_resource[node]
+        print(f"  {node:30s} -> {resource}")
     
     # Resolve node indices and auto-register modules to mapper
     NodeIndex.resolve_all(modules)
