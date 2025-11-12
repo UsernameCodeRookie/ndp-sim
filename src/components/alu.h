@@ -202,13 +202,13 @@ class ALUComponent : public PipelineComponent {
       std::shared_ptr<Architecture::DataPacket> result_packet;
       if constexpr (std::is_same_v<PrecisionType, Int32Precision>) {
         result_packet =
-            std::make_shared<IntDataPacket>(static_cast<int>(result));
+            std::make_shared<Architecture::IntDataPacket>(static_cast<int>(result));
       } else {
         // For Float32, we still use IntDataPacket but with float bits
         // In a real implementation, you'd want a FloatDataPacket
         int float_as_int;
         std::memcpy(&float_as_int, &result, sizeof(float));
-        result_packet = std::make_shared<IntDataPacket>(float_as_int);
+        result_packet = std::make_shared<Architecture::IntDataPacket>(float_as_int);
       }
       result_packet->setTimestamp(scheduler_.getCurrentTime());
       return result_packet;

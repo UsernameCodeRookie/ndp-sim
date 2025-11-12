@@ -153,7 +153,7 @@ class ProcessingElement : public Architecture::TickingComponent {
     input_ready_ = (instruction_queue_.size() < queue_depth_);
 
     // Send ready signal
-    auto ready_packet = std::make_shared<IntDataPacket>(input_ready_ ? 1 : 0);
+    auto ready_packet = std::make_shared<Architecture::IntDataPacket>(input_ready_ ? 1 : 0);
     ready_out->write(
         std::static_pointer_cast<Architecture::DataPacket>(ready_packet));
 
@@ -242,7 +242,7 @@ class ProcessingElement : public Architecture::TickingComponent {
         // Output result (convert float to int representation)
         int float_as_int;
         std::memcpy(&float_as_int, &result, sizeof(float));
-        auto result_packet = std::make_shared<IntDataPacket>(float_as_int);
+        auto result_packet = std::make_shared<Architecture::IntDataPacket>(float_as_int);
         result_packet->setTimestamp(scheduler_.getCurrentTime());
         data_out->write(
             std::static_pointer_cast<Architecture::DataPacket>(result_packet));
@@ -289,7 +289,7 @@ class ProcessingElement : public Architecture::TickingComponent {
         int_instructions_executed_++;
 
         // Output result
-        auto result_packet = std::make_shared<IntDataPacket>(result);
+        auto result_packet = std::make_shared<Architecture::IntDataPacket>(result);
         result_packet->setTimestamp(scheduler_.getCurrentTime());
         data_out->write(
             std::static_pointer_cast<Architecture::DataPacket>(result_packet));

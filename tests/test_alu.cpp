@@ -130,7 +130,7 @@ TEST_F(ALUTest, PipelineOperation) {
   // Check output
   ASSERT_TRUE(output_port->hasData());
   auto result_packet =
-      std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+      std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
   ASSERT_NE(result_packet, nullptr);
   EXPECT_EQ(result_packet->getValue(), 15);
 }
@@ -195,7 +195,7 @@ TEST_F(ALUTest, EventDrivenExecution) {
 
   // Check output appeared after 4 ticks (8 time units with period=2)
   EXPECT_TRUE(output_port->hasData());
-  auto result = std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+  auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(result->getValue(), 13);
 
@@ -255,7 +255,7 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
   scheduler->scheduleAt(9, [&](EventDriven::EventScheduler& sched) {
     if (output_port->hasData()) {
       auto result =
-          std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+          std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
       if (result) results.push_back(result->getValue());
     }
   });
@@ -263,7 +263,7 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
   scheduler->scheduleAt(19, [&](EventDriven::EventScheduler& sched) {
     if (output_port->hasData()) {
       auto result =
-          std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+          std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
       if (result) results.push_back(result->getValue());
     }
   });
@@ -271,7 +271,7 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
   scheduler->scheduleAt(29, [&](EventDriven::EventScheduler& sched) {
     if (output_port->hasData()) {
       auto result =
-          std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+          std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
       if (result) results.push_back(result->getValue());
     }
   });
@@ -284,7 +284,7 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
   std::cout << "Has data: " << (output_port->hasData() ? "yes" : "no")
             << std::endl;
   while (output_port->hasData()) {
-    auto result = std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+    auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
     if (result) {
       std::cout << "Got result: " << result->getValue() << std::endl;
       results.push_back(result->getValue());
@@ -363,7 +363,7 @@ TEST_F(ALUTest, FPUPipelineOperation) {
   // Check output
   ASSERT_TRUE(output_port->hasData());
   auto result_packet =
-      std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+      std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
   ASSERT_NE(result_packet, nullptr);
 
   // Convert int back to float

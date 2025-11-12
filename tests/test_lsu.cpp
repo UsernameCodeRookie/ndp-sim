@@ -129,7 +129,7 @@ TEST_F(LSUTest, LSULoadOperation) {
   auto store_request =
       std::make_shared<MemoryRequestPacket>(LSUOp::STORE, 5, 777);
   req_in->write(store_request);
-  valid_in->write(std::make_shared<IntDataPacket>(1));
+  valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
 
   // Process store operation
   for (int i = 0; i < 10; i++) {
@@ -144,7 +144,7 @@ TEST_F(LSUTest, LSULoadOperation) {
   // Now load the value
   auto load_request = std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, 5);
   req_in->write(load_request);
-  valid_in->write(std::make_shared<IntDataPacket>(1));
+  valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
 
   // Wait for response
   bool got_response = false;
@@ -177,7 +177,7 @@ TEST_F(LSUTest, LSUStoreOperation) {
   auto store_request =
       std::make_shared<MemoryRequestPacket>(LSUOp::STORE, 20, 888);
   req_in->write(store_request);
-  valid_in->write(std::make_shared<IntDataPacket>(1));
+  valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
 
   // Process store request
   for (int i = 0; i < 10; i++) {
@@ -191,7 +191,7 @@ TEST_F(LSUTest, LSUStoreOperation) {
   // Verify by loading it back
   auto load_request = std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, 20);
   req_in->write(load_request);
-  valid_in->write(std::make_shared<IntDataPacket>(1));
+  valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
 
   bool got_response = false;
   for (int i = 0; i < 10; i++) {
@@ -225,7 +225,7 @@ TEST_F(LSUTest, LSUMultipleRequests) {
     auto request =
         std::make_shared<MemoryRequestPacket>(LSUOp::STORE, addr, value);
     req_in->write(request);
-    valid_in->write(std::make_shared<IntDataPacket>(1));
+    valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
 
     // Process store
     for (int i = 0; i < 10; i++) {
@@ -241,7 +241,7 @@ TEST_F(LSUTest, LSUMultipleRequests) {
   for (auto [addr, expected_value] : data) {
     auto request = std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, addr);
     req_in->write(request);
-    valid_in->write(std::make_shared<IntDataPacket>(1));
+    valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
 
     // Process load request
     bool got_response = false;
@@ -271,7 +271,7 @@ TEST_F(LSUTest, LSUReadySignal) {
   lsu->tick();
 
   ASSERT_TRUE(ready_out->hasData());
-  auto ready = std::dynamic_pointer_cast<IntDataPacket>(ready_out->read());
+  auto ready = std::dynamic_pointer_cast<Architecture::IntDataPacket>(ready_out->read());
   ASSERT_NE(ready, nullptr);
 }
 
@@ -340,7 +340,7 @@ TEST_F(LSUTest, MultipleBanks) {
     auto store_request =
         std::make_shared<MemoryRequestPacket>(LSUOp::STORE, addr, value);
     req_in->write(store_request);
-    valid_in->write(std::make_shared<IntDataPacket>(1));
+    valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
 
     for (int i = 0; i < 10; i++) {
       lsu->tick();
@@ -356,7 +356,7 @@ TEST_F(LSUTest, MultipleBanks) {
     auto load_request =
         std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, addr);
     req_in->write(load_request);
-    valid_in->write(std::make_shared<IntDataPacket>(1));
+    valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
 
     bool got_response = false;
     for (int i = 0; i < 10; i++) {
@@ -393,7 +393,7 @@ TEST_F(LSUTest, EventDrivenMemoryAccess) {
     auto store_req =
         std::make_shared<MemoryRequestPacket>(LSUOp::STORE, 10, 999);
     req_in->write(store_req);
-    valid_in->write(std::make_shared<IntDataPacket>(1));
+    valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
     EventDriven::Tracer::getInstance().traceMemoryWrite(sched.getCurrentTime(),
                                                         "Test", 10, 999);
   });
@@ -402,7 +402,7 @@ TEST_F(LSUTest, EventDrivenMemoryAccess) {
   scheduler->scheduleAt(10, [&](EventDriven::EventScheduler& sched) {
     auto load_req = std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, 10);
     req_in->write(load_req);
-    valid_in->write(std::make_shared<IntDataPacket>(1));
+    valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
     EventDriven::Tracer::getInstance().traceMemoryRead(sched.getCurrentTime(),
                                                        "Test", 10, 0);
   });
@@ -450,7 +450,7 @@ TEST_F(LSUTest, EventDrivenMultipleBankAccess) {
     auto store_req =
         std::make_shared<MemoryRequestPacket>(LSUOp::STORE, 0, 100);
     req_in->write(store_req);
-    valid_in->write(std::make_shared<IntDataPacket>(1));
+    valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
     EventDriven::Tracer::getInstance().traceMemoryWrite(sched.getCurrentTime(),
                                                         "Test", 0, 100);
   });
@@ -458,7 +458,7 @@ TEST_F(LSUTest, EventDrivenMultipleBankAccess) {
   scheduler->scheduleAt(10, [&](EventDriven::EventScheduler& sched) {
     auto load_req = std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, 0);
     req_in->write(load_req);
-    valid_in->write(std::make_shared<IntDataPacket>(1));
+    valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
     EventDriven::Tracer::getInstance().traceMemoryRead(sched.getCurrentTime(),
                                                        "Test", 0, 0);
   });
@@ -476,7 +476,7 @@ TEST_F(LSUTest, EventDrivenMultipleBankAccess) {
     auto store_req =
         std::make_shared<MemoryRequestPacket>(LSUOp::STORE, 1, 200);
     req_in->write(store_req);
-    valid_in->write(std::make_shared<IntDataPacket>(1));
+    valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
     EventDriven::Tracer::getInstance().traceMemoryWrite(sched.getCurrentTime(),
                                                         "Test", 1, 200);
   });
@@ -484,7 +484,7 @@ TEST_F(LSUTest, EventDrivenMultipleBankAccess) {
   scheduler->scheduleAt(30, [&](EventDriven::EventScheduler& sched) {
     auto load_req = std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, 1);
     req_in->write(load_req);
-    valid_in->write(std::make_shared<IntDataPacket>(1));
+    valid_in->write(std::make_shared<Architecture::IntDataPacket>(1));
     EventDriven::Tracer::getInstance().traceMemoryRead(sched.getCurrentTime(),
                                                        "Test", 1, 0);
   });

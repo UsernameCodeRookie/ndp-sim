@@ -215,17 +215,17 @@ class SystolicArrayTPU : public SystolicArrayTPUBase {
     // Wait for LSU to be ready
     for (int wait = 0; wait < 100; ++wait) {
       auto ready_data = ready_port->read();
-      auto ready_int = std::dynamic_pointer_cast<IntDataPacket>(ready_data);
+      auto ready_int = std::dynamic_pointer_cast<Architecture::IntDataPacket>(ready_data);
       if (ready_int && ready_int->getValue() == 1) {
         break;
       }
       lsu_->tick();
     }
 
-    valid_port->write(std::make_shared<IntDataPacket>(1));
+    valid_port->write(std::make_shared<Architecture::IntDataPacket>(1));
     req_port->write(req);
     lsu_->tick();  // Enqueue the request
-    valid_port->write(std::make_shared<IntDataPacket>(0));
+    valid_port->write(std::make_shared<Architecture::IntDataPacket>(0));
 
     // Process until write completes
     for (int i = 0; i < 50; ++i) {
@@ -249,17 +249,17 @@ class SystolicArrayTPU : public SystolicArrayTPUBase {
     // Wait for LSU to be ready
     for (int wait = 0; wait < 100; ++wait) {
       auto ready_data = ready_port->read();
-      auto ready_int = std::dynamic_pointer_cast<IntDataPacket>(ready_data);
+      auto ready_int = std::dynamic_pointer_cast<Architecture::IntDataPacket>(ready_data);
       if (ready_int && ready_int->getValue() == 1) {
         break;
       }
       lsu_->tick();
     }
 
-    valid_port->write(std::make_shared<IntDataPacket>(1));
+    valid_port->write(std::make_shared<Architecture::IntDataPacket>(1));
     req_port->write(req);
     lsu_->tick();  // Enqueue the request
-    valid_port->write(std::make_shared<IntDataPacket>(0));
+    valid_port->write(std::make_shared<Architecture::IntDataPacket>(0));
 
     // Process until response is available
     ValueType result = Traits::zeroValue();

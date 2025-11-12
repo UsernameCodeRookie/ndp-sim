@@ -123,7 +123,7 @@ class PingPongController : public Architecture::TickingComponent {
   void handleSendStore() {
     auto ready_port = getPort("ready_in");
     auto ready_data =
-        std::dynamic_pointer_cast<IntDataPacket>(ready_port->getData());
+        std::dynamic_pointer_cast<Architecture::IntDataPacket>(ready_port->getData());
 
     // Check if LSU is ready
     if (ready_data && ready_data->getValue() == 1) {
@@ -139,7 +139,7 @@ class PingPongController : public Architecture::TickingComponent {
       auto valid_out = getPort("valid_out");
 
       req_out->write(store_request);
-      valid_out->write(std::make_shared<IntDataPacket>(1));
+      valid_out->write(std::make_shared<Architecture::IntDataPacket>(1));
 
       requests_sent_++;
       current_state_ = State::WAIT_STORE;
@@ -183,7 +183,7 @@ class PingPongController : public Architecture::TickingComponent {
   void handleSendLoad() {
     auto ready_port = getPort("ready_in");
     auto ready_data =
-        std::dynamic_pointer_cast<IntDataPacket>(ready_port->getData());
+        std::dynamic_pointer_cast<Architecture::IntDataPacket>(ready_port->getData());
 
     // Check if LSU is ready
     if (ready_data && ready_data->getValue() == 1) {
@@ -196,7 +196,7 @@ class PingPongController : public Architecture::TickingComponent {
       auto valid_out = getPort("valid_out");
 
       req_out->write(load_request);
-      valid_out->write(std::make_shared<IntDataPacket>(1));
+      valid_out->write(std::make_shared<Architecture::IntDataPacket>(1));
 
       requests_sent_++;
       current_state_ = State::WAIT_LOAD;

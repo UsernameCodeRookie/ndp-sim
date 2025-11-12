@@ -206,7 +206,7 @@ TEST_F(PETest, DataOutput) {
 
   // Check data output
   ASSERT_TRUE(data_out->hasData());
-  auto result = std::dynamic_pointer_cast<IntDataPacket>(data_out->read());
+  auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(data_out->read());
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(result->getValue(), 50);
 }
@@ -314,7 +314,7 @@ TEST_F(PETest, EventDrivenInstructionStream) {
 
   // Check output
   EXPECT_TRUE(data_out->hasData());
-  auto output = std::dynamic_pointer_cast<IntDataPacket>(data_out->read());
+  auto output = std::dynamic_pointer_cast<Architecture::IntDataPacket>(data_out->read());
   ASSERT_NE(output, nullptr);
   EXPECT_EQ(output->getValue(), 45);
 

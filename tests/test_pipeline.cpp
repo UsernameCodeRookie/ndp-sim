@@ -34,7 +34,7 @@ TEST_F(PipelineTest, SingleStagePassthrough) {
   auto output_port = pipeline->getPort("out");
 
   // Send data through pipeline
-  auto packet = std::make_shared<IntDataPacket>(42);
+  auto packet = std::make_shared<Architecture::IntDataPacket>(42);
   input_port->write(packet);
 
   // Execute two ticks (one to load, one to output)
@@ -43,7 +43,7 @@ TEST_F(PipelineTest, SingleStagePassthrough) {
 
   // Check output
   ASSERT_TRUE(output_port->hasData());
-  auto result = std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+  auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(result->getValue(), 42);
 }
@@ -57,7 +57,7 @@ TEST_F(PipelineTest, MultiStagePassthrough) {
   auto output_port = pipeline->getPort("out");
 
   // Send data through pipeline
-  auto packet = std::make_shared<IntDataPacket>(100);
+  auto packet = std::make_shared<Architecture::IntDataPacket>(100);
   input_port->write(packet);
 
   // Execute 4 ticks (3 stages + 1 to output)
@@ -67,7 +67,7 @@ TEST_F(PipelineTest, MultiStagePassthrough) {
 
   // Check output
   ASSERT_TRUE(output_port->hasData());
-  auto result = std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+  auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(result->getValue(), 100);
 }
@@ -82,10 +82,10 @@ TEST_F(PipelineTest, CustomStageFunction) {
       0,
       [](std::shared_ptr<Architecture::DataPacket> data)
           -> std::shared_ptr<Architecture::DataPacket> {
-        auto int_data = std::dynamic_pointer_cast<IntDataPacket>(data);
+        auto int_data = std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         if (int_data) {
           int value = int_data->getValue();
-          return std::make_shared<IntDataPacket>(value * 2);
+          return std::make_shared<Architecture::IntDataPacket>(value * 2);
         }
         return data;
       });
@@ -95,10 +95,10 @@ TEST_F(PipelineTest, CustomStageFunction) {
       1,
       [](std::shared_ptr<Architecture::DataPacket> data)
           -> std::shared_ptr<Architecture::DataPacket> {
-        auto int_data = std::dynamic_pointer_cast<IntDataPacket>(data);
+        auto int_data = std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         if (int_data) {
           int value = int_data->getValue();
-          return std::make_shared<IntDataPacket>(value + 10);
+          return std::make_shared<Architecture::IntDataPacket>(value + 10);
         }
         return data;
       });
@@ -107,7 +107,7 @@ TEST_F(PipelineTest, CustomStageFunction) {
   auto output_port = pipeline->getPort("out");
 
   // Input: 5, Stage 0: 5*2=10, Stage 1: 10+10=20
-  auto packet = std::make_shared<IntDataPacket>(5);
+  auto packet = std::make_shared<Architecture::IntDataPacket>(5);
   input_port->write(packet);
 
   // Execute 3 ticks (2 stages + 1 to output)
@@ -117,7 +117,7 @@ TEST_F(PipelineTest, CustomStageFunction) {
 
   // Check output
   ASSERT_TRUE(output_port->hasData());
-  auto result = std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+  auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(result->getValue(), 20);
 }
@@ -132,19 +132,19 @@ TEST_F(PipelineTest, PipelineDepth) {
   EXPECT_EQ(pipeline->getOccupancy(), 0);
 
   // Add first packet
-  auto packet1 = std::make_shared<IntDataPacket>(1);
+  auto packet1 = std::make_shared<Architecture::IntDataPacket>(1);
   input_port->write(packet1);
   pipeline->tick();
   EXPECT_EQ(pipeline->getOccupancy(), 1);
 
   // Add second packet
-  auto packet2 = std::make_shared<IntDataPacket>(2);
+  auto packet2 = std::make_shared<Architecture::IntDataPacket>(2);
   input_port->write(packet2);
   pipeline->tick();
   EXPECT_EQ(pipeline->getOccupancy(), 2);
 
   // Add third packet
-  auto packet3 = std::make_shared<IntDataPacket>(3);
+  auto packet3 = std::make_shared<Architecture::IntDataPacket>(3);
   input_port->write(packet3);
   pipeline->tick();
   EXPECT_EQ(pipeline->getOccupancy(), 3);
@@ -158,10 +158,10 @@ TEST_F(PipelineTest, PipelineFull) {
   auto input_port = pipeline->getPort("in");
 
   // Fill pipeline
-  input_port->write(std::make_shared<IntDataPacket>(1));
+  input_port->write(std::make_shared<Architecture::IntDataPacket>(1));
   pipeline->tick();
 
-  input_port->write(std::make_shared<IntDataPacket>(2));
+  input_port->write(std::make_shared<Architecture::IntDataPacket>(2));
   pipeline->tick();
 
   EXPECT_TRUE(pipeline->isFull());
@@ -175,7 +175,7 @@ TEST_F(PipelineTest, PipelineEmpty) {
   EXPECT_TRUE(pipeline->isEmpty());
 
   auto input_port = pipeline->getPort("in");
-  input_port->write(std::make_shared<IntDataPacket>(1));
+  input_port->write(std::make_shared<Architecture::IntDataPacket>(1));
   pipeline->tick();
 
   EXPECT_FALSE(pipeline->isEmpty());
@@ -189,10 +189,10 @@ TEST_F(PipelineTest, PipelineFlush) {
   auto input_port = pipeline->getPort("in");
 
   // Fill pipeline with data
-  input_port->write(std::make_shared<IntDataPacket>(1));
+  input_port->write(std::make_shared<Architecture::IntDataPacket>(1));
   pipeline->tick();
 
-  input_port->write(std::make_shared<IntDataPacket>(2));
+  input_port->write(std::make_shared<Architecture::IntDataPacket>(2));
   pipeline->tick();
 
   EXPECT_FALSE(pipeline->isEmpty());
@@ -213,14 +213,14 @@ TEST_F(PipelineTest, StallControl) {
   auto output_port = pipeline->getPort("out");
 
   // Send data
-  auto packet = std::make_shared<IntDataPacket>(42);
+  auto packet = std::make_shared<Architecture::IntDataPacket>(42);
   input_port->write(packet);
 
   // First tick: load data into stage 0
   pipeline->tick();
 
   // Set stall signal
-  auto stall_signal = std::make_shared<IntDataPacket>(1);
+  auto stall_signal = std::make_shared<Architecture::IntDataPacket>(1);
   stall_port->write(stall_signal);
 
   // Tick with stall - data should not advance
@@ -230,7 +230,7 @@ TEST_F(PipelineTest, StallControl) {
   EXPECT_FALSE(output_port->hasData());
 
   // Clear stall and continue
-  auto no_stall = std::make_shared<IntDataPacket>(0);
+  auto no_stall = std::make_shared<Architecture::IntDataPacket>(0);
   stall_port->write(no_stall);
 
   pipeline->tick();
@@ -253,12 +253,12 @@ TEST_F(PipelineTest, MultipleDataThroughput) {
   std::vector<int> output_values;
 
   for (int val : input_values) {
-    input_port->write(std::make_shared<IntDataPacket>(val));
+    input_port->write(std::make_shared<Architecture::IntDataPacket>(val));
     pipeline->tick();
     // Collect output if available
     if (output_port->hasData()) {
       auto result =
-          std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+          std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
       if (result) {
         output_values.push_back(result->getValue());
       }
@@ -270,7 +270,7 @@ TEST_F(PipelineTest, MultipleDataThroughput) {
     pipeline->tick();
     if (output_port->hasData()) {
       auto result =
-          std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+          std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
       if (result) {
         output_values.push_back(result->getValue());
       }
@@ -294,9 +294,9 @@ TEST_F(PipelineTest, StageChaining) {
       0,
       [](std::shared_ptr<Architecture::DataPacket> data)
           -> std::shared_ptr<Architecture::DataPacket> {
-        auto int_data = std::dynamic_pointer_cast<IntDataPacket>(data);
+        auto int_data = std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         return int_data
-                   ? std::make_shared<IntDataPacket>(int_data->getValue() * 2)
+                   ? std::make_shared<Architecture::IntDataPacket>(int_data->getValue() * 2)
                    : data;
       });
 
@@ -304,9 +304,9 @@ TEST_F(PipelineTest, StageChaining) {
       1,
       [](std::shared_ptr<Architecture::DataPacket> data)
           -> std::shared_ptr<Architecture::DataPacket> {
-        auto int_data = std::dynamic_pointer_cast<IntDataPacket>(data);
+        auto int_data = std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         return int_data
-                   ? std::make_shared<IntDataPacket>(int_data->getValue() + 5)
+                   ? std::make_shared<Architecture::IntDataPacket>(int_data->getValue() + 5)
                    : data;
       });
 
@@ -314,9 +314,9 @@ TEST_F(PipelineTest, StageChaining) {
       2,
       [](std::shared_ptr<Architecture::DataPacket> data)
           -> std::shared_ptr<Architecture::DataPacket> {
-        auto int_data = std::dynamic_pointer_cast<IntDataPacket>(data);
+        auto int_data = std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         return int_data
-                   ? std::make_shared<IntDataPacket>(int_data->getValue() * 3)
+                   ? std::make_shared<Architecture::IntDataPacket>(int_data->getValue() * 3)
                    : data;
       });
 
@@ -324,9 +324,9 @@ TEST_F(PipelineTest, StageChaining) {
       3,
       [](std::shared_ptr<Architecture::DataPacket> data)
           -> std::shared_ptr<Architecture::DataPacket> {
-        auto int_data = std::dynamic_pointer_cast<IntDataPacket>(data);
+        auto int_data = std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         return int_data
-                   ? std::make_shared<IntDataPacket>(int_data->getValue() - 1)
+                   ? std::make_shared<Architecture::IntDataPacket>(int_data->getValue() - 1)
                    : data;
       });
 
@@ -334,7 +334,7 @@ TEST_F(PipelineTest, StageChaining) {
   auto output_port = pipeline->getPort("out");
 
   // Input: 3, Expected: ((3*2+5)*3-1) = ((6+5)*3-1) = (11*3-1) = 33-1 = 32
-  input_port->write(std::make_shared<IntDataPacket>(3));
+  input_port->write(std::make_shared<Architecture::IntDataPacket>(3));
 
   // Execute 5 ticks (4 stages + 1 to output)
   for (int i = 0; i < 5; i++) {
@@ -342,7 +342,7 @@ TEST_F(PipelineTest, StageChaining) {
   }
 
   ASSERT_TRUE(output_port->hasData());
-  auto result = std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+  auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(result->getValue(), 32);
 }
@@ -365,14 +365,14 @@ TEST_F(PipelineTest, EventDrivenPipelineFlow) {
   // With period=2 and 3 stages, ticks at t=0,2,4,6,8,10,...
   // Write between ticks to ensure they're seen
   scheduler->scheduleAt(1, [&](EventDriven::EventScheduler& sched) {
-    auto packet = std::make_shared<IntDataPacket>(100);
+    auto packet = std::make_shared<Architecture::IntDataPacket>(100);
     input_port->write(packet);
     EventDriven::Tracer::getInstance().traceEvent(sched.getCurrentTime(),
                                                   "Test", "Input", "Data=100");
   });
 
   scheduler->scheduleAt(11, [&](EventDriven::EventScheduler& sched) {
-    auto packet = std::make_shared<IntDataPacket>(200);
+    auto packet = std::make_shared<Architecture::IntDataPacket>(200);
     input_port->write(packet);
     EventDriven::Tracer::getInstance().traceEvent(sched.getCurrentTime(),
                                                   "Test", "Input", "Data=200");
@@ -383,7 +383,7 @@ TEST_F(PipelineTest, EventDrivenPipelineFlow) {
   scheduler->scheduleAt(9, [&](EventDriven::EventScheduler&) {
     if (output_port->hasData()) {
       auto result =
-          std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+          std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
       if (result) outputs.push_back(result->getValue());
     }
   });
@@ -391,7 +391,7 @@ TEST_F(PipelineTest, EventDrivenPipelineFlow) {
   scheduler->scheduleAt(19, [&](EventDriven::EventScheduler&) {
     if (output_port->hasData()) {
       auto result =
-          std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+          std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
       if (result) outputs.push_back(result->getValue());
     }
   });
@@ -401,7 +401,7 @@ TEST_F(PipelineTest, EventDrivenPipelineFlow) {
 
   // Collect any remaining outputs
   while (output_port->hasData()) {
-    auto result = std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+    auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
     if (result) {
       outputs.push_back(result->getValue());
     }
@@ -433,10 +433,10 @@ TEST_F(PipelineTest, EventDrivenStageProcessing) {
       0,
       [](std::shared_ptr<Architecture::DataPacket> data)
           -> std::shared_ptr<Architecture::DataPacket> {
-        auto int_data = std::dynamic_pointer_cast<IntDataPacket>(data);
+        auto int_data = std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         if (int_data) {
           int value = int_data->getValue() * 2;
-          return std::make_shared<IntDataPacket>(value);
+          return std::make_shared<Architecture::IntDataPacket>(value);
         }
         return data;
       });
@@ -445,10 +445,10 @@ TEST_F(PipelineTest, EventDrivenStageProcessing) {
       1,
       [](std::shared_ptr<Architecture::DataPacket> data)
           -> std::shared_ptr<Architecture::DataPacket> {
-        auto int_data = std::dynamic_pointer_cast<IntDataPacket>(data);
+        auto int_data = std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         if (int_data) {
           int value = int_data->getValue() + 10;
-          return std::make_shared<IntDataPacket>(value);
+          return std::make_shared<Architecture::IntDataPacket>(value);
         }
         return data;
       });
@@ -458,7 +458,7 @@ TEST_F(PipelineTest, EventDrivenStageProcessing) {
 
   // Schedule input: 5 -> Stage0(*2)=10 -> Stage1(+10)=20
   scheduler->scheduleAt(0, [&](EventDriven::EventScheduler& sched) {
-    auto packet = std::make_shared<IntDataPacket>(5);
+    auto packet = std::make_shared<Architecture::IntDataPacket>(5);
     input_port->write(packet);
     EventDriven::Tracer::getInstance().traceCompute(
         sched.getCurrentTime(), "Test", "InputStage", "Value=5");
@@ -469,7 +469,7 @@ TEST_F(PipelineTest, EventDrivenStageProcessing) {
 
   // Verify output
   ASSERT_TRUE(output_port->hasData());
-  auto result = std::dynamic_pointer_cast<IntDataPacket>(output_port->read());
+  auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(result->getValue(), 20);  // (5*2)+10 = 20
 

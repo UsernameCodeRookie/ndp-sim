@@ -305,7 +305,7 @@ class LoadStoreUnit : public Architecture::TickingComponent {
 
     if (is_ready && valid_in->hasData()) {
       auto valid_data = valid_in->read();
-      auto valid_int = std::dynamic_pointer_cast<IntDataPacket>(valid_data);
+      auto valid_int = std::dynamic_pointer_cast<Architecture::IntDataPacket>(valid_data);
 
       if (valid_int && valid_int->getValue() == 1 && req_in->hasData()) {
         auto req_data = req_in->read();
@@ -337,10 +337,10 @@ class LoadStoreUnit : public Architecture::TickingComponent {
 
     bool is_ready = (request_queue_.size() < queue_depth_) &&
                     (current_state_ == State::IDLE);
-    ready_out->write(std::make_shared<IntDataPacket>(is_ready ? 1 : 0));
+    ready_out->write(std::make_shared<Architecture::IntDataPacket>(is_ready ? 1 : 0));
 
     bool is_done = (current_state_ == State::IDLE) && request_queue_.empty();
-    done_out->write(std::make_shared<IntDataPacket>(is_done ? 1 : 0));
+    done_out->write(std::make_shared<Architecture::IntDataPacket>(is_done ? 1 : 0));
 
     if (current_response_) {
       resp_out->write(std::static_pointer_cast<Architecture::DataPacket>(
