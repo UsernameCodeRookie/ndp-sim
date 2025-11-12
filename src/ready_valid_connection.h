@@ -17,10 +17,14 @@ namespace Architecture {
 /**
  * @brief ReadyValidConnection class
  *
- * Connection with back pressure support using ready/valid handshake protocol
- * - valid: Source indicates data is available
- * - ready: Destination indicates it can accept data
- * - Data transfer occurs when both ready and valid are high
+ * Connection with back pressure support using ready/valid handshake protocol.
+ * This connection manages a complete ready-valid interface with:
+ * - Data transfer from source to destination
+ * - Valid signal indicating data availability
+ * - Ready signal providing back pressure
+ *
+ * The connection expects exactly ONE source port and ONE destination port.
+ * It automatically manages the handshaking protocol internally.
  */
 class ReadyValidConnection : public Connection {
  public:
@@ -31,8 +35,6 @@ class ReadyValidConnection : public Connection {
         period_(period),
         enabled_(true),
         buffer_size_(buffer_size),
-        source_valid_(false),
-        dest_ready_(true),
         transfers_(0),
         stalls_(0) {}
 
@@ -50,8 +52,6 @@ class ReadyValidConnection : public Connection {
   // Getters
   uint64_t getPeriod() const { return period_; }
   bool isEnabled() const { return enabled_; }
-  bool isSourceValid() const { return source_valid_; }
-  bool isDestReady() const { return dest_ready_; }
   size_t getBufferOccupancy() const { return data_buffer_.size(); }
   size_t getBufferSize() const { return buffer_size_; }
   uint64_t getTransfers() const { return transfers_; }
@@ -69,71 +69,81 @@ class ReadyValidConnection : public Connection {
 
   /**
    * @brief Propagate data with ready/valid handshake
+   *
+   * Ready-Valid Protocol:
+   * - valid: indicates source has valid data
+   * - ready: indicates destination can accept data
+   * - Transfer happens when both valid and ready are true
+   *
+   * Implementation:
+   * 1. Check if destination is ready (port is empty)
+   * 2. If ready and buffer has data, transfer to destination
+   * 3. Check if source has valid data (port has data)
+   * 4. If valid and buffer has space, enqueue from source
    */
   void propagate() override {
-    // Phase 1: Check source valid - try to enqueue data from source ports
-    source_valid_ = false;
-    for (auto& src_port : src_ports_) {
-      if (src_port->hasData() && canAcceptData()) {
-        auto data = src_port->read();  // Consume data
-        if (data) {
+    bool source_has_valid = false;
+    bool dest_is_ready = false;
+
+    // Phase 1: Check destination ready and try to transfer
+    if (dst_ports_.size() > 0) {
+      auto dst_port = dst_ports_[0];
+      dest_is_ready = !dst_port->hasData();  // Ready if port is empty
+
+      if (dest_is_ready && hasDataToSend()) {
+        // Ready-Valid handshake: both ready and valid
+        auto data = data_buffer_.front();
+        data_buffer_.pop();
+
+        if (latency_ > 0) {
+          // Schedule delayed delivery
+          auto dst_port_copy = dst_port;
+          auto data_copy = data;
+          auto deliver_event = std::make_shared<EventDriven::LambdaEvent>(
+              scheduler_.getCurrentTime() + latency_,
+              [dst_port_copy, data_copy](EventDriven::EventScheduler&) {
+                dst_port_copy->setData(data_copy);
+              },
+              0, name_ + "_Deliver");
+          scheduler_.schedule(deliver_event);
+        } else {
+          // Immediate delivery
+          dst_port->setData(data);
+        }
+
+        transfers_++;
+        TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_TRANSFER",
+                    "ready=1 valid=1, buffer=" << data_buffer_.size() << "/"
+                                               << buffer_size_
+                                               << " transfers=" << transfers_);
+      } else if (!dest_is_ready && hasDataToSend()) {
+        // Stall: valid but not ready
+        stalls_++;
+        TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_STALL",
+                    "ready=0 valid=1, buffer=" << data_buffer_.size() << "/"
+                                               << buffer_size_
+                                               << " stalls=" << stalls_);
+      }
+    }
+
+    // Phase 2: Check source valid and try to enqueue
+    if (src_ports_.size() > 0) {
+      auto src_port = src_ports_[0];
+      source_has_valid = src_port->hasData();
+
+      if (source_has_valid && canAcceptData()) {
+        // Source has valid data and buffer has space
+        auto data = src_port->read();
+        if (data && data->isValid()) {
           data_buffer_.push(data);
-          source_valid_ = true;
-          if (verbose_) {
-            std::cout << "[" << scheduler_.getCurrentTime() << "] " << name_
-                      << ": Enqueued data, buffer=" << data_buffer_.size()
-                      << "/" << buffer_size_ << std::endl;
-          }
+          TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_ENQUEUE",
+                      "valid=1 ready=1, buffer=" << data_buffer_.size() << "/"
+                                                 << buffer_size_);
         }
-      }
-    }
-
-    // Phase 2: Check destination ready - try to dequeue data to destination
-    dest_ready_ = true;
-    for (auto& dst_port : dst_ports_) {
-      // Check if destination already has data (not ready)
-      if (dst_port->hasData()) {
-        dest_ready_ = false;
-      }
-    }
-
-    // Phase 3: Perform handshake if both valid and ready
-    if (hasDataToSend() && dest_ready_) {
-      auto data = data_buffer_.front();
-      data_buffer_.pop();
-
-      // Handle latency
-      if (latency_ > 0) {
-        auto dst_ports_copy = dst_ports_;
-        auto data_copy = data;
-        auto propagate_event = std::make_shared<EventDriven::LambdaEvent>(
-            scheduler_.getCurrentTime() + latency_,
-            [dst_ports_copy, data_copy](EventDriven::EventScheduler&) {
-              for (auto& dst_port : dst_ports_copy) {
-                dst_port->setData(data_copy->clone());
-              }
-            },
-            0, name_ + "_PropagateDelayed");
-        scheduler_.schedule(propagate_event);
-      } else {
-        // Immediate propagation
-        for (auto& dst_port : dst_ports_) {
-          dst_port->setData(data->clone());
-        }
-      }
-
-      transfers_++;
-      if (verbose_) {
-        std::cout << "[" << scheduler_.getCurrentTime() << "] " << name_
-                  << ": Transferred data, buffer=" << data_buffer_.size() << "/"
-                  << buffer_size_ << std::endl;
-      }
-    } else if (hasDataToSend() && !dest_ready_) {
-      // Stall: have data but destination not ready
-      stalls_++;
-      if (verbose_) {
-        std::cout << "[" << scheduler_.getCurrentTime() << "] " << name_
-                  << ": Stalled (dest not ready)" << std::endl;
+      } else if (source_has_valid && !canAcceptData()) {
+        // Buffer full, source must wait
+        TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_BACK_PRESSURE",
+                    "Buffer full, back pressure applied");
       }
     }
   }
@@ -148,15 +158,12 @@ class ReadyValidConnection : public Connection {
     std::cout << "Total stalls: " << stalls_ << std::endl;
     std::cout << "Buffer occupancy: " << data_buffer_.size() << "/"
               << buffer_size_ << std::endl;
-    std::cout << "Utilization: "
-              << (transfers_ + stalls_ > 0
-                      ? (100.0 * transfers_ / (transfers_ + stalls_))
-                      : 0.0)
-              << "%" << std::endl;
+    if (transfers_ + stalls_ > 0) {
+      std::cout << "Utilization: "
+                << (100.0 * transfers_ / (transfers_ + stalls_)) << "%"
+                << std::endl;
+    }
   }
-
-  // Enable/disable verbose output
-  void setVerbose(bool verbose) { verbose_ = verbose; }
 
  protected:
   void schedulePropagate(uint64_t time) {
@@ -172,7 +179,7 @@ class ReadyValidConnection : public Connection {
           // Schedule next propagate
           schedulePropagate(sched.getCurrentTime() + period_);
         },
-        0, name_ + "_Propagate");
+        1, name_ + "_Propagate");  // Priority 1 (higher than components' 0)
 
     scheduler_.schedule(propagate_event);
   }
@@ -181,11 +188,8 @@ class ReadyValidConnection : public Connection {
   bool enabled_;        // Connection enabled flag
   size_t buffer_size_;  // Internal buffer size
   std::queue<std::shared_ptr<DataPacket>> data_buffer_;  // FIFO buffer
-  bool source_valid_;     // Source has valid data
-  bool dest_ready_;       // Destination is ready
-  uint64_t transfers_;    // Successful transfers count
-  uint64_t stalls_;       // Stall cycles count
-  bool verbose_ = false;  // Verbose output flag
+  uint64_t transfers_;  // Successful transfers count
+  uint64_t stalls_;     // Stall cycles count
 };
 
 }  // namespace Architecture

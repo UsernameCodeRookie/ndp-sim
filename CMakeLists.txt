@@ -75,6 +75,12 @@ target_include_directories(test_lsu PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_lsu gtest gtest_main pthread)
 add_test(NAME test_lsu COMMAND test_lsu)
 
+# --- PingPong Connection tests ---
+add_executable(test_pingpong_connection tests/test_pingpong_connection.cpp)
+target_include_directories(test_pingpong_connection PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_pingpong_connection gtest gtest_main pthread)
+add_test(NAME test_pingpong_connection COMMAND test_pingpong_connection)
+
 enable_testing()
 
 # -----------------------------
