@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "../src/components/int_packet.h"
 #include "../src/components/pipeline.h"
+#include "../src/packet.h"
 #include "../src/scheduler.h"
 #include "../src/trace.h"
 

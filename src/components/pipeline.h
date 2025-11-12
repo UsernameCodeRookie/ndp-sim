@@ -7,10 +7,10 @@
 #include <string>
 #include <vector>
 
+#include "../packet.h"
 #include "../port.h"
 #include "../tick.h"
 #include "../trace.h"
-#include "int_packet.h"
 
 /**
  * @brief Pipeline stage data structure

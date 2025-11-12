@@ -30,6 +30,27 @@ class DataPacket {
   bool valid_;          // Data validity flag
 };
 
+/**
+ * @brief Simple integer data packet
+ */
+class IntDataPacket : public DataPacket {
+ public:
+  IntDataPacket(int value) : value_(value) {}
+
+  int getValue() const { return value_; }
+  void setValue(int value) { value_ = value; }
+
+  std::shared_ptr<DataPacket> clone() const override {
+    auto cloned = std::make_shared<IntDataPacket>(value_);
+    cloned->setTimestamp(timestamp_);
+    cloned->setValid(valid_);
+    return cloned;
+  }
+
+ private:
+  int value_;
+};
+
 }  // namespace Architecture
 
 #endif  // PACKET_H

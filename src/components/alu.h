@@ -7,10 +7,10 @@
 #include <string>
 #include <type_traits>
 
+#include "../packet.h"
 #include "../port.h"
 #include "../tick.h"
 #include "../trace.h"
-#include "int_packet.h"
 #include "pipeline.h"
 
 /**

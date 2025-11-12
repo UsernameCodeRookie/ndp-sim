@@ -6,10 +6,10 @@
 #include <vector>
 
 #include "../component.h"
+#include "../packet.h"
 #include "../port.h"
 #include "../tick.h"
 #include "../trace.h"
-#include "int_packet.h"
 #include "lsu.h"
 
 /**
