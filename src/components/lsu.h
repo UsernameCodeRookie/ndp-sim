@@ -298,34 +298,26 @@ class LoadStoreUnit : public Architecture::TickingComponent {
 
   void handlePortIO() {
     auto req_in = getPort("req_in");
-    auto valid_in = getPort("valid");
 
-    bool is_ready = (request_queue_.size() < queue_depth_) &&
-                    (current_state_ == State::IDLE);
+    // Simply read request if available (backpressure handled by connection)
+    if (req_in->hasData()) {
+      auto req_data = req_in->read();
+      auto mem_req = std::dynamic_pointer_cast<MemoryRequestPacket>(req_data);
 
-    if (is_ready && valid_in->hasData()) {
-      auto valid_data = valid_in->read();
-      auto valid_int = std::dynamic_pointer_cast<Architecture::IntDataPacket>(valid_data);
+      if (mem_req && request_queue_.size() < queue_depth_) {
+        request_queue_.push(mem_req);
 
-      if (valid_int && valid_int->getValue() == 1 && req_in->hasData()) {
-        auto req_data = req_in->read();
-        auto mem_req = std::dynamic_pointer_cast<MemoryRequestPacket>(req_data);
-
-        if (mem_req) {
-          request_queue_.push(mem_req);
-
-          TRACE_EVENT(
-              scheduler_.getCurrentTime(), getName(), "MEM_REQ",
-              (mem_req->getOperation() == LSUOp::LOAD ? "LOAD" : "STORE")
-                  << " addr=0x" << std::hex << mem_req->getAddress() << std::dec
-                  << " bank=" << (mem_req->getAddress() % num_banks_)
-                  << " queue=" << request_queue_.size() << "/" << queue_depth_
-                  << " cycle=" << scheduler_.getCurrentTime()
-                  << " period=" << getPeriod()
-                  << (mem_req->getOperation() == LSUOp::STORE
-                          ? " data=" + std::to_string(mem_req->getData())
-                          : ""));
-        }
+        TRACE_EVENT(
+            scheduler_.getCurrentTime(), getName(), "MEM_REQ",
+            (mem_req->getOperation() == LSUOp::LOAD ? "LOAD" : "STORE")
+                << " addr=0x" << std::hex << mem_req->getAddress() << std::dec
+                << " bank=" << (mem_req->getAddress() % num_banks_)
+                << " queue=" << request_queue_.size() << "/" << queue_depth_
+                << " cycle=" << scheduler_.getCurrentTime()
+                << " period=" << getPeriod()
+                << (mem_req->getOperation() == LSUOp::STORE
+                        ? " data=" + std::to_string(mem_req->getData())
+                        : ""));
       }
     }
   }
@@ -337,10 +329,12 @@ class LoadStoreUnit : public Architecture::TickingComponent {
 
     bool is_ready = (request_queue_.size() < queue_depth_) &&
                     (current_state_ == State::IDLE);
-    ready_out->write(std::make_shared<Architecture::IntDataPacket>(is_ready ? 1 : 0));
+    ready_out->write(
+        std::make_shared<Architecture::IntDataPacket>(is_ready ? 1 : 0));
 
     bool is_done = (current_state_ == State::IDLE) && request_queue_.empty();
-    done_out->write(std::make_shared<Architecture::IntDataPacket>(is_done ? 1 : 0));
+    done_out->write(
+        std::make_shared<Architecture::IntDataPacket>(is_done ? 1 : 0));
 
     if (current_response_) {
       resp_out->write(std::static_pointer_cast<Architecture::DataPacket>(

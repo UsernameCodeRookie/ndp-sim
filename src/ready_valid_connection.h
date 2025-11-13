@@ -15,16 +15,23 @@
 namespace Architecture {
 
 /**
- * @brief ReadyValidConnection class
+ * @brief ReadyValidConnection class - Composite connection for ready-valid
+ * protocol
  *
- * Connection with back pressure support using ready/valid handshake protocol.
- * This connection manages a complete ready-valid interface with:
- * - Data transfer from source to destination
- * - Valid signal indicating data availability
- * - Ready signal providing back pressure
+ * This is a composite connection that manages the complete ready-valid
+ * handshake:
+ * - Data channel: transferred from source to destination via
+ * src_ports_/dst_ports_
+ * - Valid signal: bound to a fixed port indicating source has valid data
+ * - Ready signal: bound to a fixed port indicating destination can accept data
  *
- * The connection expects exactly ONE source port and ONE destination port.
- * It automatically manages the handshaking protocol internally.
+ * **Framework Constraint**: Both ready_port and valid_port MUST be bound before
+ * start().
+ *
+ * The connection implements backpressure internally:
+ * - Checks ready_port value == 1 before transferring data to destination
+ * - Checks valid_port value == 1 before enqueueing data from source
+ * - Uses internal buffer to decouple source and destination timing
  */
 class ReadyValidConnection : public Connection {
  public:
@@ -36,12 +43,33 @@ class ReadyValidConnection : public Connection {
         enabled_(true),
         buffer_size_(buffer_size),
         transfers_(0),
-        stalls_(0) {}
+        stalls_(0),
+        ready_port_(nullptr),
+        valid_port_(nullptr) {}
 
   virtual ~ReadyValidConnection() = default;
 
+  /**
+   * @brief Bind a port as the ready signal port
+   * The ready signal indicates whether the destination can accept data
+   */
+  void bindReadyPort(std::shared_ptr<Port> port) { ready_port_ = port; }
+
+  /**
+   * @brief Bind a port as the valid signal port
+   * The valid signal indicates whether the source has valid data
+   */
+  void bindValidPort(std::shared_ptr<Port> port) { valid_port_ = port; }
+
   // Start the connection
   void start(uint64_t start_time = 0) {
+    // Validate that ready and valid ports are bound (framework constraint)
+    if (!ready_port_ || !valid_port_) {
+      throw std::runtime_error(
+          "ReadyValidConnection " + name_ +
+          ": ready_port and valid_port must be bound before starting. "
+          "Use bindReadyPort() and bindValidPort().");
+    }
     enabled_ = true;
     schedulePropagate(start_time);
   }
@@ -58,99 +86,18 @@ class ReadyValidConnection : public Connection {
   uint64_t getStalls() const { return stalls_; }
 
   /**
-   * @brief Check if connection can accept data (ready signal)
-   */
-  bool canAcceptData() const { return data_buffer_.size() < buffer_size_; }
-
-  /**
-   * @brief Check if connection has data to send (valid signal)
-   */
-  bool hasDataToSend() const { return !data_buffer_.empty(); }
-
-  /**
    * @brief Propagate data with ready/valid handshake
    *
-   * Ready-Valid Protocol:
-   * - valid: indicates source has valid data
-   * - ready: indicates destination can accept data
-   * - Transfer happens when both valid and ready are true
-   *
-   * Implementation:
-   * 1. Check if destination is ready (port is empty)
-   * 2. If ready and buffer has data, transfer to destination
-   * 3. Check if source has valid data (port has data)
-   * 4. If valid and buffer has space, enqueue from source
+   * Two-phase protocol:
+   * 1. Transfer buffered data to destination if ready
+   * 2. Enqueue new data from source if valid
    */
   void propagate() override {
-    bool source_has_valid = false;
-    bool dest_is_ready = false;
-
-    // Phase 1: Check destination ready and try to transfer
-    if (dst_ports_.size() > 0) {
-      auto dst_port = dst_ports_[0];
-      dest_is_ready = !dst_port->hasData();  // Ready if port is empty
-
-      if (dest_is_ready && hasDataToSend()) {
-        // Ready-Valid handshake: both ready and valid
-        auto data = data_buffer_.front();
-        data_buffer_.pop();
-
-        if (latency_ > 0) {
-          // Schedule delayed delivery
-          auto dst_port_copy = dst_port;
-          auto data_copy = data;
-          auto deliver_event = std::make_shared<EventDriven::LambdaEvent>(
-              scheduler_.getCurrentTime() + latency_,
-              [dst_port_copy, data_copy](EventDriven::EventScheduler&) {
-                dst_port_copy->setData(data_copy);
-              },
-              -1, name_ + "_Deliver");  // Priority -1 (before components)
-          scheduler_.schedule(deliver_event);
-        } else {
-          // Immediate delivery
-          dst_port->setData(data);
-        }
-
-        transfers_++;
-        TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_TRANSFER",
-                    "ready=1 valid=1, buffer=" << data_buffer_.size() << "/"
-                                               << buffer_size_
-                                               << " transfers=" << transfers_);
-      } else if (!dest_is_ready && hasDataToSend()) {
-        // Stall: valid but not ready
-        stalls_++;
-        TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_STALL",
-                    "ready=0 valid=1, buffer=" << data_buffer_.size() << "/"
-                                               << buffer_size_
-                                               << " stalls=" << stalls_);
-      }
-    }
-
-    // Phase 2: Check source valid and try to enqueue
-    if (src_ports_.size() > 0) {
-      auto src_port = src_ports_[0];
-      source_has_valid = src_port->hasData();
-
-      if (source_has_valid && canAcceptData()) {
-        // Source has valid data and buffer has space
-        auto data = src_port->read();
-        if (data && data->isValid()) {
-          data_buffer_.push(data);
-          TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_ENQUEUE",
-                      "valid=1 ready=1, buffer=" << data_buffer_.size() << "/"
-                                                 << buffer_size_);
-        }
-      } else if (source_has_valid && !canAcceptData()) {
-        // Buffer full, source must wait
-        TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_BACK_PRESSURE",
-                    "Buffer full, back pressure applied");
-      }
-    }
+    tryTransferToDestination();
+    tryEnqueueFromSource();
   }
 
-  /**
-   * @brief Print statistics
-   */
+  /** @brief Print connection statistics */
   void printStatistics() const {
     std::cout << "\n=== Connection Statistics: " << name_
               << " ===" << std::endl;
@@ -162,6 +109,81 @@ class ReadyValidConnection : public Connection {
       std::cout << "Utilization: "
                 << (100.0 * transfers_ / (transfers_ + stalls_)) << "%"
                 << std::endl;
+    }
+  }
+
+ private:
+  /** @brief Check if buffer can accept more data */
+  bool canAcceptData() const { return data_buffer_.size() < buffer_size_; }
+
+  /** @brief Check if buffer has data to send */
+  bool hasDataToSend() const { return !data_buffer_.empty(); }
+
+  /** @brief Read signal value from port (returns 1 if port has value 1) */
+  bool readSignal(std::shared_ptr<Port> port) const {
+    auto data = std::dynamic_pointer_cast<IntDataPacket>(port->getData());
+    return data && data->getValue() == 1;
+  }
+
+  /** @brief Phase 1: Transfer buffered data to destination if ready */
+  void tryTransferToDestination() {
+    if (dst_ports_.empty() || !hasDataToSend()) return;
+
+    bool is_ready = readSignal(ready_port_);
+
+    if (is_ready) {
+      deliverData(dst_ports_[0], data_buffer_.front());
+      data_buffer_.pop();
+      transfers_++;
+
+      TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_TRANSFER",
+                  "ready=1 valid=1, buffer=" << data_buffer_.size() << "/"
+                                             << buffer_size_
+                                             << " transfers=" << transfers_);
+    } else {
+      stalls_++;
+      TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_STALL",
+                  "ready=0 valid=1, buffer=" << data_buffer_.size() << "/"
+                                             << buffer_size_
+                                             << " stalls=" << stalls_);
+    }
+  }
+
+  /** @brief Phase 2: Enqueue data from source if valid */
+  void tryEnqueueFromSource() {
+    if (src_ports_.empty()) return;
+
+    bool is_valid = readSignal(valid_port_);
+
+    if (is_valid && canAcceptData()) {
+      auto data = src_ports_[0]->read();
+      if (data && data->isValid()) {
+        data_buffer_.push(data);
+        TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_ENQUEUE",
+                    "valid=1 ready=1, buffer=" << data_buffer_.size() << "/"
+                                               << buffer_size_);
+      }
+    } else if (is_valid && !canAcceptData()) {
+      TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_BACK_PRESSURE",
+                  "Buffer full, back pressure applied");
+    }
+  }
+
+  /** @brief Deliver data to destination (with optional latency) */
+  void deliverData(std::shared_ptr<Port> dst_port,
+                   std::shared_ptr<DataPacket> data) {
+    if (latency_ > 0) {
+      auto dst_copy = dst_port;
+      auto data_copy = data;
+      auto event = std::make_shared<EventDriven::LambdaEvent>(
+          scheduler_.getCurrentTime() + latency_,
+          [dst_copy, data_copy](EventDriven::EventScheduler&) {
+            dst_copy->setData(data_copy);
+          },
+          -1, name_ + "_Deliver");
+      scheduler_.schedule(event);
+    } else {
+      dst_port->setData(data);
     }
   }
 
@@ -190,6 +212,10 @@ class ReadyValidConnection : public Connection {
   std::queue<std::shared_ptr<DataPacket>> data_buffer_;  // FIFO buffer
   uint64_t transfers_;  // Successful transfers count
   uint64_t stalls_;     // Stall cycles count
+
+  // Ready-Valid protocol ports (must be bound before starting)
+  std::shared_ptr<Port> ready_port_;  // Port for ready signal
+  std::shared_ptr<Port> valid_port_;  // Port for valid signal
 };
 
 }  // namespace Architecture

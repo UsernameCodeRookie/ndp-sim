@@ -121,41 +121,28 @@ class PingPongController : public Architecture::TickingComponent {
   }
 
   void handleSendStore() {
-    auto ready_port = getPort("ready_in");
-    auto ready_data =
-        std::dynamic_pointer_cast<Architecture::IntDataPacket>(ready_port->getData());
+    // Generate a value to store (based on address for easy verification)
+    current_value_ = static_cast<int32_t>(current_address_ * 100 + 42);
 
-    // Check if LSU is ready
-    if (ready_data && ready_data->getValue() == 1) {
-      // Generate a value to store (based on address for easy verification)
-      current_value_ = static_cast<int32_t>(current_address_ * 100 + 42);
+    // Create store request
+    auto store_request = std::make_shared<MemoryRequestPacket>(
+        LSUOp::STORE, current_address_, current_value_);
 
-      // Create store request
-      auto store_request = std::make_shared<MemoryRequestPacket>(
-          LSUOp::STORE, current_address_, current_value_);
+    // Send request - connection will handle backpressure
+    auto req_out = getPort("req_out");
+    auto valid_out = getPort("valid_out");
 
-      // Send request
-      auto req_out = getPort("req_out");
-      auto valid_out = getPort("valid_out");
+    req_out->write(store_request);
+    valid_out->write(std::make_shared<Architecture::IntDataPacket>(1));
 
-      req_out->write(store_request);
-      valid_out->write(std::make_shared<Architecture::IntDataPacket>(1));
+    requests_sent_++;
+    current_state_ = State::WAIT_STORE;
+    wait_cycles_ = 0;
 
-      requests_sent_++;
-      current_state_ = State::WAIT_STORE;
-      wait_cycles_ = 0;
-
-      TRACE_EVENT(scheduler_.getCurrentTime(), getName(), "PING_STORE",
-                  "STORE addr=0x" << std::hex << current_address_ << std::dec
-                                  << " data=" << current_value_
-                                  << " iter=" << iteration_);
-
-    } else {
-      // LSU not ready, wait
-      wait_cycles_++;
-      TRACE_EVENT(scheduler_.getCurrentTime(), getName(), "WAIT_READY",
-                  "Waiting for LSU ready");
-    }
+    TRACE_EVENT(scheduler_.getCurrentTime(), getName(), "PING_STORE",
+                "STORE addr=0x" << std::hex << current_address_ << std::dec
+                                << " data=" << current_value_
+                                << " iter=" << iteration_);
   }
 
   void handleWaitStore() {
@@ -181,36 +168,25 @@ class PingPongController : public Architecture::TickingComponent {
   }
 
   void handleSendLoad() {
-    auto ready_port = getPort("ready_in");
-    auto ready_data =
-        std::dynamic_pointer_cast<Architecture::IntDataPacket>(ready_port->getData());
+    // Create load request
+    auto load_request =
+        std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, current_address_);
 
-    // Check if LSU is ready
-    if (ready_data && ready_data->getValue() == 1) {
-      // Create load request
-      auto load_request =
-          std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, current_address_);
+    // Send request - connection will handle backpressure
+    auto req_out = getPort("req_out");
+    auto valid_out = getPort("valid_out");
 
-      // Send request
-      auto req_out = getPort("req_out");
-      auto valid_out = getPort("valid_out");
+    req_out->write(load_request);
+    valid_out->write(std::make_shared<Architecture::IntDataPacket>(1));
 
-      req_out->write(load_request);
-      valid_out->write(std::make_shared<Architecture::IntDataPacket>(1));
+    requests_sent_++;
+    current_state_ = State::WAIT_LOAD;
+    wait_cycles_ = 0;
 
-      requests_sent_++;
-      current_state_ = State::WAIT_LOAD;
-      wait_cycles_ = 0;
-
-      TRACE_EVENT(scheduler_.getCurrentTime(), getName(), "PONG_LOAD",
-                  "LOAD addr=0x" << std::hex << current_address_ << std::dec
-                                 << " expect=" << current_value_
-                                 << " iter=" << iteration_);
-
-    } else {
-      // LSU not ready, wait
-      wait_cycles_++;
-    }
+    TRACE_EVENT(scheduler_.getCurrentTime(), getName(), "PONG_LOAD",
+                "LOAD addr=0x" << std::hex << current_address_ << std::dec
+                               << " expect=" << current_value_
+                               << " iter=" << iteration_);
   }
 
   void handleWaitLoad() {
