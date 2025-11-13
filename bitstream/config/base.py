@@ -33,9 +33,16 @@ class BaseConfigModule(ConfigModule):
     
     def is_empty(self) -> bool:
         """Check if this module is empty (all fields are None or 0)."""
-        if hasattr(self, '_is_empty'):
-            return self._is_empty
-        # Check if all values are None or 0
+        if hasattr(self, '_is_empty') and self._is_empty:
+            return True
+        
+        # Check submodules first if they exist
+        if hasattr(self, 'submodules') and self.submodules:
+            return all(sm.is_empty() for sm in self.submodules)
+        
+        # For leaf modules, check if all values are None or 0
+        if not self.values:
+            return True
         return all(v is None or v == 0 for v in self.values.values())
     
     def mark_empty(self):
@@ -135,18 +142,27 @@ class BaseConfigModule(ConfigModule):
                 bits.append(Bit(word, part_width))
         return bits
     
-    def dump(self, indent: int = 0):
+    def dump(self, indent: int = 0) -> bool:
         """
         Print field values and their binary encoding.
         If the module has submodules, recursively dump them.
+        Skips empty modules (all None or 0).
+        Returns True if any content was actually printed.
         """
+        # Skip empty modules
+        if self.is_empty():
+            return False
+        
         prefix = " " * indent
         print(f"{prefix}=== Dump: {self.__class__.__name__} ===")
 
         if hasattr(self, "submodules") and self.submodules:
             # This is a composite module
+            has_content = False
             for sm in self.submodules:
-                sm.dump(indent + 2)
+                if sm.dump(indent + 2):
+                    has_content = True
+            return has_content or True  # Parent header was printed
         else:
             # Leaf module with FIELD_MAP
             for entry in self.FIELD_MAP:
@@ -160,3 +176,4 @@ class BaseConfigModule(ConfigModule):
                     for value, part_width in encoded_parts
                 ]
                 print(f"{prefix}{name:<30} | value={str(val):<35} | encoded={encoded}")
+            return True

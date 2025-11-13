@@ -177,13 +177,14 @@ def dump_modules_detailed(modules, output_file=None):
     """
     Dump detailed field-by-field encoding information for all modules.
     Calls each module's dump() method to show values and their binary encodings.
+    Skips empty modules and avoids unnecessary blank lines.
     """
     print("\n=== Detailed Module Configuration Dump ===")
     
     for module in modules:
         if hasattr(module, 'dump'):
-            module.dump()
-            print()  # Add blank line between modules
+            if module.dump():  # Only add blank line if content was printed
+                print()
     
     # Optionally write to file
     if output_file:
@@ -196,8 +197,8 @@ def dump_modules_detailed(modules, output_file=None):
         
         for module in modules:
             if hasattr(module, 'dump'):
-                module.dump()
-                print()
+                if module.dump():  # Only add blank line if content was printed
+                    print()
         
         # Restore stdout
         sys.stdout = old_stdout
@@ -213,11 +214,16 @@ def dump_modules_to_binary(modules, output_file='./data/modules_dump.bin'):
     Unified function to dump all modules to binary format.
     Processes all modules in the unified list, calls to_bits() on each,
     and writes the result to a binary file.
+    Skips empty modules (all None or 0).
     """
     print("\n=== Dumping All Modules to Binary ===")
     all_bits = []
     
     for module in modules:
+        # Skip empty modules
+        if hasattr(module, 'is_empty') and module.is_empty():
+            continue
+        
         module_name = type(module).__name__
         bits = module.to_bits()
         bit_count = len(bits)
