@@ -378,12 +378,45 @@ class Mapper:
                             break
             return violations
         
-        # Initialize with current allocation
-        current_mapping = self.node_to_resource.copy()
+        # Initialize with current allocation - allow randomized start to better explore
+        # Start with a mapping that preserves node->resource uniqueness per type
+        def random_initial_mapping():
+            m = {}
+            for t, nodes in nodes_by_type.items():
+                pool = self.resource_pools.get(t, [])
+                if len(nodes) > len(pool):
+                    # Not enough physical resources -> just use deterministic existing map
+                    for n in nodes:
+                        if n in self.node_to_resource:
+                            m[n] = self.node_to_resource[n]
+                        else:
+                            # Fallback: assign by cycling through pool
+                            idx = len(m) % len(pool)
+                            m[n] = pool[idx]
+                else:
+                    # Shuffle pool and assign unique resources
+                    shuffled = pool.copy()
+                    random.shuffle(shuffled)
+                    for i, n in enumerate(nodes):
+                        # If node already mapped and there's a valid mapping, prefer keeping it
+                        if n in self.node_to_resource and self.node_to_resource[n] in shuffled:
+                            # Use existing mapping, remove resource from shuffled to avoid duplicates
+                            existing_res = self.node_to_resource[n]
+                            if existing_res in shuffled:
+                                shuffled.remove(existing_res)
+                            m[n] = existing_res
+                        else:
+                            m[n] = shuffled.pop(0)
+            return m
+
+        # Use a randomized initial mapping to overcome initial bias of sequential allocation
+        current_mapping = random_initial_mapping()
         current_cost = calculate_cost(current_mapping)
         
         best_mapping = current_mapping.copy()
         best_cost = current_cost
+        # Track stagnation and random restarts
+        stagnation = 0
         
         print(f"[Simulated Annealing] Initial cost: {current_cost} violations")
         
@@ -399,20 +432,80 @@ class Mapper:
                       f"T={temperature:.2f}, cost={current_cost}, best={best_cost}, "
                       f"accepted={accepted_moves}, rejected={rejected_moves}")
             
-            # Select a random resource type and swap two nodes of the same type
+            # Select a random resource type and perform either a swap or a reassign
             res_type = random.choice(list(nodes_by_type.keys()))
             type_nodes = nodes_by_type[res_type]
-            
-            if len(type_nodes) < 2:
+
+            if len(type_nodes) == 0:
                 continue
+
+            pool = self.resource_pools.get(res_type, [])
+
+            # With some probability, reassign a node to an unused resource from the pool
+            # This allows the search to explore resources that are not part of the initial allocation
+            if random.random() < 0.5:
+                node = random.choice(type_nodes)
+                # Find resources not yet used in the current mapping
+                used_resources = set(current_mapping.values())
+                unused_resources = [r for r in pool if r not in used_resources]
+
+                # If we have unused resources, assign node to a random unused resource
+                if len(unused_resources) > 0:
+                    new_res = random.choice(unused_resources)
+                    new_mapping = current_mapping.copy()
+                    new_mapping[node] = new_res
+                    # Occasional progress print to show we're exploring unused resources
+                    if iteration % 500 == 0:
+                        print(f"[Simulated Annealing] Reassigning {node} -> {new_res} (unused resource) at iter {iteration}")
+                else:
+                    # Fallback to swap when no unused resources are available
+                    if len(type_nodes) < 2:
+                        continue
+                    node1, node2 = random.sample(type_nodes, 2)
+                    new_mapping = current_mapping.copy()
+                    new_mapping[node1], new_mapping[node2] = new_mapping[node2], new_mapping[node1]
+            else:
+                # Swap two nodes of the same type
+                if len(type_nodes) < 2:
+                    continue
+                node1, node2 = random.sample(type_nodes, 2)
+                # Create new mapping by swapping
+                new_mapping = current_mapping.copy()
+                new_mapping[node1], new_mapping[node2] = new_mapping[node2], new_mapping[node1]
             
-            # Pick two random nodes of the same type to swap their resources
-            node1, node2 = random.sample(type_nodes, 2)
-            
-            # Create new mapping by swapping
-            new_mapping = current_mapping.copy()
-            new_mapping[node1], new_mapping[node2] = new_mapping[node2], new_mapping[node1]
-            
+            # Ensure new mapping maintains uniqueness of resources per type
+            # (i.e., no two nodes assigned to the same physical resource)
+            def is_valid_unique_mapping(mapping):
+                assigned = list(mapping.values())
+                return len(assigned) == len(set(assigned))
+
+            if not is_valid_unique_mapping(new_mapping):
+                # Try to repair by converting to a swap if possible
+                # Find a node currently assigned to the desired resource and swap
+                conflicts = {}
+                for n, r in new_mapping.items():
+                    conflicts.setdefault(r, []).append(n)
+                # If any resource has >1 node, try to swap with a random node to restore uniqueness
+                for r, ns in conflicts.items():
+                    if len(ns) > 1:
+                        # Swap the other nodes' resources with some other resource in the pool
+                        # Pick one to keep, and swap others with a free resource if available
+                        keep = ns[0]
+                        for other in ns[1:]:
+                            # Find a free resource in the pool for this node type
+                            rtype = self.get_type(other)
+                            pool_for_type = self.resource_pools.get(rtype, [])
+                            used = set(new_mapping.values())
+                            free_res = [rr for rr in pool_for_type if rr not in used]
+                            if free_res:
+                                new_mapping[other] = free_res[0]
+                            else:
+                                # fallback: swap with keep (meaning no change)
+                                new_mapping[other] = new_mapping[other]
+                if not is_valid_unique_mapping(new_mapping):
+                    # Skip invalid mapping
+                    continue
+
             # Calculate new cost
             new_cost = calculate_cost(new_mapping)
             cost_delta = new_cost - current_cost
@@ -443,6 +536,12 @@ class Mapper:
             
             # Cool down temperature
             temperature *= cooling_rate
+
+            # Random restart if we've stagnated for many iterations
+            if stagnation > 2000 and iteration % 500 == 0:
+                current_mapping = random_initial_mapping()
+                current_cost = calculate_cost(current_mapping)
+                stagnation = 0
         
         print(f"[Simulated Annealing] Final results: best_cost={best_cost}, "
               f"accepted={accepted_moves}, rejected={rejected_moves}")
