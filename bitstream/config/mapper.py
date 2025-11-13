@@ -230,12 +230,28 @@ class Mapper:
             """Return True if the connection satisfies the constraint."""
             raise NotImplementedError
 
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            """Return a non-negative penalty value indicating how badly the constraint is violated.
+            0 -> no violation; larger values -> worse violation.
+            Default: return 0 if check is True else 1 (coarse)
+            """
+            return 0.0 if self.check(src_type, src_idx, dst_type, dst_idx) else 1.0
+
     class LCtoLCConstraint(Constraint):
         """LC i → LC j constraint: j in [i-2, i-1, i+1, i+2]"""
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "LC" and dst_type == "LC":
                 return abs(dst_idx - src_idx) in [1, 2]
             return True
+
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "LC" and dst_type == "LC":
+                d = abs(dst_idx - src_idx)
+                if d in [1, 2]:
+                    return 0.0
+                # penalty proportional to distance beyond allowable window
+                return float(max(0, d - 2))
+            return 0.0
         
     class LCtoPEConstraint(Constraint):
         """LC i → PE j constraint: j in [i, i+1]"""
@@ -244,12 +260,28 @@ class Mapper:
                 return abs(dst_idx - src_idx) in [0, 1]
             return True
 
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "LC" and dst_type == "PE":
+                d = abs(dst_idx - src_idx)
+                if d in [0, 1]:
+                    return 0.0
+                return float(d - 1)
+            return 0.0
+
     class LCtoGROUPConstraint(Constraint):
         """LC i → GROUP j constraint: j in [i//2 - 1, i//2 + 1]"""
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "LC" and dst_type == "GROUP":
                 return abs(dst_idx - (src_idx // 2)) in [0, 1]
             return True
+
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "LC" and dst_type == "GROUP":
+                d = abs(dst_idx - (src_idx // 2))
+                if d in [0, 1]:
+                    return 0.0
+                return float(d - 1)
+            return 0.0
         
     class LCtoSTREAMConstraint(Constraint):
         """LC i → STREAM j constraint: 
@@ -260,6 +292,14 @@ class Mapper:
                 # LC can connect to streams with reasonable topology constraints
                 return abs(dst_idx - (src_idx // 2)) in [0, 1]
             return True
+
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "LC" and dst_type == "STREAM":
+                d = abs(dst_idx - (src_idx // 2))
+                if d in [0, 1]:
+                    return 0.0
+                return float(d - 1)
+            return 0.0
     
     class PEtoPEConstraint(Constraint):
         """PE i → PE j constraint: j in [i-2, i-1, i+1, i+2]"""
@@ -267,6 +307,14 @@ class Mapper:
             if src_type == "PE" and dst_type == "PE":
                 return abs(dst_idx - src_idx) in [1, 2]
             return True
+
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "PE" and dst_type == "PE":
+                d = abs(dst_idx - src_idx)
+                if d in [1, 2]:
+                    return 0.0
+                return float(max(0, d - 2))
+            return 0.0
     
     
     class PEtoSTREAMConstraint(Constraint):
@@ -278,6 +326,14 @@ class Mapper:
                 # PE can connect to streams with reasonable topology constraints
                 return abs(dst_idx - (src_idx // 2)) in [0, 1]
             return True
+
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "PE" and dst_type == "STREAM":
+                d = abs(dst_idx - (src_idx // 2))
+                if d in [0, 1]:
+                    return 0.0
+                return float(d - 1)
+            return 0.0
 
     
     def direct_mapping(self) -> Dict[str, str]:
@@ -294,7 +350,8 @@ class Mapper:
     
     def heuristic_search(self, connections: List[Dict[str, str]], max_iterations: int = 5000, 
                         initial_temp: float = 100.0, cooling_rate: float = 0.995,
-                        node_metadata: Optional[Dict[str, Dict]] = None) -> Optional[Dict[str, str]]:
+                        node_metadata: Optional[Dict[str, Dict]] = None,
+                        repair_prob: float = 0.2) -> Optional[Dict[str, str]]:
         """
         Perform simulated annealing search to find a valid mapping for large graphs.
         Uses probabilistic optimization to escape local minima and find better solutions.
@@ -315,7 +372,7 @@ class Mapper:
         import math
         
         print(f"[Simulated Annealing] Starting search with {len(connections)} connections")
-        print(f"[Simulated Annealing] Parameters: iterations={max_iterations}, T0={initial_temp}, cooling={cooling_rate}")
+        print(f"[Simulated Annealing] Parameters: iterations={max_iterations}, T0={initial_temp}, cooling={cooling_rate}, repair_prob={repair_prob}")
         
         # Define all structural constraints
         self.constraints: List[Mapper.Constraint] = [
@@ -341,42 +398,48 @@ class Mapper:
         unique_nodes = [node for node in self.nodes if node in nodes_in_connections]
         print(f"[Simulated Annealing] Processing {len(unique_nodes)} nodes")
         
-        # Group nodes by type for swapping
+        # Group nodes by the pool key (based on EXISTING resource if present, else logical type)
+        # This ensures that node operations (swap/reassign/repair) are only done within the same pool
+        def pool_key_for_node(n: str) -> Optional[str]:
+            # If node already has an allocated resource, prefer that
+            existing_res = self.node_to_resource.get(n)
+            if existing_res:
+                pkey = self.get_type_from_resource(existing_res)
+                # Some old code might return None for unknown; guard
+                return pkey
+            # Otherwise, derive logically
+            node_type = self.get_type(n)
+            if node_type == 'STREAM':
+                metadata = node_metadata.get(n, {})
+                stream_type = metadata.get('stream_type', 'read')
+                return 'READ_STREAM' if stream_type == 'read' else 'WRITE_STREAM'
+            return node_type
+
         nodes_by_type = defaultdict(list)
         for node in unique_nodes:
-            node_type = self.get_type(node)
-            if node_type and node_type != "STREAM":
-                nodes_by_type[node_type].append(node)
-            elif node_type == "STREAM":
-                # Separate READ_STREAM and WRITE_STREAM nodes - they cannot be swapped
-                metadata = node_metadata.get(node, {})
-                stream_type = metadata.get('stream_type', 'read')
-                if stream_type == "read":
-                    nodes_by_type["READ_STREAM"].append(node)
-                else:
-                    nodes_by_type["WRITE_STREAM"].append(node)
+            pkey = pool_key_for_node(node)
+            if pkey:
+                nodes_by_type[pkey].append(node)
         
-        # Helper function to calculate cost (number of constraint violations)
-        def calculate_cost(mapping: Dict[str, str]) -> int:
-            violations = 0
+        # Helper function to calculate cost (sum of constraint penalties)
+        def calculate_cost(mapping: Dict[str, str]) -> float:
+            cost = 0.0
             for c in connections:
                 src, dst = c["src"], c["dst"]
                 if src.endswith("ROW_LC") or src.endswith("COL_LC"):
                     src = src.split(".")[0]
                 if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
                     dst = dst.split(".")[0]
-                
+
                 if src in mapping and dst in mapping:
                     src_res = mapping[src]
                     dst_res = mapping[dst]
                     src_type, src_idx = self.parse_resource(src_res)
                     dst_type, dst_idx = self.parse_resource(dst_res)
-                    
+
                     for constraint in self.constraints:
-                        if not constraint.check(src_type, src_idx, dst_type, dst_idx):
-                            violations += 1
-                            break
-            return violations
+                        cost += constraint.penalty(src_type, src_idx, dst_type, dst_idx)
+            return cost
         
         # Initialize with current allocation - allow randomized start to better explore
         # Start with a mapping that preserves node->resource uniqueness per type
@@ -418,7 +481,7 @@ class Mapper:
         # Track stagnation and random restarts
         stagnation = 0
         
-        print(f"[Simulated Annealing] Initial cost: {current_cost} violations")
+        print(f"[Simulated Annealing] Initial cost: {current_cost:.2f} (penalty sum)")
         
         # Simulated annealing main loop
         temperature = initial_temp
@@ -441,9 +504,10 @@ class Mapper:
 
             pool = self.resource_pools.get(res_type, [])
 
-            # With some probability, reassign a node to an unused resource from the pool
-            # This allows the search to explore resources that are not part of the initial allocation
-            if random.random() < 0.5:
+            # With some probability, choose between reassigning to unused resources, doing a repair move,
+            # or swapping two nodes of the same type. repair_prob biases towards targeted repairs.
+            r = random.random()
+            if r < 0.4:
                 node = random.choice(type_nodes)
                 # Find resources not yet used in the current mapping
                 used_resources = set(current_mapping.values())
@@ -464,6 +528,69 @@ class Mapper:
                     node1, node2 = random.sample(type_nodes, 2)
                     new_mapping = current_mapping.copy()
                     new_mapping[node1], new_mapping[node2] = new_mapping[node2], new_mapping[node1]
+            elif r < 0.4 + repair_prob:
+                # Repair move: pick a violated connection and try to reduce its penalty by changing an endpoint
+                # Collect violated connections and select the worst offender
+                def _conn_penalty(src, dst, mapping):
+                    if src not in mapping or dst not in mapping:
+                        return 0.0
+                    src_res = mapping[src]
+                    dst_res = mapping[dst]
+                    src_type, src_idx = self.parse_resource(src_res)
+                    dst_type, dst_idx = self.parse_resource(dst_res)
+                    total = 0.0
+                    for cst in self.constraints:
+                        total += cst.penalty(src_type, src_idx, dst_type, dst_idx)
+                    return total
+
+                violated = []
+                for conn in connections:
+                    s, d = conn['src'], conn['dst']
+                    if s.endswith('ROW_LC') or s.endswith('COL_LC'):
+                        s = s.split('.')[0]
+                    if d.endswith('ROW_LC') or d.endswith('COL_LC'):
+                        d = d.split('.')[0]
+                    p = _conn_penalty(s, d, current_mapping)
+                    if p > 0:
+                        violated.append((p, s, d))
+
+                if violated:
+                    # Sort by penalty and select the worst connection
+                    violated.sort(reverse=True)
+                    _, src_bad, dst_bad = violated[0]
+                    node = src_bad if random.random() < 0.5 else dst_bad
+                    # Determine pool based on actual pool key for this node
+                    pkey = pool_key_for_node(node)
+                    pool = self.resource_pools.get(pkey, [])
+                    # Try candidate resources and pick the one that minimizes total cost
+                    best_local = None
+                    best_local_cost = float('inf')
+                    used = set(current_mapping.values())
+                    for cand in pool:
+                        if cand in used and cand != current_mapping.get(node):
+                            continue
+                        trial = current_mapping.copy()
+                        trial[node] = cand
+                        cst = calculate_cost(trial)
+                        if cst < best_local_cost:
+                            best_local_cost = cst
+                            best_local = trial
+                    if best_local is not None:
+                        new_mapping = best_local
+                    else:
+                        # fallback to swapping if repair fails
+                        if len(type_nodes) < 2:
+                            continue
+                        node1, node2 = random.sample(type_nodes, 2)
+                        new_mapping = current_mapping.copy()
+                        new_mapping[node1], new_mapping[node2] = new_mapping[node2], new_mapping[node1]
+                else:
+                    # No violated connections found; perform a swap
+                    if len(type_nodes) < 2:
+                        continue
+                    node1, node2 = random.sample(type_nodes, 2)
+                    new_mapping = current_mapping.copy()
+                    new_mapping[node1], new_mapping[node2] = new_mapping[node2], new_mapping[node1]
             else:
                 # Swap two nodes of the same type
                 if len(type_nodes) < 2:
@@ -477,7 +604,26 @@ class Mapper:
             # (i.e., no two nodes assigned to the same physical resource)
             def is_valid_unique_mapping(mapping):
                 assigned = list(mapping.values())
-                return len(assigned) == len(set(assigned))
+                if len(assigned) != len(set(assigned)):
+                    return False
+                # Also ensure type/pool consistency: a node must be assigned only resources
+                # from its intended pool key (either existing resource's pool or logical type).
+                def intended_pool_key(n: str) -> Optional[str]:
+                    existing_res = self.node_to_resource.get(n)
+                    if existing_res:
+                        return self.get_type_from_resource(existing_res)
+                    node_type = self.get_type(n)
+                    if node_type == 'STREAM':
+                        meta = node_metadata.get(n, {})
+                        return 'READ_STREAM' if meta.get('stream_type','read') == 'read' else 'WRITE_STREAM'
+                    return node_type
+
+                for n, r in mapping.items():
+                    rtype = self.get_type_from_resource(r)
+                    ipk = intended_pool_key(n)
+                    if ipk and rtype != ipk:
+                        return False
+                return True
 
             if not is_valid_unique_mapping(new_mapping):
                 # Try to repair by converting to a swap if possible
@@ -516,7 +662,7 @@ class Mapper:
                 current_mapping = new_mapping
                 current_cost = new_cost
                 accepted_moves += 1
-                
+                stagnation = 0
                 # Update best solution
                 if current_cost < best_cost:
                     best_mapping = current_mapping.copy()
@@ -531,6 +677,7 @@ class Mapper:
                     current_mapping = new_mapping
                     current_cost = new_cost
                     accepted_moves += 1
+                    stagnation = 0
                 else:
                     rejected_moves += 1
             
@@ -542,14 +689,16 @@ class Mapper:
                 current_mapping = random_initial_mapping()
                 current_cost = calculate_cost(current_mapping)
                 stagnation = 0
-        
-        print(f"[Simulated Annealing] Final results: best_cost={best_cost}, "
+            else:
+                # if nothing accepted this iter, increment stagnation
+                stagnation += 1
+                print(f"[Simulated Annealing] Final results: best_cost={best_cost}, "
               f"accepted={accepted_moves}, rejected={rejected_moves}")
         
         if best_cost == 0:
             print(f"[Simulated Annealing] Success: Found valid mapping with 0 violations")
         else:
-            print(f"[Simulated Annealing] Warning: Best mapping has {best_cost} constraint violations")
+            print(f"[Simulated Annealing] Warning: Best mapping has total penalty {best_cost:.2f}")
             # Print which connections are violated
             print(f"[Simulated Annealing] Constraint violations:")
             for c in connections:
