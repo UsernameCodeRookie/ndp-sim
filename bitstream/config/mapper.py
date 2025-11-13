@@ -39,6 +39,9 @@ class Mapper:
         # List of all nodes registered for allocation
         self.nodes: List[str] = []
         
+        # Direct mapping mode flag
+        self.use_direct_mapping: bool = False
+        
     def get_type(self, node: str) -> Optional[str]:
         """Infer the resource type of a node based on its name prefix."""
         if node.startswith("DRAM_LC.LC"):
@@ -89,6 +92,30 @@ class Mapper:
             res_idx = int(''.join(ch for ch in resource if ch.isdigit()))
         
         return res_type, res_idx
+    
+    def extract_logical_index(self, node: str) -> Optional[int]:
+        """Extract logical index from node name.
+        
+        Args:
+            node: Node name like 'DRAM_LC.LC3', 'LC_PE.PE5', 'GROUP2', 'STREAM.stream1'
+            
+        Returns:
+            Logical index as integer, or None if not found
+        """
+        import re
+        # Match patterns like LC3, PE5, GROUP2, stream1
+        if node.startswith("DRAM_LC.LC"):
+            match = re.search(r'LC(\d+)$', node)
+        elif node.startswith("LC_PE.PE"):
+            match = re.search(r'PE(\d+)$', node)
+        elif node.startswith("GROUP"):
+            match = re.search(r'GROUP(\d+)', node)
+        elif node.startswith("STREAM.stream"):
+            match = re.search(r'stream(\d+)$', node)
+        else:
+            return None
+        
+        return int(match.group(1)) if match else None
 
 
     def allocate(self, node: str, stream_type: Optional[str] = None) -> str:
@@ -134,21 +161,35 @@ class Mapper:
                 # Default to READ_STREAM if not specified
                 res_type = "READ_STREAM"
 
-        # Normal allocation — pick the next available resource from the pool
-        idx = self.resource_counters[res_type]
         pool = self.resource_pools.get(res_type)
-        
         if pool is None:
             raise RuntimeError(f"[Error] Unknown resource type: {res_type} for node {node})")
-
-        # Pool exhausted check
+        
+        # Determine index based on mapping mode
+        if self.use_direct_mapping:
+            # Direct mapping: extract logical index from node name
+            logical_idx = self.extract_logical_index(node)
+            if logical_idx is not None:
+                idx = logical_idx
+                # Validate index is within pool range
+                if idx >= len(pool):
+                    raise RuntimeError(f"[Error] Direct mapping failed: {node} has index {idx}, but {res_type} pool only has {len(pool)} resources")
+            else:
+                # Fallback to counter if we can't extract index
+                idx = self.resource_counters[res_type]
+                self.resource_counters[res_type] += 1
+        else:
+            # Normal allocation — pick the next available resource from the pool
+            idx = self.resource_counters[res_type]
+            self.resource_counters[res_type] += 1
+        
+        # Pool exhausted check (for counter-based allocation)
         if idx >= len(pool):
             raise RuntimeError(f"[Error] {res_type} pool exhausted! (node: {node})")
 
         # Assign resource
         resource_name = pool[idx]
         self.node_to_resource[node] = resource_name
-        self.resource_counters[res_type] += 1
         return resource_name
     
     class Constraint:
@@ -206,6 +247,172 @@ class Mapper:
                 return abs(dst_idx - (src_idx // 2)) in [1, 2]
             return True
 
+    
+    def direct_mapping(self) -> Dict[str, str]:
+        """
+        Directly map each node's logical index to its corresponding physical index.
+        No constraint search is performed - simply uses the allocation order.
+        
+        Returns:
+            Dict[str, str]: The current node→resource mapping (already set by allocate())
+        """
+        print(f"[Direct Mapping] Using direct logical→physical mapping (no constraint search)")
+        print(f"[Direct Mapping] Mapped {len(self.node_to_resource)} nodes")
+        return self.node_to_resource
+    
+    def heuristic_search(self, connections: List[Dict[str, str]], max_iterations: int = 5000, 
+                        initial_temp: float = 100.0, cooling_rate: float = 0.995) -> Optional[Dict[str, str]]:
+        """
+        Perform simulated annealing search to find a valid mapping for large graphs.
+        Uses probabilistic optimization to escape local minima and find better solutions.
+        
+        Args:
+            connections: List of connection dictionaries (e.g., {"src": ..., "dst": ...})
+            max_iterations: Maximum number of optimization iterations (default: 5000)
+            initial_temp: Initial temperature for simulated annealing (default: 100.0)
+            cooling_rate: Temperature cooling rate per iteration (default: 0.995)
+        
+        Returns:
+            Dict[str, str]: Valid node→resource mapping if found; otherwise None
+        """
+        import random
+        import math
+        
+        print(f"[Simulated Annealing] Starting search with {len(connections)} connections")
+        print(f"[Simulated Annealing] Parameters: iterations={max_iterations}, T0={initial_temp}, cooling={cooling_rate}")
+        
+        # Define all structural constraints
+        self.constraints: List[Mapper.Constraint] = [
+            self.LCtoLCConstraint(),
+            self.LCtoPEConstraint(),
+            self.LCtoGROUPConstraint(),
+            self.LCtoSTREAMConstraint(),
+            self.PEtoPEConstraint(),
+            self.PEtoSTREAMConstraint(),
+        ]
+        
+        # Collect all nodes participating in connections
+        nodes_in_connections = set()
+        for c in connections:
+            src, dst = c["src"], c["dst"]
+            if src.endswith("ROW_LC") or src.endswith("COL_LC"):
+                src = src.split(".")[0]
+            if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
+                dst = dst.split(".")[0]
+            nodes_in_connections.add(src)
+            nodes_in_connections.add(dst)
+        
+        unique_nodes = [node for node in self.nodes if node in nodes_in_connections]
+        print(f"[Simulated Annealing] Processing {len(unique_nodes)} nodes")
+        
+        # Group nodes by type for swapping
+        nodes_by_type = defaultdict(list)
+        for node in unique_nodes:
+            node_type = self.get_type(node)
+            if node_type and node_type != "STREAM":  # Group READ/WRITE streams together
+                nodes_by_type[node_type].append(node)
+            elif node_type == "STREAM":
+                # Determine actual stream type from metadata
+                nodes_by_type["STREAM"].append(node)
+        
+        # Helper function to calculate cost (number of constraint violations)
+        def calculate_cost(mapping: Dict[str, str]) -> int:
+            violations = 0
+            for c in connections:
+                src, dst = c["src"], c["dst"]
+                if src.endswith("ROW_LC") or src.endswith("COL_LC"):
+                    src = src.split(".")[0]
+                if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
+                    dst = dst.split(".")[0]
+                
+                if src in mapping and dst in mapping:
+                    src_res = mapping[src]
+                    dst_res = mapping[dst]
+                    src_type, src_idx = self.parse_resource(src_res)
+                    dst_type, dst_idx = self.parse_resource(dst_res)
+                    
+                    for constraint in self.constraints:
+                        if not constraint.check(src_type, src_idx, dst_type, dst_idx):
+                            violations += 1
+                            break
+            return violations
+        
+        # Initialize with current allocation
+        current_mapping = self.node_to_resource.copy()
+        current_cost = calculate_cost(current_mapping)
+        
+        best_mapping = current_mapping.copy()
+        best_cost = current_cost
+        
+        print(f"[Simulated Annealing] Initial cost: {current_cost} violations")
+        
+        # Simulated annealing main loop
+        temperature = initial_temp
+        accepted_moves = 0
+        rejected_moves = 0
+        
+        for iteration in range(max_iterations):
+            # Progress reporting
+            if iteration % 500 == 0 and iteration > 0:
+                print(f"[Simulated Annealing] Iteration {iteration}/{max_iterations}, "
+                      f"T={temperature:.2f}, cost={current_cost}, best={best_cost}, "
+                      f"accepted={accepted_moves}, rejected={rejected_moves}")
+            
+            # Select a random resource type and swap two nodes of the same type
+            res_type = random.choice(list(nodes_by_type.keys()))
+            type_nodes = nodes_by_type[res_type]
+            
+            if len(type_nodes) < 2:
+                continue
+            
+            # Pick two random nodes of the same type to swap their resources
+            node1, node2 = random.sample(type_nodes, 2)
+            
+            # Create new mapping by swapping
+            new_mapping = current_mapping.copy()
+            new_mapping[node1], new_mapping[node2] = new_mapping[node2], new_mapping[node1]
+            
+            # Calculate new cost
+            new_cost = calculate_cost(new_mapping)
+            cost_delta = new_cost - current_cost
+            
+            # Accept or reject the move
+            if cost_delta < 0:
+                # Better solution - always accept
+                current_mapping = new_mapping
+                current_cost = new_cost
+                accepted_moves += 1
+                
+                # Update best solution
+                if current_cost < best_cost:
+                    best_mapping = current_mapping.copy()
+                    best_cost = current_cost
+                    if best_cost == 0:
+                        print(f"[Simulated Annealing] Found optimal solution at iteration {iteration}")
+                        break
+            else:
+                # Worse solution - accept with probability based on temperature
+                acceptance_prob = math.exp(-cost_delta / temperature) if temperature > 0 else 0
+                if random.random() < acceptance_prob:
+                    current_mapping = new_mapping
+                    current_cost = new_cost
+                    accepted_moves += 1
+                else:
+                    rejected_moves += 1
+            
+            # Cool down temperature
+            temperature *= cooling_rate
+        
+        print(f"[Simulated Annealing] Final results: best_cost={best_cost}, "
+              f"accepted={accepted_moves}, rejected={rejected_moves}")
+        
+        if best_cost == 0:
+            print(f"[Simulated Annealing] Success: Found valid mapping with 0 violations")
+        else:
+            print(f"[Simulated Annealing] Warning: Best mapping has {best_cost} constraint violations")
+        
+        self.node_to_resource = best_mapping
+        return best_mapping
     
     def search(self, connections: List[Dict[str, str]], timeout_seconds: int = 600) -> Optional[Dict[str, str]]:
         """
@@ -484,6 +691,28 @@ class NodeGraph:
             else:
                 self.mapping.allocate(node)
             
+    def direct_mapping(self):
+        """Use direct logical→physical mapping without constraint search."""
+        print(f"[Direct Mapping] Using {len(self.connections)} connections")
+        for c in self.connections:
+            print(f"  Connection: {c['src']} -> {c['dst']}")
+        # Enable direct mapping mode in the mapper
+        self.mapping.use_direct_mapping = True
+        result = self.mapping.direct_mapping()
+        print(f"[Success] Direct mapping completed with {len(result)} nodes")
+    
+    def heuristic_search_mapping(self, max_iterations: int = 5000):
+        """Use simulated annealing to find a valid mapping for large graphs."""
+        print(f"[Heuristic Search] Using {len(self.connections)} connections")
+        for c in self.connections:
+            print(f"  Connection: {c['src']} -> {c['dst']}")
+        result = self.mapping.heuristic_search(self.connections, max_iterations=max_iterations)
+        if result is None or len(result) == 0:
+            print("[Warning] Heuristic search failed, keeping initial allocation")
+        else:
+            print(f"[Success] Heuristic search completed with {len(result)} nodes")
+            self.mapping.node_to_resource = result
+    
     def search_mapping(self):
         """Search for a valid node→resource mapping satisfying constraints."""
         print(f"[Debug] Starting constraint search with {len(self.connections)} connections")

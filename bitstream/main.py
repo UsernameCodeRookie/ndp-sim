@@ -34,6 +34,12 @@ Examples:
   # Generate with placement visualization
   python -m bitstream.main --visualize-placement
   
+  # Use direct mapping mode (no constraint search)
+  python -m bitstream.main --direct-mapping
+  
+  # Use heuristic search (simulated annealing) for large graphs
+  python -m bitstream.main --heuristic-search --heuristic-iterations 10000
+  
   # Skip dumps for faster execution
   python -m bitstream.main --no-dump-binary --no-dump-detailed
   
@@ -121,6 +127,26 @@ Examples:
         help='8-bit config mask (default: 11101110 - IGA, SE, Buffer, Special enabled)'
     )
     
+    # Mapping mode
+    parser.add_argument(
+        '--direct-mapping',
+        action='store_true',
+        help='Use direct logical→physical index mapping without constraint search'
+    )
+    
+    parser.add_argument(
+        '--heuristic-search',
+        action='store_true',
+        help='Use simulated annealing heuristic search for large graphs (faster than backtracking)'
+    )
+    
+    parser.add_argument(
+        '--heuristic-iterations',
+        type=int,
+        default=5000,
+        help='Maximum iterations for heuristic search (default: 5000)'
+    )
+    
     # Output control
     parser.add_argument(
         '-q', '--quiet',
@@ -135,6 +161,11 @@ Examples:
     )
     
     args = parser.parse_args()
+    
+    # Validate mutually exclusive mapping modes
+    if args.direct_mapping and args.heuristic_search:
+        print("Error: Cannot use both --direct-mapping and --heuristic-search simultaneously")
+        sys.exit(1)
     
     # Create output directory if it doesn't exist
     output_dir = Path(args.output_dir)
@@ -155,6 +186,13 @@ Examples:
         print(f"Config file:      {args.config}")
         print(f"Output directory: {args.output_dir}")
         print(f"Config mask:      {args.config_mask}")
+        if args.direct_mapping:
+            mapping_mode = "Direct (no search)"
+        elif args.heuristic_search:
+            mapping_mode = f"Heuristic (simulated annealing, {args.heuristic_iterations} iters)"
+        else:
+            mapping_mode = "Constraint search (backtracking)"
+        print(f"Mapping mode:     {mapping_mode}")
         print(f"Binary dump:      {'No' if args.no_dump_binary else 'Yes'}")
         print(f"Detailed dump:    {'No' if args.no_dump_detailed else 'Yes'}")
         print(f"Placement viz:    {'Yes' if args.visualize_placement else 'No'}")
@@ -172,7 +210,10 @@ Examples:
         # Step 2: Initialize modules
         if args.verbose:
             print("[2/6] Initializing modules and performing resource mapping...")
-        modules = init_modules(cfg)
+        modules = init_modules(cfg, 
+                             use_direct_mapping=args.direct_mapping,
+                             use_heuristic_search=args.heuristic_search,
+                             heuristic_iterations=args.heuristic_iterations)
         
         # Step 3: Generate placement visualization (if requested)
         if args.visualize_placement:
