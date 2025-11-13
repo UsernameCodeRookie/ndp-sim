@@ -334,6 +334,24 @@ class Mapper:
                     return 0.0
                 return float(d - 1)
             return 0.0
+        
+    class GROUPtoSTREAMConstraint(Constraint):
+        """GROUP i → STREAM j constraint:
+        Unified STREAM indexing: READ_STREAM0,1,2 → 0,1,2; WRITE_STREAM0 → 3
+        """
+        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
+            if src_type == "GROUP" and dst_type == "STREAM":
+                # GROUP can connect to streams with reasonable topology constraints
+                return abs(dst_idx - src_idx) in [0]
+            return True
+        
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "GROUP" and dst_type == "STREAM":
+                d = abs(dst_idx - src_idx)
+                if d in [0]:
+                    return 0.0
+                return float(d)
+            return 0.0
 
     
     def direct_mapping(self) -> Dict[str, str]:
@@ -382,6 +400,7 @@ class Mapper:
             self.LCtoSTREAMConstraint(),
             self.PEtoPEConstraint(),
             self.PEtoSTREAMConstraint(),
+            self.GROUPtoSTREAMConstraint(),
         ]
         
         # Collect all nodes participating in connections
@@ -692,8 +711,8 @@ class Mapper:
             else:
                 # if nothing accepted this iter, increment stagnation
                 stagnation += 1
-                print(f"[Simulated Annealing] Final results: best_cost={best_cost}, "
-              f"accepted={accepted_moves}, rejected={rejected_moves}")
+                # print(f"[Simulated Annealing] Final results: best_cost={best_cost}, "
+            #   f"accepted={accepted_moves}, rejected={rejected_moves}")
         
         if best_cost == 0:
             print(f"[Simulated Annealing] Success: Found valid mapping with 0 violations")
@@ -746,6 +765,7 @@ class Mapper:
             self.LCtoSTREAMConstraint(),
             self.PEtoPEConstraint(),
             self.PEtoSTREAMConstraint(),
+            self.GROUPtoSTREAMConstraint(),
         ]
 
         # === Collect all nodes participating in the connection graph ===
@@ -1077,7 +1097,7 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
         "GROUP":        [(i * 2 + 0.5, 2) for i in range(4)],     # between every 2 LCs
         "PE":           [(i, 1) for i in range(8)],               # aligned with LC
         "READ_STREAM":  [(i * 2 + 0.5, 0) for i in range(3)],     # READ_STREAM0-2
-        "WRITE_STREAM": [(7, 0)],                                  # WRITE_STREAM0
+        "WRITE_STREAM": [(6.5, 0)],                                  # WRITE_STREAM0
     }
 
     # Draw resource nodes

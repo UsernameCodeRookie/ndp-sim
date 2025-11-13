@@ -250,6 +250,11 @@ class StreamConfig(BaseConfigModule):
         # Load configuration into submodule
         submodule.from_json(stream_cfg)
         self.submodules = [submodule]
+        
+        # Add group connection
+        group = stream_cfg.get('buffer_lc_group', None)
+        if group is not None:
+            Connect(f"{group}", submodule.id)
     
     def to_bits(self) -> List[Bit]:
         """Return bits from the submodule."""
