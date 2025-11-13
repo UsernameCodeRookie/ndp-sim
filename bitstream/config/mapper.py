@@ -151,6 +151,9 @@ class Mapper:
             self.node_to_resource[node] = parent_res
             return parent_res
         
+        # Initialize idx to None (will be set later based on mapping mode)
+        idx = None
+        
         # Special case: STREAM nodes need to know read vs write
         if res_type == "STREAM":
             # In direct mapping mode, determine read/write based on logical index
