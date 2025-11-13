@@ -105,6 +105,10 @@ class Mapper:
         if node in self.node_to_resource:
             return self.node_to_resource[node]
         
+        # Add node to the list if not already present
+        if node not in self.nodes:
+            self.nodes.append(node)
+        
         res_type = self.get_type(node)
 
         # Non-hardware or unrecognized node type
@@ -136,8 +140,6 @@ class Mapper:
         
         if pool is None:
             raise RuntimeError(f"[Error] Unknown resource type: {res_type} for node {node})")
-        
-        self.nodes.append(node)
 
         # Pool exhausted check
         if idx >= len(pool):
@@ -252,6 +254,7 @@ class Mapper:
         # Keep only nodes that are both known and connected
         unique_nodes = [node for node in self.nodes if node in nodes_in_connections]
         print(f"[Debug] Search has {len(unique_nodes)} nodes to map (from {len(nodes_in_connections)} nodes in connections)")
+        print(f"[Debug] unique_nodes: {unique_nodes}")
 
         attempt_count = [0]  # mutable counter shared across recursion
 
@@ -260,8 +263,10 @@ class Mapper:
             attempt_count[0] += 1
 
             # Periodic progress logging
-            if attempt_count[0] % 10000 == 0:
+            if attempt_count[0] % 1000 == 0:
                 print(f"[Debug] Search attempts: {attempt_count[0]}, at node index {index}/{len(unique_nodes)}")
+            if attempt_count[0] == 1:
+                print(f"[Debug] Starting backtrack with {len(unique_nodes)} nodes, initial used_resources: {used_resources}")
             
             # Check timeout condition
             if time.time() - start_time > timeout_seconds:
@@ -312,32 +317,69 @@ class Mapper:
             
             pool = self.resource_pools.get(node_type, [])
 
+            # Helper function to check if current assignment violates any constraints
+            def check_current_assignment(test_node: str, test_res: str) -> bool:
+                """Check if assigning test_res to test_node violates constraints with already assigned nodes."""
+                full_mapping = self.node_to_resource.copy()
+                full_mapping.update(current_mapping)
+                full_mapping[test_node] = test_res
+                
+                # Get the set of nodes we've assigned so far (including test_node)
+                assigned_nodes = set(unique_nodes[:index+1])
+                
+                for c in connections:
+                    src, dst = c["src"], c["dst"]
+                    if src.endswith("ROW_LC") or src.endswith("COL_LC"):
+                        src = src.split(".")[0]
+                    if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
+                        dst = dst.split(".")[0]
+                    
+                    # Only check if both endpoints are in our search space and have been assigned
+                    if src not in assigned_nodes or dst not in assigned_nodes:
+                        continue
+                    
+                    if src not in full_mapping or dst not in full_mapping:
+                        continue
+                            
+                    src_res = full_mapping[src]
+                    dst_res = full_mapping[dst]
+                    src_type, src_idx = self.parse_resource(src_res)
+                    dst_type, dst_idx = self.parse_resource(dst_res)
+                    
+                    for constraint in self.constraints:
+                        if not constraint.check(src_type, src_idx, dst_type, dst_idx):
+                            return False
+                return True
+            
             # 1. Try existing resource (if defined and available)
             if existing_res and existing_res not in used_resources and existing_res in pool:
-                current_mapping[node] = existing_res
-                used_resources.add(existing_res)
-                solution = backtrack(index + 1, current_mapping, used_resources)
-                if solution:
-                    return solution
-                used_resources.remove(existing_res)
-                del current_mapping[node]
+                if check_current_assignment(node, existing_res):
+                    current_mapping[node] = existing_res
+                    used_resources.add(existing_res)
+                    solution = backtrack(index + 1, current_mapping, used_resources)
+                    if solution:
+                        return solution
+                    used_resources.remove(existing_res)
+                    del current_mapping[node]
 
             # 2. Try all alternative resources from the pool
             for res in pool:
                 if res in used_resources or res == existing_res:
                     continue
-                current_mapping[node] = res
-                used_resources.add(res)
-                solution = backtrack(index + 1, current_mapping, used_resources)
-                if solution:
-                    return solution
-                used_resources.remove(res)
-                del current_mapping[node]
+                if check_current_assignment(node, res):
+                    current_mapping[node] = res
+                    used_resources.add(res)
+                    solution = backtrack(index + 1, current_mapping, used_resources)
+                    if solution:
+                        return solution
+                    used_resources.remove(res)
+                    del current_mapping[node]
 
             # No valid assignment found for this path
             return None
 
-        # Start the recursive search with an empty resource set
+        # Start the recursive search with empty used resources
+        # All nodes should be in unique_nodes since we only allocated connected nodes
         return backtrack(0, {}, set())
 
 
@@ -408,9 +450,30 @@ class NodeGraph:
         if connection not in self.connections:
             self.connections.append(connection)
 
-    def allocate_resources(self):
-        """Allocate physical resources for all registered nodes."""
-        for node in self.nodes:
+    def allocate_resources(self, only_connected_nodes=False):
+        """Allocate physical resources for all registered nodes.
+        
+        Args:
+            only_connected_nodes: If True, only allocate resources for nodes that
+                                 appear in connections. Other nodes will be skipped.
+        """
+        # Collect nodes that appear in connections
+        nodes_in_connections = set()
+        if only_connected_nodes:
+            for c in self.connections:
+                src, dst = c["src"], c["dst"]
+                # Normalize LC suffixes
+                if src.endswith("ROW_LC") or src.endswith("COL_LC"):
+                    src = src.split(".")[0]
+                if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
+                    dst = dst.split(".")[0]
+                nodes_in_connections.add(src)
+                nodes_in_connections.add(dst)
+        
+        # Determine which nodes to process
+        nodes_to_process = nodes_in_connections if only_connected_nodes else self.nodes
+        
+        for node in nodes_to_process:
             # Get metadata for this node (e.g., stream_type)
             metadata = self.node_metadata.get(node, {})
             stream_type = metadata.get('stream_type')

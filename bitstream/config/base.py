@@ -115,11 +115,16 @@ class BaseConfigModule(ConfigModule):
 
     def _encode_field(self, val, mapper: Callable = None, width: int = None) -> List[tuple[int, int]]:
         """Convert a field value into one or more (value,width) tuples."""
+        # Import Connect here to avoid circular import
+        from bitstream.index import Connect
+        
         if mapper:
             argc = mapper.__code__.co_argcount
-            if argc == 2:
+            # Only apply mapper if value hasn't been processed yet
+            # If it's already a Connect object, it was processed in from_json()
+            if argc == 2 and not isinstance(val, Connect):
                 val = mapper(self, val)
-            else:
+            elif argc == 1:
                 val = mapper(val)
 
         if val is None:

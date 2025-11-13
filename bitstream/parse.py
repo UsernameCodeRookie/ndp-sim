@@ -80,10 +80,13 @@ def init_modules(cfg):
     
     # Perform resource allocation and mapping
     print("\n=== Resource Allocation & Mapping ===")
-    NodeGraph.get().allocate_resources()
+    # First, only allocate resources for nodes that appear in connections
+    NodeGraph.get().allocate_resources(only_connected_nodes=True)
     # Run constraint search to optimize resource placement
     print("\n=== Running Constraint Search ===")
     NodeGraph.get().search_mapping()
+    # After search, allocate remaining resources for unconnected nodes
+    NodeGraph.get().allocate_resources(only_connected_nodes=False)
     
     # Resolve node indices and auto-register modules to mapper
     NodeIndex.resolve_all(modules)

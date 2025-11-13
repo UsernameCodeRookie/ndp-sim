@@ -194,7 +194,7 @@ class Connect:
             group_id = dst_phys_id  # ROW_LC shares physical_id with its GROUP
             # Calculate valid LC range for this GROUP
             lc_range_start = (group_id - 1) * 2
-            lc_range = list(range(max(0, lc_range_start), (group_id + 1) * 2 + 2))
+            lc_range = list(range(lc_range_start, (group_id + 1) * 2 + 2))
             if src_phys_id in lc_range:
                 return lc_range.index(src_phys_id)
             return 0
@@ -233,7 +233,7 @@ class Connect:
         elif src_type == "LC" and dst_type == "STREAM":
             stream_id = dst_phys_id
             lc_range_start = (stream_id - 1) * 2
-            lc_range = list(range(max(0, lc_range_start), (stream_id + 1) * 2 + 2))
+            lc_range = list(range(lc_range_start, (stream_id + 1) * 2 + 2))
             if src_phys_id in lc_range:
                 return lc_range.index(src_phys_id)
             return 0
@@ -242,7 +242,7 @@ class Connect:
         elif src_type == "PE" and dst_type == "STREAM":
             stream_id = dst_phys_id
             pe_range_start = (stream_id - 1) * 2
-            pe_range = list(range(max(0, pe_range_start), (stream_id + 1) * 2 + 2))
+            pe_range = list(range(pe_range_start, (stream_id + 1) * 2 + 2))
             if src_phys_id in pe_range:
                 return 6 + pe_range.index(src_phys_id)
             return 0
