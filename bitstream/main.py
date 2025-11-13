@@ -22,7 +22,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Generate bitstream with default config (detailed dump enabled by default)
+  # Generate bitstream with default config (binary and detailed dumps enabled by default)
   python -m bitstream.main
   
   # Use custom config and output directory
@@ -31,13 +31,13 @@ Examples:
   # Generate with comparison to reference
   python -m bitstream.main --compare data/bitstream.txt
   
-  # Generate with visualizations
-  python -m bitstream.main --visualize-binary --visualize-placement
+  # Generate with placement visualization
+  python -m bitstream.main --visualize-placement
   
-  # Skip detailed dump for faster execution
-  python -m bitstream.main --no-dump-detailed
+  # Skip dumps for faster execution
+  python -m bitstream.main --no-dump-binary --no-dump-detailed
   
-  # Quiet mode (minimal output, detailed dump still generated)
+  # Quiet mode (minimal output, dumps still generated)
   python -m bitstream.main -q
         """
     )
@@ -72,11 +72,11 @@ Examples:
         help='Name of binary dump file (default: modules_dump.bin)'
     )
     
-    # Visualization options
+    # Dump options
     parser.add_argument(
-        '--visualize-binary',
+        '--no-dump-binary',
         action='store_true',
-        help='Generate binary visualization output'
+        help='Skip binary dump generation (enabled by default)'
     )
     
     parser.add_argument(
@@ -155,7 +155,7 @@ Examples:
         print(f"Config file:      {args.config}")
         print(f"Output directory: {args.output_dir}")
         print(f"Config mask:      {args.config_mask}")
-        print(f"Binary dump:      {'Yes' if args.visualize_binary else 'No'}")
+        print(f"Binary dump:      {'No' if args.no_dump_binary else 'Yes'}")
         print(f"Detailed dump:    {'No' if args.no_dump_detailed else 'Yes'}")
         print(f"Placement viz:    {'Yes' if args.visualize_placement else 'No'}")
         print(f"Compare:          {'Yes' if args.compare else 'No'}")
@@ -186,8 +186,8 @@ Examples:
         elif args.verbose:
             print("[3/6] Skipping placement visualization")
         
-        # Step 4: Generate binary dump (if requested)
-        if args.visualize_binary:
+        # Step 4: Generate binary dump (default enabled)
+        if not args.no_dump_binary:
             if args.verbose:
                 print(f"[4/6] Generating binary dump to {args.binary_name}...")
             binary_path = output_dir / args.binary_name
@@ -216,6 +216,10 @@ Examples:
         if not args.quiet:
             print(f"\n✓ Bitstream generated: {bitstream_path}")
             print(f"  Total size: {len(bitstream)} bits ({len(bitstream)//64} lines)")
+            if not args.no_dump_binary:
+                print(f"✓ Binary dump: {output_dir / args.binary_name}")
+            if not args.no_dump_detailed:
+                print(f"✓ Detailed dump: {output_dir / args.detailed_dump_output}")
         
         # Step 6: Compare with reference (if requested)
         if args.compare:
