@@ -293,6 +293,9 @@ class LoadStoreUnit : public Architecture::TickingComponent {
             Architecture::PortDirection::INPUT);  // MemoryRequestPacket
     addPort("resp_out",
             Architecture::PortDirection::OUTPUT);  // MemoryResponsePacket
+    addPort("resp_valid",
+            Architecture::PortDirection::OUTPUT);  // BoolDataPacket - response
+                                                   // valid signal
     addPort("ready", Architecture::PortDirection::OUTPUT);  // BoolDataPacket
     addPort("valid", Architecture::PortDirection::INPUT);   // BoolDataPacket
     addPort("done", Architecture::PortDirection::OUTPUT);   // BoolDataPacket
@@ -326,6 +329,7 @@ class LoadStoreUnit : public Architecture::TickingComponent {
 
   void sendStatusSignals() {
     auto resp_out = getPort("resp_out");
+    auto resp_valid_out = getPort("resp_valid");
     auto ready_out = getPort("ready");
     auto done_out = getPort("done");
 
@@ -335,6 +339,11 @@ class LoadStoreUnit : public Architecture::TickingComponent {
 
     bool is_done = (current_state_ == State::IDLE) && request_queue_.empty();
     done_out->write(std::make_shared<Architecture::BoolDataPacket>(is_done));
+
+    // Response valid signal indicates whether we have a response to send
+    bool has_response = (current_response_ != nullptr);
+    resp_valid_out->write(
+        std::make_shared<Architecture::BoolDataPacket>(has_response));
 
     if (current_response_) {
       resp_out->write(std::static_pointer_cast<Architecture::DataPacket>(

@@ -43,6 +43,11 @@ class PingPongController : public Architecture::TickingComponent {
   }
 
   void tick() override {
+    // Always output ready signal for response (controller can always accept
+    // responses)
+    auto resp_ready_out = getPort("resp_ready_out");
+    resp_ready_out->write(std::make_shared<Architecture::BoolDataPacket>(true));
+
     switch (current_state_) {
       case State::IDLE:
         handleIdle();
@@ -111,6 +116,9 @@ class PingPongController : public Architecture::TickingComponent {
             Architecture::PortDirection::OUTPUT);  // MemoryRequestPacket
     addPort("valid_out",
             Architecture::PortDirection::OUTPUT);  // BoolDataPacket
+    addPort("resp_ready_out",
+            Architecture::PortDirection::OUTPUT);  // BoolDataPacket - always
+                                                   // ready for response
 
     // Input ports from LSU
     addPort("resp_in",

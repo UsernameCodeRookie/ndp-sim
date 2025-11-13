@@ -58,7 +58,9 @@ TEST_F(PingPongConnectionTest, BasicPingPongWithConnection) {
 
   auto lsu_req_in = lsu->getPort("req_in");
   auto lsu_resp_out = lsu->getPort("resp_out");
+  auto lsu_resp_valid_out = lsu->getPort("resp_valid");
   auto lsu_ready_out = lsu->getPort("ready");
+  auto ctrl_resp_ready_out = controller->getPort("resp_ready_out");
 
   // Create composite ReadyValidConnection for request path
   // This connection manages: data channel + valid signal + ready signal
@@ -73,14 +75,15 @@ TEST_F(PingPongConnectionTest, BasicPingPongWithConnection) {
   req_conn->setLatency(0);
 
   // Create composite ReadyValidConnection for response path
+  // Now with proper ready-valid handshake!
   auto resp_conn = std::make_shared<Architecture::ReadyValidConnection>(
       "RespConn", *scheduler, CONNECTION_PERIOD, 2);
   resp_conn->addSourcePort(lsu_resp_out);  // Data: LSU -> Controller
   resp_conn->addDestinationPort(ctrl_resp_in);
   resp_conn->bindValidPort(
-      lsu_ready_out);  // Valid: LSU always has valid response when ready
+      lsu_resp_valid_out);  // Valid: LSU indicates response is available
   resp_conn->bindReadyPort(
-      lsu_ready_out);  // Ready: Assume controller always ready (simplified)
+      ctrl_resp_ready_out);  // Ready: Controller is always ready for response
   resp_conn->setLatency(0);
 
   // Start components and connections
@@ -145,7 +148,9 @@ TEST_F(PingPongConnectionTest, PingPongWithLatency) {
 
   auto lsu_req_in = lsu->getPort("req_in");
   auto lsu_resp_out = lsu->getPort("resp_out");
+  auto lsu_resp_valid_out = lsu->getPort("resp_valid");
   auto lsu_ready_out = lsu->getPort("ready");
+  auto ctrl_resp_ready_out = controller->getPort("resp_ready_out");
 
   // Create composite connections with latency
   auto req_conn = std::make_shared<Architecture::ReadyValidConnection>(
@@ -160,8 +165,8 @@ TEST_F(PingPongConnectionTest, PingPongWithLatency) {
       "RespConn", *scheduler, CONNECTION_PERIOD, 2);
   resp_conn->addSourcePort(lsu_resp_out);
   resp_conn->addDestinationPort(ctrl_resp_in);
-  resp_conn->bindValidPort(lsu_ready_out);
-  resp_conn->bindReadyPort(lsu_ready_out);
+  resp_conn->bindValidPort(lsu_resp_valid_out);
+  resp_conn->bindReadyPort(ctrl_resp_ready_out);
   resp_conn->setLatency(CONNECTION_LATENCY);
 
   // Start everything
@@ -216,7 +221,9 @@ TEST_F(PingPongConnectionTest, PingPongWithBackPressure) {
 
   auto lsu_req_in = lsu->getPort("req_in");
   auto lsu_resp_out = lsu->getPort("resp_out");
+  auto lsu_resp_valid_out = lsu->getPort("resp_valid");
   auto lsu_ready_out = lsu->getPort("ready");
+  auto ctrl_resp_ready_out = controller->getPort("resp_ready_out");
 
   // Create composite connections with small buffer to test backpressure
   auto req_conn = std::make_shared<Architecture::ReadyValidConnection>(
@@ -230,8 +237,8 @@ TEST_F(PingPongConnectionTest, PingPongWithBackPressure) {
       "RespConn", *scheduler, CONNECTION_PERIOD, 1);
   resp_conn->addSourcePort(lsu_resp_out);
   resp_conn->addDestinationPort(ctrl_resp_in);
-  resp_conn->bindValidPort(lsu_ready_out);
-  resp_conn->bindReadyPort(lsu_ready_out);
+  resp_conn->bindValidPort(lsu_resp_valid_out);
+  resp_conn->bindReadyPort(ctrl_resp_ready_out);
 
   // Start everything
   controller->start();
