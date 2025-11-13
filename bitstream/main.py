@@ -47,6 +47,8 @@ Examples:
   python -m bitstream.main -q
         """
     )
+    # Set default behavior: heuristic search enabled by default
+    parser.set_defaults(heuristic_search=True)
     
     # Input/Output arguments
     parser.add_argument(
@@ -134,10 +136,18 @@ Examples:
         help='Use direct logical→physical index mapping without constraint search'
     )
     
+    # Heuristic search enabled by default; use --no-heuristic-search to disable
     parser.add_argument(
         '--heuristic-search',
         action='store_true',
-        help='Use simulated annealing heuristic search for large graphs (faster than backtracking)'
+        dest='heuristic_search',
+        help='Enable heuristic search (simulated annealing) for large graphs (enabled by default)',
+    )
+    parser.add_argument(
+        '--no-heuristic-search',
+        action='store_false',
+        dest='heuristic_search',
+        help='Disable heuristic search (use when you want direct mapping or custom behavior)'
     )
     
     parser.add_argument(
@@ -191,7 +201,7 @@ Examples:
         elif args.heuristic_search:
             mapping_mode = f"Heuristic (simulated annealing, {args.heuristic_iterations} iters)"
         else:
-            mapping_mode = "Constraint search (backtracking)"
+            mapping_mode = "Heuristic (simulated annealing - fallback)"
         print(f"Mapping mode:     {mapping_mode}")
         print(f"Binary dump:      {'No' if args.no_dump_binary else 'Yes'}")
         print(f"Detailed dump:    {'No' if args.no_dump_detailed else 'Yes'}")
@@ -210,6 +220,7 @@ Examples:
         # Step 2: Initialize modules
         if args.verbose:
             print("[2/6] Initializing modules and performing resource mapping...")
+
         modules = init_modules(cfg, 
                              use_direct_mapping=args.direct_mapping,
                              use_heuristic_search=args.heuristic_search,

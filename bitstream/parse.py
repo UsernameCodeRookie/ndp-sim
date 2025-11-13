@@ -51,7 +51,7 @@ def load_config(config_file='./data/gemm_config_reference_aligned.json'):
     with open(config_file) as f:
         return json.load(f)
 
-def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=False, heuristic_iterations=5000):
+def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuristic_iterations=5000):
     """Initialize all hardware modules from config and perform resource mapping.
     
     Args:
@@ -96,7 +96,7 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=False, heur
     # First, only allocate resources for nodes that appear in connections
     NodeGraph.get().allocate_resources(only_connected_nodes=True)
     
-    # Choose mapping strategy based on parameters
+    # Choose mapping strategy based on parameters (heuristic enabled by default)
     if use_direct_mapping:
         # Direct mapping: use allocation order without constraint search
         print("\n=== Using Direct Mapping (No Constraint Search) ===")
@@ -105,10 +105,6 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=False, heur
         # Heuristic search: use simulated annealing for large graphs
         print("\n=== Using Heuristic Search (Simulated Annealing) ===")
         NodeGraph.get().heuristic_search_mapping(max_iterations=heuristic_iterations)
-    else:
-        # Run constraint search to optimize resource placement
-        print("\n=== Running Constraint Search ===")
-        NodeGraph.get().search_mapping()
     
     # After mapping, allocate remaining resources for unconnected nodes
     NodeGraph.get().allocate_resources(only_connected_nodes=False)

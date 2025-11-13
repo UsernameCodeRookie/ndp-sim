@@ -2,6 +2,7 @@ from bitstream.config.base import BaseConfigModule
 from typing import List, Optional
 from bitstream.bit import Bit
 from bitstream.index import Connect, NodeIndex
+from bitstream.config.mapper import NodeGraph
 from math import log2
 
 
@@ -251,10 +252,18 @@ class StreamConfig(BaseConfigModule):
         submodule.from_json(stream_cfg)
         self.submodules = [submodule]
         
-        # Add group connection
-        group = stream_cfg.get('buffer_lc_group', None)
-        if group is not None:
-            Connect(f"{group}", submodule.id)
+        # Cast idx 'A'..'D' to integer 0..3 and store in self.idx, which is mutable
+        idx_char = stream_cfg.get("idx", None)
+        if idx_char is not None:
+            try:
+                computed_idx = ord(idx_char) - ord('A')
+                self.idx = computed_idx
+                # Assign to the fully-qualified node name used elsewhere (e.g., 'STREAM.stream0')
+                NodeGraph.get().assign_node(f"STREAM.{self.stream_key}", f"STREAM{self.idx}")
+            except Exception:
+                # If idx_char is not a single character, skip assigning and leave idx as None
+                pass
+        
     
     def to_bits(self) -> List[Bit]:
         """Return bits from the submodule."""

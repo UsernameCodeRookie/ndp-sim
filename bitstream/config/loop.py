@@ -1,5 +1,6 @@
 from bitstream.config.base import BaseConfigModule
 from bitstream.index import NodeIndex, Connect
+from bitstream.config.mapper import NodeGraph
 from typing import Optional, List
 from bitstream.bit import Bit
 
@@ -266,6 +267,18 @@ class BufferLoopControlGroupConfig(BaseConfigModule):
             # Get the group key corresponding to the idx
             key = keys[self.idx]
             cfg = cfg.get(key, cfg)
+            
+            # Get physical index from configuration (idx may be a letter like 'A'); convert to numeric index
+            idx_char = cfg.get("idx", None)
+            if idx_char is not None:
+                try:
+                    idx_val = ord(idx_char) - ord('A')
+                    # self.physical_index = idx_val
+                    node_graph = NodeGraph.get()
+                    node_graph.assign_node(key, f"GROUP{idx_val}")
+                except Exception:
+                    # If idx_char is not a single char, gracefully fallback: don't assign
+                    pass
             
             # Check if this group has meaningful data (not just a comment)
             has_data = any(k in cfg for k in ["ROW_LC", "COL_LC"])

@@ -42,6 +42,9 @@ class Mapper:
         # Direct mapping mode flag
         self.use_direct_mapping: bool = False
         
+        # Assigned node
+        self.assigned_node: Dict[str, str] = {}
+        
     def get_type(self, node: str) -> Optional[str]:
         """Infer the resource type of a node based on its name prefix."""
         if node.startswith("DRAM_LC.LC"):
@@ -88,8 +91,10 @@ class Mapper:
             res_type = "STREAM"
             res_idx = 3 + int(resource[len("WRITE_STREAM"):])  # Offset for WRITE_STREAM resources
         else:
+            # Extract alphabetical prefix as resource type and digits as index if present
             res_type = ''.join(ch for ch in resource if ch.isalpha())
-            res_idx = int(''.join(ch for ch in resource if ch.isdigit()))
+            digits = ''.join(ch for ch in resource if ch.isdigit())
+            res_idx = int(digits) if digits != '' else 0
         
         return res_type, res_idx
     
@@ -334,25 +339,6 @@ class Mapper:
                     return 0.0
                 return float(d - 1)
             return 0.0
-        
-    class GROUPtoSTREAMConstraint(Constraint):
-        """GROUP i → STREAM j constraint:
-        Unified STREAM indexing: READ_STREAM0,1,2 → 0,1,2; WRITE_STREAM0 → 3
-        """
-        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "GROUP" and dst_type == "STREAM":
-                # GROUP can connect to streams with reasonable topology constraints
-                return abs(dst_idx - src_idx) in [0]
-            return True
-        
-        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
-            if src_type == "GROUP" and dst_type == "STREAM":
-                d = abs(dst_idx - src_idx)
-                if d in [0]:
-                    return 0.0
-                return float(d)
-            return 0.0
-
     
     def direct_mapping(self) -> Dict[str, str]:
         """
@@ -366,7 +352,7 @@ class Mapper:
         print(f"[Direct Mapping] Mapped {len(self.node_to_resource)} nodes")
         return self.node_to_resource
     
-    def heuristic_search(self, connections: List[Dict[str, str]], max_iterations: int = 5000, 
+    def search(self, connections: List[Dict[str, str]], max_iterations: int = 5000, 
                         initial_temp: float = 100.0, cooling_rate: float = 0.995,
                         node_metadata: Optional[Dict[str, Dict]] = None,
                         repair_prob: float = 0.2) -> Optional[Dict[str, str]]:
@@ -399,8 +385,7 @@ class Mapper:
             self.LCtoGROUPConstraint(),
             self.LCtoSTREAMConstraint(),
             self.PEtoPEConstraint(),
-            self.PEtoSTREAMConstraint(),
-            self.GROUPtoSTREAMConstraint(),
+            self.PEtoSTREAMConstraint()
         ]
         
         # Collect all nodes participating in connections
@@ -416,6 +401,12 @@ class Mapper:
         
         unique_nodes = [node for node in self.nodes if node in nodes_in_connections]
         print(f"[Simulated Annealing] Processing {len(unique_nodes)} nodes")
+        # Skip nodes that were explicitly assigned via assign_node() from the search, but keep them for cost checks
+        assigned_nodes = [n for n in unique_nodes if n in set(self.assigned_node.keys())]
+        if assigned_nodes:
+            print(f"[Simulated Annealing] Skipping {len(assigned_nodes)} pre-assigned nodes: {assigned_nodes}")
+        unique_search_nodes = [n for n in unique_nodes if n not in set(self.assigned_node.keys())]
+        print(f"[Simulated Annealing] Nodes being searched: {len(unique_search_nodes)}")
         
         # Group nodes by the pool key (based on EXISTING resource if present, else logical type)
         # This ensures that node operations (swap/reassign/repair) are only done within the same pool
@@ -435,7 +426,7 @@ class Mapper:
             return node_type
 
         nodes_by_type = defaultdict(list)
-        for node in unique_nodes:
+        for node in unique_search_nodes:
             pkey = pool_key_for_node(node)
             if pkey:
                 nodes_by_type[pkey].append(node)
@@ -443,6 +434,9 @@ class Mapper:
         # Helper function to calculate cost (sum of constraint penalties)
         def calculate_cost(mapping: Dict[str, str]) -> float:
             cost = 0.0
+            # Ensure cost checks include pre-assigned nodes as well
+            full_mapping = self.node_to_resource.copy()
+            full_mapping.update(mapping)
             for c in connections:
                 src, dst = c["src"], c["dst"]
                 if src.endswith("ROW_LC") or src.endswith("COL_LC"):
@@ -450,9 +444,9 @@ class Mapper:
                 if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
                     dst = dst.split(".")[0]
 
-                if src in mapping and dst in mapping:
-                    src_res = mapping[src]
-                    dst_res = mapping[dst]
+                if src in full_mapping and dst in full_mapping:
+                    src_res = full_mapping[src]
+                    dst_res = full_mapping[dst]
                     src_type, src_idx = self.parse_resource(src_res)
                     dst_type, dst_idx = self.parse_resource(dst_res)
 
@@ -463,7 +457,9 @@ class Mapper:
         # Initialize with current allocation - allow randomized start to better explore
         # Start with a mapping that preserves node->resource uniqueness per type
         def random_initial_mapping():
-            m = {}
+            # Start with pre-assigned nodes already in the mapping and mark their resources used
+            m = {n: self.node_to_resource[n] for n in assigned_nodes}
+            pre_used_res = set(m.values())
             for t, nodes in nodes_by_type.items():
                 pool = self.resource_pools.get(t, [])
                 if len(nodes) > len(pool):
@@ -476,8 +472,8 @@ class Mapper:
                             idx = len(m) % len(pool)
                             m[n] = pool[idx]
                 else:
-                    # Shuffle pool and assign unique resources
-                    shuffled = pool.copy()
+                    # Shuffle pool and assign unique resources, avoiding any resources already used by pre-assigned nodes
+                    shuffled = [r for r in pool if r not in pre_used_res]
                     random.shuffle(shuffled)
                     for i, n in enumerate(nodes):
                         # If node already mapped and there's a valid mapping, prefer keeping it
@@ -514,6 +510,9 @@ class Mapper:
                       f"T={temperature:.2f}, cost={current_cost}, best={best_cost}, "
                       f"accepted={accepted_moves}, rejected={rejected_moves}")
             
+            # If there are no unassigned nodes to operate on, exit loop early
+            if not nodes_by_type:
+                break
             # Select a random resource type and perform either a swap or a reassign
             res_type = random.choice(list(nodes_by_type.keys()))
             type_nodes = nodes_by_type[res_type]
@@ -551,10 +550,13 @@ class Mapper:
                 # Repair move: pick a violated connection and try to reduce its penalty by changing an endpoint
                 # Collect violated connections and select the worst offender
                 def _conn_penalty(src, dst, mapping):
-                    if src not in mapping or dst not in mapping:
+                    # Combine pre-assigned mappings with the current mapping to evaluate penalties
+                    full_map = self.node_to_resource.copy()
+                    full_map.update(mapping)
+                    if src not in full_map or dst not in full_map:
                         return 0.0
-                    src_res = mapping[src]
-                    dst_res = mapping[dst]
+                    src_res = full_map[src]
+                    dst_res = full_map[dst]
                     src_type, src_idx = self.parse_resource(src_res)
                     dst_type, dst_idx = self.parse_resource(dst_res)
                     total = 0.0
@@ -577,23 +579,44 @@ class Mapper:
                     # Sort by penalty and select the worst connection
                     violated.sort(reverse=True)
                     _, src_bad, dst_bad = violated[0]
-                    node = src_bad if random.random() < 0.5 else dst_bad
-                    # Determine pool based on actual pool key for this node
-                    pkey = pool_key_for_node(node)
-                    pool = self.resource_pools.get(pkey, [])
+                    # Prefer selecting an unassigned endpoint for repair
+                    if src_bad in unique_search_nodes and dst_bad in unique_search_nodes:
+                        node = src_bad if random.random() < 0.5 else dst_bad
+                    elif src_bad in unique_search_nodes:
+                        node = src_bad
+                    elif dst_bad in unique_search_nodes:
+                        node = dst_bad
+                    else:
+                        # Both endpoints are pre-assigned; skip targeted repair
+                        node = None
+                    # Determine pool based on actual pool key for this node (only if node is not None)
+                    if node is not None:
+                        pkey = pool_key_for_node(node)
+                        pool = self.resource_pools.get(pkey, [])
+                    else:
+                        pool = []
                     # Try candidate resources and pick the one that minimizes total cost
                     best_local = None
                     best_local_cost = float('inf')
                     used = set(current_mapping.values())
-                    for cand in pool:
-                        if cand in used and cand != current_mapping.get(node):
+                    if node is None:
+                        # fallback to swapping if targeted repair isn't possible
+                        if len(type_nodes) < 2:
                             continue
-                        trial = current_mapping.copy()
-                        trial[node] = cand
-                        cst = calculate_cost(trial)
-                        if cst < best_local_cost:
-                            best_local_cost = cst
-                            best_local = trial
+                        node1, node2 = random.sample(type_nodes, 2)
+                        new_mapping = current_mapping.copy()
+                        new_mapping[node1], new_mapping[node2] = new_mapping[node2], new_mapping[node1]
+                        # proceed to evaluation below
+                    else:
+                        for cand in pool:
+                            if cand in used and cand != current_mapping.get(node):
+                                continue
+                            trial = current_mapping.copy()
+                            trial[node] = cand
+                            cst = calculate_cost(trial)
+                            if cst < best_local_cost:
+                                best_local_cost = cst
+                                best_local = trial
                     if best_local is not None:
                         new_mapping = best_local
                     else:
@@ -741,184 +764,6 @@ class Mapper:
         
         self.node_to_resource = best_mapping
         return best_mapping
-    
-    def search(self, connections: List[Dict[str, str]], timeout_seconds: int = 600) -> Optional[Dict[str, str]]:
-        """
-        Perform a backtracking search to find a valid mapping between nodes and resources
-        that satisfies all architectural constraints.
-
-        Args:
-            connections (List[Dict[str, str]]): List of connection dictionaries (e.g., {"src": ..., "dst": ...})
-            timeout_seconds (int): Maximum search duration in seconds (default: 600)
-
-        Returns:
-            Optional[Dict[str, str]]: Valid node→resource mapping if found; otherwise None
-        """
-        start_time = time.time()
-        self._timeout = False
-
-        # Define all structural constraints that must hold between mapped resources
-        self.constraints: List[Mapper.Constraint] = [
-            self.LCtoLCConstraint(),
-            self.LCtoPEConstraint(),
-            self.LCtoGROUPConstraint(),
-            self.LCtoSTREAMConstraint(),
-            self.PEtoPEConstraint(),
-            self.PEtoSTREAMConstraint(),
-            self.GROUPtoSTREAMConstraint(),
-        ]
-
-        # === Collect all nodes participating in the connection graph ===
-        nodes_in_connections = set()
-        for c in connections:
-            src, dst = c["src"], c["dst"]
-            # Normalize LC suffixes (e.g., "NODE.ROW_LC" → "NODE")
-            if src.endswith("ROW_LC") or src.endswith("COL_LC"):
-                src = src.split(".")[0]
-            if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
-                dst = dst.split(".")[0]
-            nodes_in_connections.add(src)
-            nodes_in_connections.add(dst)
-
-        # Debug: show which nodes are involved in constraints
-        print(f"[Debug] Checking nodes in connections:")
-        for node in sorted(nodes_in_connections):
-            res = self.node_to_resource.get(node)
-            res_type = self.get_type(node)
-            print(f"  {node}: type={res_type}, mapped_to={res}")
-        
-        # Keep only nodes that are both known and connected
-        unique_nodes = [node for node in self.nodes if node in nodes_in_connections]
-        print(f"[Debug] Search has {len(unique_nodes)} nodes to map (from {len(nodes_in_connections)} nodes in connections)")
-        print(f"[Debug] unique_nodes: {unique_nodes}")
-
-        attempt_count = [0]  # mutable counter shared across recursion
-
-        # === Recursive backtracking ===
-        def backtrack(index: int, current_mapping: Dict[str, str], used_resources: Set[str]) -> Optional[Dict[str, str]]:
-            attempt_count[0] += 1
-
-            # Periodic progress logging
-            if attempt_count[0] % 1000 == 0:
-                print(f"[Debug] Search attempts: {attempt_count[0]}, at node index {index}/{len(unique_nodes)}")
-            if attempt_count[0] == 1:
-                print(f"[Debug] Starting backtrack with {len(unique_nodes)} nodes, initial used_resources: {used_resources}")
-            
-            # Check timeout condition
-            if time.time() - start_time > timeout_seconds:
-                if not self._timeout:
-                    print(f"[Warning] Constraint search timeout after {timeout_seconds} seconds ({attempt_count[0]} attempts)")
-                    self._timeout = True
-                return None
-            
-            # === Base case: all nodes assigned ===
-            if index >= len(unique_nodes):
-                full_mapping = self.node_to_resource.copy()
-                full_mapping.update(current_mapping)
-
-                # Verify all constraints across connected pairs
-                for c in connections:
-                    src, dst = c["src"], c["dst"]
-                    if src.endswith("ROW_LC") or src.endswith("COL_LC"):
-                        src = src.split(".")[0]
-                    if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
-                        dst = dst.split(".")[0]
-                    
-                    if src in full_mapping and dst in full_mapping:
-                        src_res = full_mapping[src]
-                        dst_res = full_mapping[dst]
-                        src_type, src_idx = self.parse_resource(src_res)
-                        dst_type, dst_idx = self.parse_resource(dst_res)
-
-                        # Check each constraint between these resources
-                        failed = False
-                        for constraint in self.constraints:
-                            if not constraint.check(src_type, src_idx, dst_type, dst_idx):
-                                failed = True
-                                break
-                        if failed:
-                            return None  # violate constraint → backtrack
-
-                # All constraints satisfied → success
-                self.node_to_resource = full_mapping
-                return full_mapping
-
-            # === Recursive case: assign resource for next node ===
-            node = unique_nodes[index]
-            existing_res = self.node_to_resource.get(node)
-            node_type = self.get_type(node) if not existing_res else self.get_type_from_resource(existing_res)
-            
-            if node_type is None:
-                raise RuntimeError(f"[Error] Cannot allocate resource for node: {node}")
-            
-            pool = self.resource_pools.get(node_type, [])
-
-            # Helper function to check if current assignment violates any constraints
-            def check_current_assignment(test_node: str, test_res: str) -> bool:
-                """Check if assigning test_res to test_node violates constraints with already assigned nodes."""
-                full_mapping = self.node_to_resource.copy()
-                full_mapping.update(current_mapping)
-                full_mapping[test_node] = test_res
-                
-                # Get the set of nodes we've assigned so far (including test_node)
-                assigned_nodes = set(unique_nodes[:index+1])
-                
-                for c in connections:
-                    src, dst = c["src"], c["dst"]
-                    if src.endswith("ROW_LC") or src.endswith("COL_LC"):
-                        src = src.split(".")[0]
-                    if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
-                        dst = dst.split(".")[0]
-                    
-                    # Only check if both endpoints are in our search space and have been assigned
-                    if src not in assigned_nodes or dst not in assigned_nodes:
-                        continue
-                    
-                    if src not in full_mapping or dst not in full_mapping:
-                        continue
-                            
-                    src_res = full_mapping[src]
-                    dst_res = full_mapping[dst]
-                    src_type, src_idx = self.parse_resource(src_res)
-                    dst_type, dst_idx = self.parse_resource(dst_res)
-                    
-                    for constraint in self.constraints:
-                        if not constraint.check(src_type, src_idx, dst_type, dst_idx):
-                            return False
-                return True
-            
-            # 1. Try existing resource (if defined and available)
-            if existing_res and existing_res not in used_resources and existing_res in pool:
-                if check_current_assignment(node, existing_res):
-                    current_mapping[node] = existing_res
-                    used_resources.add(existing_res)
-                    solution = backtrack(index + 1, current_mapping, used_resources)
-                    if solution:
-                        return solution
-                    used_resources.remove(existing_res)
-                    del current_mapping[node]
-
-            # 2. Try all alternative resources from the pool
-            for res in pool:
-                if res in used_resources or res == existing_res:
-                    continue
-                if check_current_assignment(node, res):
-                    current_mapping[node] = res
-                    used_resources.add(res)
-                    solution = backtrack(index + 1, current_mapping, used_resources)
-                    if solution:
-                        return solution
-                    used_resources.remove(res)
-                    del current_mapping[node]
-
-            # No valid assignment found for this path
-            return None
-
-        # Start the recursive search with empty used resources
-        # All nodes should be in unique_nodes since we only allocated connected nodes
-        return backtrack(0, {}, set())
-
-
 
     def get(self, node: str) -> Optional[str]:
         """Return the physical resource assigned to a given node."""
@@ -985,6 +830,18 @@ class NodeGraph:
         connection = {"src": src, "dst": dst}
         if connection not in self.connections:
             self.connections.append(connection)
+            
+    def assign_node(self, node: str, resource: str):
+        """Assign a specific physical resource to a logical node."""
+        
+        if resource.startswith("STREAM"):
+            idx = int(resource.replace("STREAM", ""))
+            stream_type = "read" if idx in [0, 1, 2] else "write"
+            resource = f"{'READ_STREAM' if stream_type == 'read' else 'WRITE_STREAM'}{idx if stream_type == 'read' else 0}"
+        
+        self.mapping.node_to_resource[node] = resource
+        self.mapping.assigned_node[node] = resource
+        self.mapping.nodes.append(node)
 
     def allocate_resources(self, only_connected_nodes=False):
         """Allocate physical resources for all registered nodes.
@@ -1035,24 +892,12 @@ class NodeGraph:
         print(f"[Heuristic Search] Using {len(self.connections)} connections")
         for c in self.connections:
             print(f"  Connection: {c['src']} -> {c['dst']}")
-        result = self.mapping.heuristic_search(self.connections, max_iterations=max_iterations, 
+        result = self.mapping.search(self.connections, max_iterations=max_iterations, 
                                               node_metadata=self.node_metadata)
         if result is None or len(result) == 0:
             print("[Warning] Heuristic search failed, keeping initial allocation")
         else:
             print(f"[Success] Heuristic search completed with {len(result)} nodes")
-            self.mapping.node_to_resource = result
-    
-    def search_mapping(self):
-        """Search for a valid node→resource mapping satisfying constraints."""
-        print(f"[Debug] Starting constraint search with {len(self.connections)} connections")
-        for c in self.connections:
-            print(f"  Connection: {c['src']} -> {c['dst']}")
-        result = self.mapping.search(self.connections, timeout_seconds=300)
-        if result is None or len(result) == 0:
-            print("[Warning] Constraint search failed or timed out, keeping initial allocation")
-        else:
-            print(f"[Success] Found valid mapping with {len(result)} nodes")
             self.mapping.node_to_resource = result
 
     def summary(self):
