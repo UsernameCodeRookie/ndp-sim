@@ -153,13 +153,37 @@ class Mapper:
         
         # Special case: STREAM nodes need to know read vs write
         if res_type == "STREAM":
-            if stream_type == "read":
-                res_type = "READ_STREAM"
-            elif stream_type == "write":
-                res_type = "WRITE_STREAM"
+            # In direct mapping mode, determine read/write based on logical index
+            if self.use_direct_mapping:
+                logical_idx = self.extract_logical_index(node)
+                if logical_idx is not None:
+                    # streams 0-2 are READ_STREAMs, stream 3+ are WRITE_STREAMs
+                    num_read_streams = len(self.resource_pools["READ_STREAM"])
+                    if logical_idx < num_read_streams:
+                        res_type = "READ_STREAM"
+                        idx = logical_idx
+                    else:
+                        res_type = "WRITE_STREAM"
+                        idx = logical_idx - num_read_streams
+                else:
+                    # Fallback if we can't extract index
+                    if stream_type == "read":
+                        res_type = "READ_STREAM"
+                    elif stream_type == "write":
+                        res_type = "WRITE_STREAM"
+                    else:
+                        res_type = "READ_STREAM"
+                    idx = None  # Will be set by counter below
             else:
-                # Default to READ_STREAM if not specified
-                res_type = "READ_STREAM"
+                # Normal mode: use stream_type parameter
+                if stream_type == "read":
+                    res_type = "READ_STREAM"
+                elif stream_type == "write":
+                    res_type = "WRITE_STREAM"
+                else:
+                    # Default to READ_STREAM if not specified
+                    res_type = "READ_STREAM"
+                idx = None  # Will be set by counter below
 
         pool = self.resource_pools.get(res_type)
         if pool is None:
@@ -168,16 +192,21 @@ class Mapper:
         # Determine index based on mapping mode
         if self.use_direct_mapping:
             # Direct mapping: extract logical index from node name
-            logical_idx = self.extract_logical_index(node)
-            if logical_idx is not None:
-                idx = logical_idx
-                # Validate index is within pool range
+            if idx is None:  # idx might already be set for STREAM nodes above
+                logical_idx = self.extract_logical_index(node)
+                if logical_idx is not None:
+                    idx = logical_idx
+                    # Validate index is within pool range
+                    if idx >= len(pool):
+                        raise RuntimeError(f"[Error] Direct mapping failed: {node} has index {idx}, but {res_type} pool only has {len(pool)} resources")
+                else:
+                    # Fallback to counter if we can't extract index
+                    idx = self.resource_counters[res_type]
+                    self.resource_counters[res_type] += 1
+            else:
+                # idx was already set (e.g., for STREAM nodes), validate it
                 if idx >= len(pool):
                     raise RuntimeError(f"[Error] Direct mapping failed: {node} has index {idx}, but {res_type} pool only has {len(pool)} resources")
-            else:
-                # Fallback to counter if we can't extract index
-                idx = self.resource_counters[res_type]
-                self.resource_counters[res_type] += 1
         else:
             # Normal allocation — pick the next available resource from the pool
             idx = self.resource_counters[res_type]
