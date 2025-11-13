@@ -134,16 +134,129 @@ class Connect:
         self.dst = dst
         
         NodeGraph.get().connect(src, dst.node_name)
+    
+    @staticmethod
+    def _get_node_type(node_name: str) -> str:
+        """Extract node type from node name."""
+        if node_name.startswith("DRAM_LC.LC"):
+            return "LC"
+        elif node_name.startswith("LC_PE.PE"):
+            return "PE"
+        elif "ROW_LC" in node_name:
+            return "ROW_LC"
+        elif "COL_LC" in node_name:
+            return "COL_LC"
+        elif node_name.startswith("STREAM."):
+            return "STREAM"
+        else:
+            return "UNKNOWN"
+    
+    def _calculate_relative_index(self) -> int:
+        """
+        Calculate relative index based on source and destination node types.
+        
+        Rules:
+        - LC i → LC j: j in [i-2, i-1, i+1, i+2] maps to [0, 1, 2, 3]
+        - LC i → ROW_LC (GROUP j): LC [(j-1)*2 : (j+1)*2+1] maps to [0, 1, 2, 3, 4, 5]
+        - ROW_LC (GROUP j) → COL_LC (GROUP j): maps to 6
+        - LC i → PE j: j in [i-1, i, i+1] maps to [0, 1, 2]
+        - PE i → PE j: j in [i-2, i-1, i+1, i+2] maps to [3, 4, 5, 6]
+        - LC i → STREAM j: LC [(j-1)*2 : (j+1)*2+1] maps to [0, 1, 2, 3, 4, 5]
+        - PE i → STREAM j: PE [(j-1)*2 : (j+1)*2+1] maps to [6, 7, 8, 9, 10, 11]
+        """
+        # Ensure physical IDs are resolved
+        if self.src._physical_id is None or self.dst._physical_id is None:
+            NodeIndex.resolve_all()
+        
+        src_phys_id = self.src._physical_id if self.src._physical_id is not None else 0
+        dst_phys_id = self.dst._physical_id if self.dst._physical_id is not None else 0
+        
+        src_type = self._get_node_type(self.src.node_name)
+        dst_type = self._get_node_type(self.dst.node_name)
+        
+        # LC → LC: [i-2, i-1, i+1, i+2] → [0, 1, 2, 3]
+        if src_type == "LC" and dst_type == "LC":
+            diff = src_phys_id - dst_phys_id
+            if diff == -2:
+                return 0
+            elif diff == -1:
+                return 1
+            elif diff == 1:
+                return 2
+            elif diff == 2:
+                return 3
+            else:
+                return 0  # Fallback for invalid connection
+        
+        # LC → ROW_LC (part of GROUP): LC [(group_id-1)*2 : (group_id+1)*2+1] → [0, 1, 2, 3, 4, 5]
+        elif src_type == "LC" and dst_type == "ROW_LC":
+            # Extract GROUP id from dst node name (e.g., "GROUP0.ROW_LC" → 0)
+            group_id = dst_phys_id  # ROW_LC shares physical_id with its GROUP
+            # Calculate valid LC range for this GROUP
+            lc_range_start = (group_id - 1) * 2
+            lc_range = list(range(max(0, lc_range_start), (group_id + 1) * 2 + 2))
+            if src_phys_id in lc_range:
+                return lc_range.index(src_phys_id)
+            return 0
+        
+        # ROW_LC → COL_LC (same GROUP): → 6
+        elif src_type == "ROW_LC" and dst_type == "COL_LC":
+            return 6
+        
+        # LC → PE: [i-1, i, i+1] → [0, 1, 2]
+        elif src_type == "LC" and dst_type == "PE":
+            diff = src_phys_id - dst_phys_id
+            if diff == -1:
+                return 0
+            elif diff == 0:
+                return 1
+            elif diff == 1:
+                return 2
+            else:
+                return 0
+        
+        # PE → PE: [i-2, i-1, i+1, i+2] → [3, 4, 5, 6]
+        elif src_type == "PE" and dst_type == "PE":
+            diff = src_phys_id - dst_phys_id
+            if diff == -2:
+                return 3
+            elif diff == -1:
+                return 4
+            elif diff == 1:
+                return 5
+            elif diff == 2:
+                return 6
+            else:
+                return 0
+        
+        # LC → STREAM: LC [(stream_id-1)*2 : (stream_id+1)*2+1] → [0, 1, 2, 3, 4, 5]
+        elif src_type == "LC" and dst_type == "STREAM":
+            stream_id = dst_phys_id
+            lc_range_start = (stream_id - 1) * 2
+            lc_range = list(range(max(0, lc_range_start), (stream_id + 1) * 2 + 2))
+            if src_phys_id in lc_range:
+                return lc_range.index(src_phys_id)
+            return 0
+        
+        # PE → STREAM: PE [(stream_id-1)*2 : (stream_id+1)*2+1] → [6, 7, 8, 9, 10, 11]
+        elif src_type == "PE" and dst_type == "STREAM":
+            stream_id = dst_phys_id
+            pe_range_start = (stream_id - 1) * 2
+            pe_range = list(range(max(0, pe_range_start), (stream_id + 1) * 2 + 2))
+            if src_phys_id in pe_range:
+                return 6 + pe_range.index(src_phys_id)
+            return 0
+        
+        # Default: return absolute physical ID for unknown types
+        return src_phys_id
         
     def __int__(self):
         # Ensure resolution before returning value
         if self.src._physical_id is None:
             NodeIndex.resolve_all()
         
-        # Return physical ID or 0 if not available
-        if self.src and self.src._physical_id is not None:
-            return self.src._physical_id
-        return 0
+        # Return relative index based on connection type
+        return self._calculate_relative_index()
     
     def __repr__(self):
         return f"Connect({self.src.node_name} -> {self.dst.node_name})"
