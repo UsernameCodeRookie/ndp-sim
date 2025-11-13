@@ -31,6 +31,27 @@ class DataPacket {
 };
 
 /**
+ * @brief Boolean data packet (for control signals like ready/valid)
+ */
+class BoolDataPacket : public DataPacket {
+ public:
+  explicit BoolDataPacket(bool value) : value_(value) {}
+
+  bool getValue() const { return value_; }
+  void setValue(bool value) { value_ = value; }
+
+  std::shared_ptr<DataPacket> clone() const override {
+    auto cloned = std::make_shared<BoolDataPacket>(value_);
+    cloned->setTimestamp(timestamp_);
+    cloned->setValid(valid_);
+    return cloned;
+  }
+
+ private:
+  bool value_;
+};
+
+/**
  * @brief Simple integer data packet
  */
 class IntDataPacket : public DataPacket {

@@ -119,10 +119,10 @@ class ReadyValidConnection : public Connection {
   /** @brief Check if buffer has data to send */
   bool hasDataToSend() const { return !data_buffer_.empty(); }
 
-  /** @brief Read signal value from port (returns 1 if port has value 1) */
+  /** @brief Read boolean signal from port (for ready/valid signals) */
   bool readSignal(std::shared_ptr<Port> port) const {
-    auto data = std::dynamic_pointer_cast<IntDataPacket>(port->getData());
-    return data && data->getValue() == 1;
+    auto data = std::dynamic_pointer_cast<BoolDataPacket>(port->getData());
+    return data && data->getValue();
   }
 
   /** @brief Phase 1: Transfer buffered data to destination if ready */

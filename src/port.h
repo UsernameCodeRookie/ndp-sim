@@ -21,6 +21,7 @@ enum class PortDirection { INPUT, OUTPUT, BIDIRECTIONAL };
  * @brief Port class
  *
  * Represents an interface point on a component for data input/output
+ * Type checking is done at runtime using dynamic_pointer_cast
  */
 class Port {
  public:

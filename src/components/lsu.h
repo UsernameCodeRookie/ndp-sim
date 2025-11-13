@@ -289,11 +289,13 @@ class LoadStoreUnit : public Architecture::TickingComponent {
   }
 
   void createPorts() {
-    addPort("req_in", Architecture::PortDirection::INPUT);
-    addPort("resp_out", Architecture::PortDirection::OUTPUT);
-    addPort("ready", Architecture::PortDirection::OUTPUT);
-    addPort("valid", Architecture::PortDirection::INPUT);
-    addPort("done", Architecture::PortDirection::OUTPUT);
+    addPort("req_in",
+            Architecture::PortDirection::INPUT);  // MemoryRequestPacket
+    addPort("resp_out",
+            Architecture::PortDirection::OUTPUT);  // MemoryResponsePacket
+    addPort("ready", Architecture::PortDirection::OUTPUT);  // BoolDataPacket
+    addPort("valid", Architecture::PortDirection::INPUT);   // BoolDataPacket
+    addPort("done", Architecture::PortDirection::OUTPUT);   // BoolDataPacket
   }
 
   void handlePortIO() {
@@ -329,12 +331,10 @@ class LoadStoreUnit : public Architecture::TickingComponent {
 
     bool is_ready = (request_queue_.size() < queue_depth_) &&
                     (current_state_ == State::IDLE);
-    ready_out->write(
-        std::make_shared<Architecture::IntDataPacket>(is_ready ? 1 : 0));
+    ready_out->write(std::make_shared<Architecture::BoolDataPacket>(is_ready));
 
     bool is_done = (current_state_ == State::IDLE) && request_queue_.empty();
-    done_out->write(
-        std::make_shared<Architecture::IntDataPacket>(is_done ? 1 : 0));
+    done_out->write(std::make_shared<Architecture::BoolDataPacket>(is_done));
 
     if (current_response_) {
       resp_out->write(std::static_pointer_cast<Architecture::DataPacket>(

@@ -30,9 +30,12 @@ class Component {
 
   // Port management
   /**
-   * @brief Create and add a port in one step
+   * @brief Create and add a port
    * @param port_name Name of the port
    * @param direction Direction of the port (INPUT or OUTPUT)
+   *
+   * Note: Data type is inferred at runtime using dynamic_pointer_cast
+   * and sizeof when accessing port data
    */
   void addPort(const std::string& port_name, PortDirection direction) {
     auto port = std::make_shared<Port>(port_name, direction, this);

@@ -107,13 +107,16 @@ class PingPongController : public Architecture::TickingComponent {
 
   void createPorts() {
     // Output ports to LSU
-    addPort("req_out", Architecture::PortDirection::OUTPUT);
-    addPort("valid_out", Architecture::PortDirection::OUTPUT);
+    addPort("req_out",
+            Architecture::PortDirection::OUTPUT);  // MemoryRequestPacket
+    addPort("valid_out",
+            Architecture::PortDirection::OUTPUT);  // BoolDataPacket
 
     // Input ports from LSU
-    addPort("resp_in", Architecture::PortDirection::INPUT);
-    addPort("ready_in", Architecture::PortDirection::INPUT);
-    addPort("done_in", Architecture::PortDirection::INPUT);
+    addPort("resp_in",
+            Architecture::PortDirection::INPUT);  // MemoryResponsePacket
+    addPort("ready_in", Architecture::PortDirection::INPUT);  // BoolDataPacket
+    addPort("done_in", Architecture::PortDirection::INPUT);   // BoolDataPacket
   }
 
   void handleIdle() {
@@ -128,12 +131,12 @@ class PingPongController : public Architecture::TickingComponent {
     auto store_request = std::make_shared<MemoryRequestPacket>(
         LSUOp::STORE, current_address_, current_value_);
 
-    // Send request - connection will handle backpressure
+    // Send request with valid signal - connection will handle backpressure
     auto req_out = getPort("req_out");
     auto valid_out = getPort("valid_out");
 
     req_out->write(store_request);
-    valid_out->write(std::make_shared<Architecture::IntDataPacket>(1));
+    valid_out->write(std::make_shared<Architecture::BoolDataPacket>(true));
 
     requests_sent_++;
     current_state_ = State::WAIT_STORE;
@@ -172,12 +175,12 @@ class PingPongController : public Architecture::TickingComponent {
     auto load_request =
         std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, current_address_);
 
-    // Send request - connection will handle backpressure
+    // Send request with valid signal - connection will handle backpressure
     auto req_out = getPort("req_out");
     auto valid_out = getPort("valid_out");
 
     req_out->write(load_request);
-    valid_out->write(std::make_shared<Architecture::IntDataPacket>(1));
+    valid_out->write(std::make_shared<Architecture::BoolDataPacket>(true));
 
     requests_sent_++;
     current_state_ = State::WAIT_LOAD;
