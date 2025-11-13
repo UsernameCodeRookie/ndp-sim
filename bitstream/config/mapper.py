@@ -276,7 +276,7 @@ class Mapper:
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "PE" and dst_type == "STREAM":
                 # PE can connect to streams with reasonable topology constraints
-                return abs(dst_idx - (src_idx // 2)) in [1, 2]
+                return abs(dst_idx - (src_idx // 2)) in [0, 1]
             return True
 
     
@@ -293,7 +293,8 @@ class Mapper:
         return self.node_to_resource
     
     def heuristic_search(self, connections: List[Dict[str, str]], max_iterations: int = 5000, 
-                        initial_temp: float = 100.0, cooling_rate: float = 0.995) -> Optional[Dict[str, str]]:
+                        initial_temp: float = 100.0, cooling_rate: float = 0.995,
+                        node_metadata: Optional[Dict[str, Dict]] = None) -> Optional[Dict[str, str]]:
         """
         Perform simulated annealing search to find a valid mapping for large graphs.
         Uses probabilistic optimization to escape local minima and find better solutions.
@@ -303,10 +304,13 @@ class Mapper:
             max_iterations: Maximum number of optimization iterations (default: 5000)
             initial_temp: Initial temperature for simulated annealing (default: 100.0)
             cooling_rate: Temperature cooling rate per iteration (default: 0.995)
+            node_metadata: Dictionary containing node metadata like stream_type (default: None)
         
         Returns:
             Dict[str, str]: Valid node→resource mapping if found; otherwise None
         """
+        if node_metadata is None:
+            node_metadata = {}
         import random
         import math
         
@@ -341,11 +345,16 @@ class Mapper:
         nodes_by_type = defaultdict(list)
         for node in unique_nodes:
             node_type = self.get_type(node)
-            if node_type and node_type != "STREAM":  # Group READ/WRITE streams together
+            if node_type and node_type != "STREAM":
                 nodes_by_type[node_type].append(node)
             elif node_type == "STREAM":
-                # Determine actual stream type from metadata
-                nodes_by_type["STREAM"].append(node)
+                # Separate READ_STREAM and WRITE_STREAM nodes - they cannot be swapped
+                metadata = node_metadata.get(node, {})
+                stream_type = metadata.get('stream_type', 'read')
+                if stream_type == "read":
+                    nodes_by_type["READ_STREAM"].append(node)
+                else:
+                    nodes_by_type["WRITE_STREAM"].append(node)
         
         # Helper function to calculate cost (number of constraint violations)
         def calculate_cost(mapping: Dict[str, str]) -> int:
@@ -738,7 +747,8 @@ class NodeGraph:
         print(f"[Heuristic Search] Using {len(self.connections)} connections")
         for c in self.connections:
             print(f"  Connection: {c['src']} -> {c['dst']}")
-        result = self.mapping.heuristic_search(self.connections, max_iterations=max_iterations)
+        result = self.mapping.heuristic_search(self.connections, max_iterations=max_iterations, 
+                                              node_metadata=self.node_metadata)
         if result is None or len(result) == 0:
             print("[Warning] Heuristic search failed, keeping initial allocation")
         else:
