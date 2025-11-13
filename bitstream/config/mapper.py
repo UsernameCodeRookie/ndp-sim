@@ -451,6 +451,26 @@ class Mapper:
             print(f"[Simulated Annealing] Success: Found valid mapping with 0 violations")
         else:
             print(f"[Simulated Annealing] Warning: Best mapping has {best_cost} constraint violations")
+            # Print which connections are violated
+            print(f"[Simulated Annealing] Constraint violations:")
+            for c in connections:
+                src, dst = c["src"], c["dst"]
+                if src.endswith("ROW_LC") or src.endswith("COL_LC"):
+                    src = src.split(".")[0]
+                if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
+                    dst = dst.split(".")[0]
+                
+                if src in best_mapping and dst in best_mapping:
+                    src_res = best_mapping[src]
+                    dst_res = best_mapping[dst]
+                    src_type, src_idx = self.parse_resource(src_res)
+                    dst_type, dst_idx = self.parse_resource(dst_res)
+                    
+                    for constraint in self.constraints:
+                        if not constraint.check(src_type, src_idx, dst_type, dst_idx):
+                            print(f"  ✗ {src} ({src_res}) -> {dst} ({dst_res}): "
+                                  f"{src_type}{src_idx} -> {dst_type}{dst_idx} violates {constraint.__class__.__name__}")
+                            break
         
         self.node_to_resource = best_mapping
         return best_mapping
