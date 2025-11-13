@@ -5,9 +5,9 @@
 
 #include "../src/components/lsu.h"
 #include "../src/components/pingpong.h"
-#include "../src/ready_valid_connection.h"
 #include "../src/scheduler.h"
 #include "../src/trace.h"
+#include "connections/ready_valid.h"
 
 /**
  * @brief Test demonstrating connection usage

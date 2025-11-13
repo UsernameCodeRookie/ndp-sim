@@ -1,5 +1,5 @@
-#ifndef READY_VALID_CONNECTION_H
-#define READY_VALID_CONNECTION_H
+#ifndef READY_VALID_H
+#define READY_VALID_H
 
 #include <cstdint>
 #include <memory>
@@ -220,4 +220,4 @@ class ReadyValidConnection : public Connection {
 
 }  // namespace Architecture
 
-#endif  // READY_VALID_CONNECTION_H
+#endif  // READY_VALID_H

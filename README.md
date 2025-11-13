@@ -43,7 +43,7 @@ Primary objectives are:
 - **Ticking components:** `TickingComponent` represents clocked blocks. Upon `start`, it schedules self-rescheduling lambda events spaced by the configured period, mirroring synchronous digital logic.
 - **Pipelined execution:** `PipelineComponent` (e.g., ALU pipelines) manages stage-local state, stall and flush controls, and stage-specific transformation functions. Statistics such as occupancy and stall counts are tracked for analysis.
 
-## 5. Communication Fabric (`src/port.h`, `src/connection.h`, `src/ready_valid_connection.h`)
+## 5. Communication Fabric (`src/port.h`, `src/connection.h`, `src/connections/ready_valid.h`)
 - **Port semantics:** Ports may be input, output, or bidirectional. Writes place shared pointers to `DataPacket`; reads consume them, enabling back-pressure modeling.
 - **Data packets:** `DataPacket` holds a timestamp and validity bit plus virtual cloning, allowing heterogeneous payloads (`IntDataPacket`, `ALUDataPacket`, `MemoryRequestPacket`, etc.).
 - **Connections:** `Connection` objects aggregate source and destination ports and enforce propagation latency. `TickingConnection` periodically invokes `propagate` without additional user code.
