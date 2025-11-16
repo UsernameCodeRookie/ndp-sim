@@ -77,12 +77,7 @@ class ReadStreamEngineConfig(BaseConfigModule):
     
     def from_json(self, cfg: dict):
         """Load read stream configuration from JSON."""
-        if not cfg.get("memory_AG", {}):
-            self.set_empty()
-            return
-        
         self.id = NodeIndex(f"STREAM.{self.stream_key}", stream_type="read")
-        cfg = cfg.get("memory_AG", cfg)
         super().from_json(cfg)
 
     def set_empty(self):
@@ -150,7 +145,6 @@ class WriteStreamEngineConfig(BaseConfigModule):
     def from_json(self, cfg: dict):
         """Load write stream configuration from JSON."""
         self.id = NodeIndex(f"STREAM.{self.stream_key}", stream_type="write")
-        cfg = cfg.get("memory_AG", cfg)
         super().from_json(cfg)
 
 
@@ -233,14 +227,6 @@ class StreamConfig(BaseConfigModule):
             return
         
         stream_cfg = stream_engine[self.stream_key]
-        
-        # Extract stream type from memory_AG.mode
-        memory_ag = stream_cfg.get("memory_AG", {})
-        
-        if memory_ag is {}:
-            self.set_empty()
-        
-        self.stream_type = memory_ag.get("mode", "read")
         
         # Create appropriate submodule based on stream type
         if self.stream_type == "write":
