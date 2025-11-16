@@ -17,6 +17,7 @@
 #include "rvv_alu.h"
 #include "rvv_dispatch.h"
 #include "rvv_dvu.h"
+#include "rvv_interface.h"
 #include "rvv_regfile.h"
 #include "rvv_retire.h"
 #include "rvv_rob.h"
@@ -68,8 +69,10 @@ struct RVVBackendPacket : public DataPacket {
  * - Out-of-order execution with in-order retirement (ROB-based)
  * - Write forwarding through ROB for hazard resolution
  * - Multi-port flop-based vector register file
+ *
+ * Implements RVVCoreInterface for integration with Scalar Core
  */
-class RVVBackend : public Pipeline {
+class RVVBackend : public Pipeline, public RVVCoreInterface {
  public:
   /**
    * @brief Constructor
@@ -110,10 +113,7 @@ class RVVBackend : public Pipeline {
   }
 
   /**
-   * @brief Issue instruction to backend
-   *
-   * @param inst RVV instruction
-   * @return true if accepted, false if pipeline full
+   * @brief Issue instruction to backend (old interface, for compatibility)
    */
   bool issueInstruction(const RVVInstruction& inst) {
     if (pending_instructions_.size() >= 32) {
@@ -149,6 +149,110 @@ class RVVBackend : public Pipeline {
            rob_->isEmpty();
   }
 
+  // ========================================================================
+  // RVVCoreInterface Implementation
+  // ========================================================================
+
+  /**
+   * @brief Issue instruction from scalar core
+   *
+   * Convert RVVCoreInterface::InstructionRequest to internal RVVInstruction
+   */
+  bool issueInstruction(
+      const RVVCoreInterface::InstructionRequest& inst_req) override {
+    if (pending_instructions_.size() >= 32) {
+      return false;
+    }
+
+    RVVInstruction inst;
+    inst.inst_id = inst_req.inst_id;
+    inst.opcode = inst_req.opcode;
+    // Note: RVVInstruction doesn't have 'bits' field, fields are already
+    // extracted
+    inst.vs1_idx = inst_req.vs1_idx;
+    inst.vs2_idx = inst_req.vs2_idx;
+    inst.vd_idx = inst_req.vd_idx;
+    inst.vm = inst_req.vm;
+    inst.sew = inst_req.sew;
+    inst.lmul = inst_req.lmul;
+    inst.vl = inst_req.vl;
+    inst.pc = inst_req.pc;
+
+    pending_instructions_.push(inst);
+    return true;
+  }
+
+  /**
+   * @brief Read scalar register from scalar core
+   */
+  uint64_t readScalarRegister(uint32_t addr) const override {
+    // TODO: Connect to scalar core register file when integrated
+    return 0;
+  }
+
+  /**
+   * @brief Write result to scalar register
+   */
+  void writeScalarRegister(uint32_t addr, uint64_t data, uint8_t) override {
+    // TODO: Route to scalar core register file
+  }
+
+  /**
+   * @brief Get current vector configuration state
+   */
+  RVVConfigState getConfigState() const override {
+    RVVConfigState state;
+    state.vl = config_state_.vl;
+    state.vstart = config_state_.vstart;
+    state.ma = config_state_.ma;
+    state.ta = config_state_.ta;
+    state.xrm = config_state_.xrm;
+    state.sew = config_state_.sew;
+    state.lmul = config_state_.lmul;
+    state.lmul_orig = config_state_.lmul_orig;
+    state.vill = config_state_.vill;
+    return state;
+  }
+
+  /**
+   * @brief Update vector configuration state
+   */
+  void setConfigState(const RVVConfigState& config) override {
+    config_state_.vl = config.vl;
+    config_state_.vstart = config.vstart;
+    config_state_.ma = config.ma;
+    config_state_.ta = config.ta;
+    config_state_.xrm = config.xrm;
+    config_state_.sew = config.sew;
+    config_state_.lmul = config.lmul;
+    config_state_.lmul_orig = config.lmul_orig;
+    config_state_.vill = config.vill;
+  }
+
+  /**
+   * @brief Get retire writes for result writeback
+   */
+  std::vector<Rob2Rt> getRetireWrites() override {
+    std::vector<Rob2Rt> writes;
+    // TODO: Implement when retiring
+    return writes;
+  }
+
+  /**
+   * @brief Get queue capacity
+   */
+  uint32_t getQueueCapacity() const override {
+    return static_cast<uint32_t>(32 - pending_instructions_.size());
+  }
+
+  /**
+   * @brief Check for trap signals
+   */
+  bool getTrap(RVVCoreInterface::InstructionRequest&) const override {
+    // TODO: Implement trap detection
+    return false;
+  }
+
  private:
   uint32_t vlen_;
   size_t num_decode_ports_;
@@ -172,6 +276,19 @@ class RVVBackend : public Pipeline {
   uint64_t execute_count_;
   uint64_t retire_count_;
   uint64_t stall_count_;
+
+  // Configuration state (mirrors RvvConfigState from CoralNPU)
+  struct ConfigState {
+    uint32_t vl = 0;
+    uint32_t vstart = 0;
+    bool ma = false;
+    bool ta = false;
+    uint8_t xrm = 0;
+    uint8_t sew = 0;
+    uint8_t lmul = 0;
+    uint8_t lmul_orig = 0;
+    bool vill = false;
+  } config_state_;
 
   /**
    * @brief Setup Decode Stage
