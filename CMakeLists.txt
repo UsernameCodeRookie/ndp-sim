@@ -70,6 +70,12 @@ target_include_directories(test_dvu PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_dvu gtest gtest_main pthread)
 add_test(NAME test_dvu COMMAND test_dvu)
 
+# --- BRU tests ---
+add_executable(test_bru tests/test_bru.cpp)
+target_include_directories(test_bru PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_bru gtest gtest_main pthread)
+add_test(NAME test_bru COMMAND test_bru)
+
 enable_testing()
 
 # -----------------------------
