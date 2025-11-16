@@ -100,6 +100,12 @@ target_include_directories(test_core_eventdriven PRIVATE ${CMAKE_SOURCE_DIR}/src
 target_link_libraries(test_core_eventdriven gtest gtest_main pthread)
 add_test(NAME test_core_eventdriven COMMAND test_core_eventdriven)
 
+# --- RVV Vector ALU tests ---
+add_executable(test_rvv_alu tests/test_rvv_alu.cpp)
+target_include_directories(test_rvv_alu PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_rvv_alu gtest gtest_main pthread)
+add_test(NAME test_rvv_alu COMMAND test_rvv_alu)
+
 # --- MAC Example ---
 add_executable(mac_example example/mac_example.cpp)
 target_include_directories(mac_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
