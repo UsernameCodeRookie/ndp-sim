@@ -153,6 +153,11 @@ add_executable(mac_example example/mac_example.cpp)
 target_include_directories(mac_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(mac_example pthread)
 
+# --- RVV ALU Example ---
+add_executable(rvv_alu_example example/rvv_alu_example.cpp)
+target_include_directories(rvv_alu_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(rvv_alu_example pthread)
+
 enable_testing()
 
 # -----------------------------

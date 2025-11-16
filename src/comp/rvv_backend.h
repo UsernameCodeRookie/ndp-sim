@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <queue>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,7 @@
 #include "../port.h"
 #include "../scheduler.h"
 #include "../tick.h"
+#include "../trace.h"
 #include "component.h"
 #include "pipeline.h"
 #include "rvv_alu.h"
@@ -307,6 +309,16 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
             auto new_pkt = std::make_shared<RVVBackendPacket>();
             new_pkt->uop = RVVUop(inst, 0, 1, decode_count_);
             pending_instructions_.pop();
+
+            // Trace: Decode stage processes instruction
+            std::stringstream ss;
+            ss << "inst_id=" << new_pkt->uop.inst_id << " opcode=0x" << std::hex
+               << inst.opcode << std::dec << " vd=" << inst.vd_idx
+               << " vs1=" << inst.vs1_idx << " vs2=" << inst.vs2_idx
+               << " vl=" << inst.vl;
+            EventDriven::Tracer::getInstance().traceInstruction(
+                scheduler_.getCurrentTime(), name_, "DECODE", ss.str());
+
             decode_count_++;
             return new_pkt;
           }
@@ -336,10 +348,19 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
                             rvv_pkt->uop.vd_idx, true, 0);
 
           if (rob_idx < 0) {
+            stall_count_++;
             return nullptr;
           }
 
           rvv_pkt->rob_index = rob_idx;
+
+          // Trace: Dispatch stage allocates ROB entry
+          std::stringstream ss;
+          ss << "inst_id=" << rvv_pkt->uop.inst_id << " rob_idx=" << rob_idx
+             << " vd=" << rvv_pkt->uop.vd_idx;
+          EventDriven::Tracer::getInstance().traceEvent(
+              scheduler_.getCurrentTime(), name_, "DISPATCH", ss.str());
+
           dispatch_count_++;
           in_flight_uops_.push_back(rvv_pkt->uop);
           return rvv_pkt;
@@ -372,6 +393,14 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
           rob_->markComplete(rvv_pkt->rob_index, rvv_pkt->result_data,
                              rvv_pkt->byte_enable);
 
+          // Trace: Execute stage completes instruction
+          std::stringstream ss;
+          ss << "inst_id=" << rvv_pkt->uop.inst_id
+             << " rob_idx=" << rvv_pkt->rob_index
+             << " result_size=" << rvv_pkt->result_data.size();
+          EventDriven::Tracer::getInstance().traceCompute(
+              scheduler_.getCurrentTime(), name_, "EXECUTE", ss.str());
+
           execute_count_++;
           return rvv_pkt;
         });
@@ -393,6 +422,17 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
           }
 
           auto writes = retire_->processRetireEntries(retire_entries);
+
+          // Trace: Retire stage commits instructions
+          for (size_t i = 0; i < retire_entries.size(); ++i) {
+            std::stringstream ss;
+            ss << "inst_id=" << retire_entries[i].inst_id
+               << " rob_idx=" << retire_entries[i].rob_index
+               << " vd=" << retire_entries[i].dest_reg;
+            EventDriven::Tracer::getInstance().traceEvent(
+                scheduler_.getCurrentTime(), name_, "RETIRE", ss.str());
+          }
+
           retire_count_ += writes.size();
           rob_->retire(retire_entries.size());
 
