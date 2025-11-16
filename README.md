@@ -43,19 +43,19 @@ Primary objectives are:
 - **Ticking components:** `TickingComponent` represents clocked blocks. Upon `start`, it schedules self-rescheduling lambda events spaced by the configured period, mirroring synchronous digital logic.
 - **Pipelined execution:** `PipelineComponent` (e.g., ALU pipelines) manages stage-local state, stall and flush controls, and stage-specific transformation functions. Statistics such as occupancy and stall counts are tracked for analysis.
 
-## 5. Communication Fabric (`src/port.h`, `src/connection.h`, `src/connections/ready_valid.h`)
+## 5. Communication Fabric (`src/port.h`, `src/connection.h`, `src/conn/ready_valid.h`)
 - **Port semantics:** Ports may be input, output, or bidirectional. Writes place shared pointers to `DataPacket`; reads consume them, enabling back-pressure modeling.
 - **Data packets:** `DataPacket` holds a timestamp and validity bit plus virtual cloning, allowing heterogeneous payloads (`IntDataPacket`, `ALUDataPacket`, `MemoryRequestPacket`, etc.).
 - **Connections:** `Connection` objects aggregate source and destination ports and enforce propagation latency. `TickingConnection` periodically invokes `propagate` without additional user code.
 - **Handshake modeling:** `ReadyValidConnection` implements elastic buffering with ready/valid semantics, internal FIFOs, stall accounting, and optional pipeline latency to capture realistic flow control.
 
 ## 6. Processing Subsystems (`src/components`)
-### 6.1 Pipelined ALU (`components/alu.h`, `components/pipeline.h`)
+### 6.1 Pipelined ALU (`comp/alu.h`, `comp/pipeline.h`)
 - Three-stage pipeline (decode, execute, writeback) parameterized by lambda functions.
 - Rich ALU opcode set (arithmetic, logical, shifts, comparisons, saturation). Static helpers provide symbolic names and glyphs for debugging.
 - Stage-level verbose logging and statistics enable latency/pipeline hazard studies.
 
-### 6.2 Processing Element (`components/pe.h`)
+### 6.2 Processing Element (`comp/pe.h`)
 - Integrates register file, instruction queue with depth-controlled back pressure, and ALU execution.
 - Ports: instruction/data ingress, ready/valid handshake, result egress.
 - Queue occupancy statistics, register dumps, and utilization metrics aid microarchitectural evaluation.
@@ -63,13 +63,13 @@ Primary objectives are:
 ### 6.3 Event Libraries (`src/events`)
 - `ComputeEvent` and `MemoryAccessEvent` demonstrate pluggable behaviors atop the scheduler, showcasing extensibility for domain-specific stimuli.
 
-## 7. Memory Subsystem (`components/lsu.h`, `components/dram.h`)
+## 7. Memory Subsystem (`comp/lsu.h`, `comp/dram.h`)
 - **Memory banks:** `MemoryBank` simulates multi-cycle SRAMs with explicit state machines, latency counters, and response acknowledgment.
 - **Load-store unit:** Unified LSU handles scalar/vector accesses, queueing, per-bank arbitration, and ready/valid interfacing. Statistics capture stall cycles and completed operations.
 - **DRAM integration:** When compiled with `USE_DRAMSIM3`, `DRAMsim3Wrapper` delegates requests to a cycle-accurate third-party DRAM model, translating callbacks into completed transactions.
 - **Direct access primitives:** `LoadStoreUnit::directRead` and `directWrite` bypass port-level flow control for configuration and bootstrapping flows.
 
-## 8. Systolic Array TPU (`components/tpu.h`, `components/precision.h`)
+## 8. Systolic Array TPU (`comp/tpu.h`, `comp/precision.h`)
 - **MAC grid:** Template-based `SystolicArrayTPU` instantiates a square grid of `MACUnit`s. Each MAC maintains precision-specific accumulators and exposes hooks for instrumentation.
 - **Precision traits:** `Int32PrecisionTraits` and `Float32PrecisionTraits` define value/accumulator types, encoding/decoding logic, and stringification, enabling mixed-precision experimentation.
 - **Memory sharing:** A dedicated LSU instance services array memory operations, supporting both SRAM-style banks and optional DRAMsim3 backends.

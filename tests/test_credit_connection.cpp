@@ -7,8 +7,8 @@
 #include "../src/scheduler.h"
 #include "../src/tick.h"
 #include "../src/trace.h"
-#include "connections/credit.h"
-#include "connections/ready_valid.h"
+#include "conn/credit.h"
+#include "conn/ready_valid.h"
 
 using namespace Architecture;
 

@@ -3,7 +3,7 @@
 #include <cmath>
 #include <memory>
 
-#include "../src/components/fpu.h"
+#include "../src/comp/fpu.h"
 
 class FPUTest : public ::testing::Test {
  protected:

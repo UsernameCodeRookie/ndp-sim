@@ -3,11 +3,11 @@
 #include <iostream>
 #include <memory>
 
-#include "../src/components/lsu.h"
-#include "../src/components/pingpong.h"
+#include "../src/comp/lsu.h"
+#include "../src/comp/pingpong.h"
 #include "../src/scheduler.h"
 #include "../src/trace.h"
-#include "connections/ready_valid.h"
+#include "conn/ready_valid.h"
 
 /**
  * @brief Test demonstrating connection usage

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "../src/components/lsu.h"
+#include "../src/comp/lsu.h"
 #include "../src/scheduler.h"
 #include "../src/trace.h"
 
@@ -271,7 +271,8 @@ TEST_F(LSUTest, LSUReadySignal) {
   lsu->tick();
 
   ASSERT_TRUE(ready_out->hasData());
-  auto ready = std::dynamic_pointer_cast<Architecture::IntDataPacket>(ready_out->read());
+  auto ready =
+      std::dynamic_pointer_cast<Architecture::IntDataPacket>(ready_out->read());
   ASSERT_NE(ready, nullptr);
 }
 

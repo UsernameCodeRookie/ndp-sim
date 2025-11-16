@@ -7,7 +7,7 @@
 #include <limits>
 #include <type_traits>
 
-#include "../components/tpu.h"
+#include "../comp/tpu.h"
 #include "base.h"
 #include "tile.h"
 
