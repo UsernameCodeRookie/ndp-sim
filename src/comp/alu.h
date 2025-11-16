@@ -66,16 +66,18 @@ enum class ALUOp {
  */
 class ALUDataPacket : public Architecture::DataPacket {
  public:
-  ALUDataPacket(int32_t a = 0, int32_t b = 0, ALUOp op = ALUOp::ADD)
-      : operand_a(a), operand_b(b), op(op) {}
+  ALUDataPacket(int32_t a = 0, int32_t b = 0, ALUOp op = ALUOp::ADD,
+                uint32_t rd = 0)
+      : operand_a(a), operand_b(b), op(op), rd(rd) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return cloneImpl<ALUDataPacket>(operand_a, operand_b, op);
+    return cloneImpl<ALUDataPacket>(operand_a, operand_b, op, rd);
   }
 
   int32_t operand_a;
   int32_t operand_b;
   ALUOp op;
+  uint32_t rd;  // Destination register
 };
 
 /**
@@ -393,9 +395,9 @@ class ArithmeticLogicUnit : public Pipeline {
                       a << " " << getOpSymbol(alu_data->op) << " " << b << " = "
                         << result << " | ops=" << operations_executed_);
 
-        // Create result packet
-        auto result_packet =
-            std::make_shared<Architecture::IntDataPacket>(result);
+        // Create result packet with rd information
+        auto result_packet = std::make_shared<Architecture::ALUResultPacket>(
+            result, alu_data->rd);
         result_packet->timestamp = scheduler_.getCurrentTime();
         return std::static_pointer_cast<Architecture::DataPacket>(
             result_packet);

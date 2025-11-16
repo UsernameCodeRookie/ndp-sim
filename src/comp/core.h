@@ -383,12 +383,14 @@ class SCore : public Pipeline {
       uint64_t current_time = scheduler_.getCurrentTime();
 
       // Try to fetch a new instruction from instruction memory
-      // Check if fetch buffer is not full before fetching more
-      if (fetch_buffer_.empty()) {
-        uint32_t inst_word = getInstruction(pc_);
-
-        // Only fetch valid instructions (not all zeros or out of bounds)
-        if (inst_word != 0) {
+      // Allow fetch_buffer to accumulate instructions (max size 8) to handle
+      // stalls
+      const size_t MAX_FETCH_BUFFER = 8;
+      if (fetch_buffer_.size() < MAX_FETCH_BUFFER) {
+        uint32_t addr = pc_ / 4;
+        // Check if address is within instruction memory bounds
+        if (addr < instruction_memory_.size()) {
+          uint32_t inst_word = instruction_memory_[addr];
           fetch_buffer_.push_back({pc_, inst_word});
 
           TRACE_COMPUTE(current_time, getName(), "STAGE0_FETCH",
@@ -444,6 +446,13 @@ class SCore : public Pipeline {
               "Cannot dispatch, fetch_buffer size=" << fetch_buffer_.size());
         }
       }
+
+      // Always return a valid data packet to keep Pipeline flowing
+      // This ensures Stage 2 is continuously called for writeback polling
+      // even when dispatch is stalled
+      if (!data) {
+        data = std::make_shared<Architecture::IntDataPacket>(0);
+      }
       return data;
     });
 
@@ -452,16 +461,35 @@ class SCore : public Pipeline {
     setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
       uint64_t current_time = scheduler_.getCurrentTime();
 
-      // Only count retirement if data is valid
-      if (data) {
-        instructions_retired_++;
+      // Poll ALU outputs for completed instructions
+      std::shared_ptr<Architecture::DataPacket> wb_result = nullptr;
+      for (uint32_t i = 0; i < alusv_.size(); i++) {
+        auto alu = alusv_[i];
+        auto out_port = alu->getPort("out");
+        if (out_port && out_port->hasData()) {
+          auto result = out_port->read();
+          auto alu_result =
+              std::dynamic_pointer_cast<Architecture::ALUResultPacket>(result);
+          if (alu_result) {
+            // Write result to register file and clear scoreboard
+            if (alu_result->rd != 0) {
+              regfile_->writeRegister(alu_result->rd, alu_result->value);
+              retireInstruction(alu_result->rd);
 
-        TRACE_COMPUTE(
-            current_time, getName(), "STAGE2_WRITEBACK",
-            "Retired " << 1 << " instruction, total=" << instructions_retired_);
+              TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
+                            "Retired ALU result=" << alu_result->value
+                                                  << " to x" << alu_result->rd);
+            }
+            instructions_retired_++;
+            wb_result = result;  // Return ALU result to keep pipeline moving
+          }
+        }
       }
 
-      return data;
+      // If we found an ALU result, return it (keeps Stage 2 active)
+      // Otherwise return the data from Stage 1 (if any)
+      // This ensures Stage 2 is always called even when dispatch is stalled
+      return wb_result ? wb_result : data;
     });
   }
 
@@ -717,7 +745,19 @@ class SCore : public Pipeline {
   void dispatchToALU(const DecodedInstruction& inst, uint32_t lane) {
     // Read operands and dispatch using helper
     uint32_t rs1_val = regfile_->readRegister(inst.rs1);
-    uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+
+    // For I-type instructions (like ADDI), use immediate as second operand
+    // For R-type instructions (like ADD), use rs2 register
+    uint32_t rs2_val = inst.imm;  // Default to immediate (I-type)
+
+    // If this is an R-type instruction, read rs2
+    // Check if inst.opcode (bits 25-31) indicates R-type
+    // For now, assume ADDI uses imm, ADD uses rs2
+    // A better check would examine the funct3 field
+    if ((inst.word & 0x7F) == 0x33) {  // R-type opcode (ADD, SUB, etc)
+      rs2_val = regfile_->readRegister(inst.rs2);
+    }
+
     issueALU(lane, rs1_val, rs2_val, inst.opcode, inst.rd);
   }
 
@@ -776,9 +816,9 @@ class SCore : public Pipeline {
       auto alu = alusv_[lane];
       auto in_port = alu->getPort("in");
       if (in_port && !in_port->hasData()) {
-        auto cmd = std::make_shared<ALUDataPacket>(static_cast<int32_t>(op1),
-                                                   static_cast<int32_t>(op2),
-                                                   static_cast<ALUOp>(opcode));
+        auto cmd = std::make_shared<ALUDataPacket>(
+            static_cast<int32_t>(op1), static_cast<int32_t>(op2),
+            static_cast<ALUOp>(opcode), rd);
         cmd->timestamp = scheduler_.getCurrentTime();
         in_port->write(cmd);
       }

@@ -80,17 +80,38 @@ class MACExample {
     std::cout << "  Load instruction sequence into instruction memory:"
               << std::endl;
 
-    // Create 16 valid RISC-V instructions
-    // NOP instruction: ADDI x0, x0, 0 = 0x00000013
-    std::vector<uint32_t> instructions(16, 0x00000013);
+    // Create RISC-V ADDI instructions with different immediate values
+    // ADDI rd, rs1, imm: opcode=0x13
+    // Encode: imm[11:0](12) | rs1(5) | funct3(3) | rd(5) | opcode(7)
+
+    std::vector<uint32_t> instructions;
+
+    // Generate 16 ADDI instructions, each writing to a unique register (x1-x16)
+    // All source from x0 to avoid input dependencies
+    // This ensures all instructions can execute in parallel with no conflicts
+    for (int i = 0; i < 16; i++) {
+      // Use values from a[] and b[] arrays as immediates
+      int imm = a[i % 4] + b[i % 4];  // 15, 26, 37, 48 ...
+      imm = imm & 0xFFF;              // Keep 12-bit immediate
+
+      int rd =
+          i +
+          1;  // Use x1, x2, x3, ..., x16 (unique register for each instruction)
+      int rs1 = 0;  // Always use x0 as source to avoid input dependencies
+
+      // ADDI encoding: ADDI rd, x0, imm
+      uint32_t inst = (imm << 20) | (rs1 << 15) | (0 << 12) | (rd << 7) | 0x13;
+      instructions.push_back(inst);
+    }
 
     for (size_t i = 0; i < instructions.size(); i++) {
       core->loadInstruction(i * 4, instructions[i]);
     }
-    std::cout << "    Loaded " << instructions.size()
-              << " instructions into instruction memory\n"
+    std::cout << "    Loaded " << instructions.size() << " ADDI instructions\n"
               << std::endl;
-    std::cout << "    Core will automatically fetch and execute them!\n"
+    std::cout << "    Each instruction: ADDI x(i+1), x0, (a[i%4] + b[i%4])\n"
+              << std::endl;
+    std::cout << "    All instructions are independent - maximum parallelism!\n"
               << std::endl;
   }
 
