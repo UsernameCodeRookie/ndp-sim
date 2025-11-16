@@ -16,12 +16,12 @@ class ReadStreamEngineConfig(BaseConfigModule):
         # Padding (4 bits, not used but needed for alignment)
         ("_padding", 4),  
         # Memory AG fields
-        ("idx_mode", 6),                        # mse_mem_idx_keep_mode
+        ("idx_mode", 6, lambda x: [StreamConfig.inport_mode_map()[i] for i in x]),                        # mse_mem_idx_keep_mode
         ("idx_keep_last_index", 9),              # mse_mem_idx_keep_last_index
         ("idx", 12, lambda self, x: ReadStreamEngineConfig._encode_idx(self, x)),  # mem_inport_src_id
         ("idx_constant", 24),                    # mse_mem_idx_constant
         # Buffer AG fields
-        ("buf_idx_mode", 2),                     # mse_buf_idx_keep_mode
+        ("buf_idx_mode", 2, lambda x: [StreamConfig.inport_mode_map()[i] for i in x]),                     # mse_buf_idx_keep_mode
         ("buf_idx_keep_last_index", 6),          # mse_buf_idx_keep_last_index
         # Stream fields
         ("pingpong", 1),                         # mse_pingpong_enable
@@ -92,12 +92,12 @@ class WriteStreamEngineConfig(BaseConfigModule):
     
     FIELD_MAP = [
         # Memory AG fields
-        ("idx_mode", 6),                         # mse_mem_idx_keep_mode
+        ("idx_mode", 6, lambda x: [StreamConfig.inport_mode_map()[i] for i in x]),                         # mse_mem_idx_keep_mode
         ("idx_keep_last_index", 9),               # mse_mem_idx_keep_last_index
         ("idx", 12, lambda self, x: WriteStreamEngineConfig._encode_idx(self, x)),  # mem_inport_src_id
         ("mse_mem_idx_constant", 24),             # mse_mem_idx_constant
         # Buffer AG fields
-        ("buf_idx_mode", 2),                      # mse_buf_idx_keep_mode
+        ("buf_idx_mode", 2, lambda x: [StreamConfig.inport_mode_map()[i] for i in x]),                      # mse_buf_idx_keep_mode
         ("buf_idx_keep_last_index", 6),           # mse_buf_idx_keep_last_index
         # Stream fields
         ("ping_pong", 1),                         # mse_pingpong_enable
@@ -256,6 +256,16 @@ class StreamConfig(BaseConfigModule):
         if self.submodules:
             return self.submodules[0].to_bits()
         return []
+    
+    @staticmethod
+    def inport_mode_map():
+        """Map string inport modes to integers. Also accepts integers directly."""
+        return {
+            None: 0,
+            "buffer": 1,
+            "keep": 2,
+            "constant": 3,
+        }
 
 
 
