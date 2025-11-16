@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "../../trace.h"
+#include "../buffer.h"
 #include "decode.h"
 
 namespace Architecture {
@@ -16,7 +17,7 @@ namespace Architecture {
  *
  * Responsible for:
  * 1. Managing program counter and next-PC prediction
- * 2. Fetching instructions from instruction memory
+ * 2. Fetching instructions from instruction buffer (i-buffer)
  * 3. Handling branch redirects and flush events
  * 4. Filling the fetch buffer with instructions
  *
@@ -35,29 +36,25 @@ class FetchStage {
         pc_(0),
         next_pc_(4),
         fault_(false),
-        instruction_memory_(nullptr) {}
+        ibuffer_(nullptr) {}
 
   /**
-   * @brief Fetch next instruction from memory
+   * @brief Fetch next instruction from i-buffer
    *
-   * In a real implementation, this would access external instruction memory.
-   * For now, returns a placeholder instruction for the given PC.
+   * Reads instruction from the instruction buffer at the given PC.
    *
    * @param pc Program counter
    * @return Decoded instruction at given PC
    */
   DecodedInstruction fetchInstruction(uint32_t pc) {
-    // If instruction memory is provided, read from it
-    if (instruction_memory_) {
-      uint32_t addr = pc / 4;
-      if (addr < instruction_memory_->size()) {
-        uint32_t inst_word = (*instruction_memory_)[addr];
-        DecodedInstruction inst = DecodeStage::decode(pc, inst_word);
-        return inst;
-      }
+    // If instruction buffer is provided, read from it
+    if (ibuffer_) {
+      uint32_t inst_word = ibuffer_->load(pc);
+      DecodedInstruction inst = DecodeStage::decode(pc, inst_word);
+      return inst;
     }
 
-    // Default: Generate a NOP if no instruction memory
+    // Default: Generate a NOP if no instruction buffer
     DecodedInstruction inst;
     inst.addr = pc;
     inst.word = 0x00000013;  // ADDI x0, x0, 0 (NOP)
@@ -160,21 +157,18 @@ class FetchStage {
   }
 
   /**
-   * @brief Set external instruction memory
-   * @param imem Pointer to instruction memory vector
+   * @brief Set external instruction buffer
+   * @param ibuf Pointer to instruction buffer (Buffer with RANDOM_ACCESS mode)
    */
-  void setInstructionMemory(const std::vector<uint32_t>* imem) {
-    instruction_memory_ = imem;
-  }
+  void setInstructionBuffer(std::shared_ptr<Buffer> ibuf) { ibuffer_ = ibuf; }
 
  private:
   std::string name_;
   uint32_t fetch_buffer_size_;
-  uint32_t pc_;       // Current program counter
-  uint32_t next_pc_;  // Next PC (for simple sequential fetch)
-  bool fault_;        // Fetch fault flag
-  const std::vector<uint32_t>*
-      instruction_memory_;  // External instruction memory
+  uint32_t pc_;                      // Current program counter
+  uint32_t next_pc_;                 // Next PC (for simple sequential fetch)
+  bool fault_;                       // Fetch fault flag
+  std::shared_ptr<Buffer> ibuffer_;  // Instruction buffer (i-buffer)
 };
 
 }  // namespace Architecture

@@ -394,9 +394,17 @@ class ArithmeticLogicUnit : public Pipeline {
   int64_t accumulator_;
 
   void setupPipelineStages() {
-    // Stage 0: Decode - just pass through
-    setStageFunction(
-        0, [](std::shared_ptr<Architecture::DataPacket> data) { return data; });
+    // Stage 0: Decode - trace rd value and pass through
+    setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
+      auto alu_data = std::dynamic_pointer_cast<ALUDataPacket>(data);
+      if (alu_data) {
+        TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(),
+                      "ALU_STAGE0_ENTRY",
+                      "rd=" << alu_data->rd << " op1=" << alu_data->operand_a
+                            << " op2=" << alu_data->operand_b);
+      }
+      return data;
+    });
 
     // Stage 1: Execute - perform the actual operation
     setStageFunction(1, [this](std::shared_ptr<Architecture::DataPacket> data) {
@@ -409,10 +417,8 @@ class ArithmeticLogicUnit : public Pipeline {
 
         operations_executed_++;
 
-        TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(),
-                      getOpName(alu_data->op),
-                      a << " " << getOpSymbol(alu_data->op) << " " << b << " = "
-                        << result << " | ops=" << operations_executed_);
+        TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "ALU_STAGE1_EXEC",
+                      "rd=" << alu_data->rd << " result=" << result);
 
         // Create result packet with rd information
         auto result_packet = std::make_shared<Architecture::ALUResultPacket>(
@@ -424,9 +430,17 @@ class ArithmeticLogicUnit : public Pipeline {
       return data;
     });
 
-    // Stage 2: Write back - just pass through
-    setStageFunction(
-        2, [](std::shared_ptr<Architecture::DataPacket> data) { return data; });
+    // Stage 2: Write back - trace rd value and pass through
+    setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
+      auto alu_result =
+          std::dynamic_pointer_cast<Architecture::ALUResultPacket>(data);
+      if (alu_result) {
+        TRACE_COMPUTE(
+            scheduler_.getCurrentTime(), getName(), "ALU_STAGE2_OUT",
+            "rd=" << alu_result->rd << " value=" << alu_result->value);
+      }
+      return data;
+    });
   }
 };
 

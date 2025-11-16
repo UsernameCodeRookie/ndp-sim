@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <queue>
 #include <string>
@@ -10,6 +11,7 @@
 
 #include "comp/alu.h"
 #include "comp/bru.h"
+#include "comp/buffer.h"
 #include "comp/core/decode.h"
 #include "comp/core/dispatch.h"
 #include "comp/core/fetch.h"
@@ -151,6 +153,22 @@ class SCore : public Pipeline {
     );
     regfile_ =
         std::make_shared<RegisterFile>("RegisterFile", scheduler, rf_params);
+
+    // Create instruction buffer (i-buffer) based on Buffer class
+    BufferParameters ibuf_params(
+        4096,                       // depth: 4096 instructions
+        32,                         // data_width: 32 bits per instruction
+        1,                          // num_read_ports: 1 for fetch
+        1,                          // num_write_ports: 1 for load
+        BufferMode::RANDOM_ACCESS,  // mode: random access for instructions
+        false,                      // enable_bypass
+        true,                       // enable_overflow_check
+        true,                       // enable_underflow_check
+        0,                          // read_latency
+        0                           // write_latency
+    );
+    ibuffer_ =
+        std::make_shared<Buffer>(name + "_IBuffer", scheduler, ibuf_params);
 
     // Create connections
     createConnections();
@@ -347,8 +365,8 @@ class SCore : public Pipeline {
    * Brings all functional units, register file, and connections online
    */
   void initialize() override {
-    // Connect fetch stage to instruction memory
-    fetch_stage_.setInstructionMemory(&instruction_memory_);
+    // Connect fetch stage to instruction buffer
+    fetch_stage_.setInstructionBuffer(ibuffer_);
 
     // Call Pipeline's initialize to start the pipeline ticking
     Pipeline::initialize();
@@ -403,28 +421,29 @@ class SCore : public Pipeline {
    */
   void setupPipelineStages() {
     // Stage 0: Fetch/Decode
-    // Fetch instruction from instruction memory and decode it
+    // Fetch instruction from instruction buffer and decode it
     setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
       uint64_t current_time = scheduler_.getCurrentTime();
 
-      // Try to fetch a new instruction from instruction memory
+      // Try to fetch a new instruction from instruction buffer
       // Allow fetch_buffer to accumulate instructions (max size 8) to handle
       // stalls
       const size_t MAX_FETCH_BUFFER = 8;
       if (fetch_buffer_.size() < MAX_FETCH_BUFFER) {
-        uint32_t addr = pc_ / 4;
-        // Check if address is within instruction memory bounds
-        if (addr < instruction_memory_.size()) {
-          uint32_t inst_word = instruction_memory_[addr];
-          fetch_buffer_.push_back({pc_, inst_word});
+        // Load from buffer - always attempt to fetch
+        uint32_t inst_word = ibuffer_->load(pc_);
 
-          TRACE_COMPUTE(current_time, getName(), "STAGE0_FETCH",
-                        "Fetch from PC=0x" << std::hex << pc_ << " word=0x"
-                                           << inst_word << std::dec);
+        // Continue fetching as long as we're in valid address space
+        // Don't use inst_word value as stopping condition (0 is valid NOP)
+        // Only stop if we've explicitly detected end of program
+        fetch_buffer_.push_back({pc_, inst_word});
 
-          // Increment PC for next instruction
-          pc_ += 4;
-        }
+        TRACE_COMPUTE(current_time, getName(), "STAGE0_FETCH",
+                      "Fetch from PC=0x" << std::hex << pc_ << " word=0x"
+                                         << inst_word << std::dec);
+
+        // Increment PC for next instruction
+        pc_ += 4;
       }
 
       // If we have instructions in fetch buffer, create a packet to drive the
@@ -488,32 +507,46 @@ class SCore : public Pipeline {
       uint64_t current_time = scheduler_.getCurrentTime();
 
       // Poll ALL ALU writeback wires every cycle
+      // NOTE: Read from Wire's buffer instead of source port directly
+      // This uses the Wire's internal buffering to prevent data loss
       std::shared_ptr<Architecture::DataPacket> wb_result = nullptr;
       for (uint32_t i = 0; i < alu_wb_connections_.size(); i++) {
         auto conn = alu_wb_connections_[i];
-        if (conn && !conn->getSourcePorts().empty()) {
-          auto src_port = conn->getSourcePorts()[0];
-          if (src_port && src_port->hasData()) {
-            auto result = src_port->read();
+        if (conn) {
+          // Read from Wire's current buffer instead of source port
+          if (conn->hasCurrentData()) {
+            auto result = conn->getCurrentData();
+
             auto alu_result =
                 std::dynamic_pointer_cast<Architecture::ALUResultPacket>(
                     result);
             if (alu_result) {
-              // Write result to register file and clear scoreboard
-              if (alu_result->rd != 0) {
-                regfile_->writeRegister(alu_result->rd, alu_result->value);
-                TRACE_COMPUTE(current_time, getName(), "REGFILE_WRITE",
-                              "ALU wrote x" << alu_result->rd << " = "
-                                            << alu_result->value);
-                retireInstruction(alu_result->rd);
+              // Check if we've already processed this rd value
+              uint64_t result_cycle = result->timestamp;
+              if (last_alu_rd_cycles_[i] != result_cycle) {
+                // New result, process it
+                if (alu_result->rd != 0) {
+                  regfile_->writeRegister(alu_result->rd, alu_result->value);
+                  TRACE_COMPUTE(current_time, getName(), "ALU_OUTPUT",
+                                "ALU" << i << " rd=" << alu_result->rd
+                                      << " value=" << alu_result->value);
+                  TRACE_COMPUTE(current_time, getName(), "REGFILE_WRITE",
+                                "ALU wrote x" << alu_result->rd << " = "
+                                              << alu_result->value);
+                  retireInstruction(alu_result->rd);
 
-                TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
-                              "Retired ALU result=" << alu_result->value
-                                                    << " to x" << alu_result->rd
-                                                    << " from ALU" << i);
+                  TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
+                                "Retired ALU result="
+                                    << alu_result->value << " to x"
+                                    << alu_result->rd << " from ALU" << i);
+                  last_alu_rd_cycles_[i] = result_cycle;
+
+                  // Clear the wire buffer after successful read
+                  conn->clearCurrentData();
+                }
+                instructions_retired_++;
+                wb_result = result;  // Keep last result
               }
-              instructions_retired_++;
-              wb_result = result;  // Keep last result
             }
           }
         }
@@ -940,6 +973,9 @@ class SCore : public Pipeline {
             static_cast<ALUOp>(opcode), rd);
         cmd->timestamp = scheduler_.getCurrentTime();
         in_port->write(cmd);
+        TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "ALU_DISPATCH",
+                      "Dispatched to " << alu->getName() << " rd=" << rd
+                                       << " op1=" << op1 << " op2=" << op2);
         return true;
       }
     }
@@ -1106,16 +1142,12 @@ class SCore : public Pipeline {
 
  public:
   /**
-   * @brief Load instruction into instruction memory
+   * @brief Load instruction into instruction buffer
    * @param pc Program counter / address
    * @param instruction Encoded instruction word
    */
   void loadInstruction(uint32_t pc, uint32_t instruction) {
-    // Expand instruction memory if needed
-    if (pc / 4 >= instruction_memory_.size()) {
-      instruction_memory_.resize(pc / 4 + 1, 0);
-    }
-    instruction_memory_[pc / 4] = instruction;
+    ibuffer_->store(pc, instruction);
   }
 
   /**
@@ -1144,16 +1176,11 @@ class SCore : public Pipeline {
   }
 
   /**
-   * @brief Get instruction from instruction memory
+   * @brief Get instruction from instruction buffer
    * @param pc Program counter
    * @return Instruction word
    */
-  uint32_t getInstruction(uint32_t pc) const {
-    if (pc / 4 < instruction_memory_.size()) {
-      return instruction_memory_[pc / 4];
-    }
-    return 0;  // NOP if out of bounds
-  }
+  uint32_t getInstruction(uint32_t pc) const { return ibuffer_->load(pc); }
 
   /**
    * @brief Get statistics
@@ -1237,6 +1264,9 @@ class SCore : public Pipeline {
   std::shared_ptr<LoadStoreUnit> lsu_;                       // Load-Store unit
   std::shared_ptr<RegisterFile> regfile_;                    // Register file
 
+  // Memory components
+  std::shared_ptr<Buffer> ibuffer_;  // Instruction buffer (i-cache predecessor)
+
   // Connections
   std::vector<std::shared_ptr<Wire>> regfile_connections_;
   std::vector<std::shared_ptr<Wire>> alu_wb_connections_;
@@ -1255,9 +1285,6 @@ class SCore : public Pipeline {
   bool dvu_busy_;
   bool lsu_busy_;
 
-  // Instruction memory - stores encoded instructions
-  std::vector<uint32_t> instruction_memory_;  // Instruction words indexed by PC
-
   // Data memory - for LSU operations (separate address space)
   std::vector<uint32_t> data_memory_;
 
@@ -1268,6 +1295,10 @@ class SCore : public Pipeline {
   // Statistics
   uint64_t instructions_dispatched_;
   uint64_t instructions_retired_;
+
+  // Track last read ALU results to avoid duplicates
+  std::map<uint32_t, uint64_t>
+      last_alu_rd_cycles_;  // alu_index -> last rd cycle
 };
 
 }  // namespace Architecture

@@ -10,22 +10,30 @@
 namespace Architecture {
 
 /**
- * @brief WireConnection class - Simplest connection for single port to single
- * port
+ * @brief WireConnection class with single-level buffering
  *
- * This is the most basic connection that directly transfers data from a single
- * source port to a single destination port on each clock cycle.
+ * Transfers data from source port to destination port with one level of
+ * internal buffering to prevent data loss when producer outputs faster than
+ * consumer reads.
  *
- * - No buffering: data flows directly through
- * - No handshaking: no ready/valid signals
- * - No flow control: always transfers if data is available
+ * Buffer Management:
+ * - current_: data available for Core to read
+ * - next_: data received from ALU, waiting to become current
+ * - Each cycle: next becomes current, new ALU data goes to next
+ * - Prevents overwrites by buffering one value ahead
+ *
  * - Supports optional latency for simulating wire delay
  */
 class Wire : public TickingConnection {
  public:
   Wire(const std::string& name, EventDriven::EventScheduler& scheduler,
        uint64_t period)
-      : TickingConnection(name, scheduler, period), transfers_(0) {}
+      : TickingConnection(name, scheduler, period),
+        transfers_(0),
+        current_data_(nullptr),
+        next_data_(nullptr),
+        current_valid_(false),
+        next_valid_(false) {}
 
   virtual ~Wire() = default;
 
@@ -33,17 +41,43 @@ class Wire : public TickingConnection {
   uint64_t getTransfers() const { return transfers_; }
 
   /**
-   * @brief Propagate data directly from source to destination
+   * @brief Get current buffered data available for reading
+   * This is what Core reads from the wire
+   */
+  std::shared_ptr<DataPacket> getCurrentData() const { return current_data_; }
+  bool hasCurrentData() const { return current_valid_; }
+
+  /**
+   * @brief Clear current data after Core reads it
+   */
+  void clearCurrentData() {
+    current_data_ = nullptr;
+    current_valid_ = false;
+  }
+
+  /**
+   * @brief Propagate data with buffering
    *
-   * Simple protocol:
-   * 1. Read data from source port (if available)
-   * 2. Write data to destination port or buffer locally if no destination
-   * 3. Data remains available on source port if no destination exists
+   * Two-stage buffer protocol:
+   * 1. Read new data from ALU source port
+   * 2. If current buffer is empty, move to current
+   * 3. Otherwise buffer in next (don't overwrite current)
+   * 4. Each cycle: next moves to current when Core drains current
+   *
+   * This prevents data loss when ALU outputs faster than Core reads.
    */
   void propagate() override {
     if (src_ports_.empty()) return;
 
-    // Check if source port has data
+    // Stage 1: Move next → current if current was consumed
+    if (!current_valid_ && next_valid_) {
+      current_data_ = next_data_;
+      current_valid_ = true;
+      next_data_ = nullptr;
+      next_valid_ = false;
+    }
+
+    // Stage 2: Try to read new data from ALU
     if (src_ports_[0]->hasData()) {
       auto data = src_ports_[0]->read();
       if (data && data->valid) {
@@ -51,18 +85,23 @@ class Wire : public TickingConnection {
         if (!dst_ports_.empty()) {
           deliverData(dst_ports_[0], data);
           transfers_++;
+        } else {
+          // Buffer the data: current → next → current flow
+          if (!current_valid_) {
+            // Current is empty, fill it immediately
+            current_data_ = data;
+            current_valid_ = true;
+          } else if (!next_valid_) {
+            // Current is full, buffer in next
+            next_data_ = data;
+            next_valid_ = true;
+          } else {
+            // Both buffers full - this shouldn't happen in normal operation
+            // but we handle it by keeping current and overwriting next
+            // (current is what Core is actively reading)
+            next_data_ = data;
+          }
         }
-        // If no destination ports, keep data in a buffer on source port
-        // so it can be read by core's stage 2
-        // Note: we still need to keep the data somewhere - let's store it
-        // back on the source port so core can read it in stage 2
-        else {
-          // Buffer the data back to the source port for core to read
-          src_ports_[0]->setData(data);
-        }
-
-        // TRACE_EVENT(scheduler_.getCurrentTime(), name_, "WIRE_TRANSFER",
-        //             "transfers=" << transfers_);
       }
     }
   }
@@ -95,6 +134,13 @@ class Wire : public TickingConnection {
 
  private:
   uint64_t transfers_;  // Successful transfers count
+
+  // Two-level buffer for holding data
+  std::shared_ptr<DataPacket> current_data_;  // Data available for Core to read
+  std::shared_ptr<DataPacket>
+      next_data_;       // Buffered data waiting to become current
+  bool current_valid_;  // Whether current buffer has valid data
+  bool next_valid_;     // Whether next buffer has valid data
 };
 
 }  // namespace Architecture

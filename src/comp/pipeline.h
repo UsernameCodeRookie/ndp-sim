@@ -157,7 +157,21 @@ class Pipeline : public Architecture::TickingComponent {
     // Middle stages: propagate data backwards
     for (int i = num_stages_ - 1; i > 0; --i) {
       if (stages_[i - 1].valid) {
-        // Check if this stage is stalled
+        // Check if target stage is already occupied
+        if (stages_[i].valid) {
+          // Target stage is full, stall this stage
+          // But still apply the stage function to the data in place
+          auto processed_data = stage_functions_[i](stages_[i - 1].data);
+          stages_[i - 1].data =
+              processed_data;  // Keep updated data in current stage
+          TRACE_COMPUTE(
+              scheduler_.getCurrentTime(), getName(), "PIPELINE_STALL",
+              "Stage[" << (i - 1) << "] stalled, stage[" << i << "] full");
+          total_stalls_++;
+          continue;  // Don't advance, wait for target to empty
+        }
+
+        // Check if this stage is stalled by user-defined predicate
         if (stage_stall_predicates_[i](stages_[i - 1].data)) {
           // Stage is stalled, apply stage function but don't advance
           auto processed_data = stage_functions_[i](stages_[i - 1].data);
