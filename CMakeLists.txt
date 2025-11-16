@@ -118,6 +118,12 @@ target_include_directories(test_rvv_regfile PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_rvv_regfile gtest gtest_main pthread)
 add_test(NAME test_rvv_regfile COMMAND test_rvv_regfile)
 
+# --- RVV Dispatch tests ---
+add_executable(test_rvv_dispatch tests/test_rvv_dispatch.cpp)
+target_include_directories(test_rvv_dispatch PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_rvv_dispatch gtest gtest_main pthread)
+add_test(NAME test_rvv_dispatch COMMAND test_rvv_dispatch)
+
 # --- MAC Example ---
 add_executable(mac_example example/mac_example.cpp)
 target_include_directories(mac_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
