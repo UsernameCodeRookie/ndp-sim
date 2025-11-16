@@ -5,7 +5,7 @@
  * Demonstrates:
  * - Scalar Core (SCore) as instruction frontend
  * - RVV Backend for vector execution
- * - Core→RVV interface for issuing vector instructions
+ * - Direct Core→RVV interface integration
  * - Event-driven pipeline execution
  * - Vector ALU operations (VADD, VSUB, VAND, VOR)
  *
@@ -15,7 +15,7 @@
  *   ├─ Decode Stage: Decode vector instruction opcodes
  *   └─ Dispatch Stage: Issue vector instructions to RVV Backend
  *         ↓
- * RVVBackend (Vector Execution Engine)
+ * RVVBackend (Vector Execution Engine - implements RVVCoreInterface)
  *   ├─ Decode: Convert instruction to micro-op
  *   ├─ Dispatch: Allocate ROB, check hazards
  *   ├─ Execute: Perform vector ALU operations
@@ -44,58 +44,6 @@ using namespace Architecture;
 using namespace EventDriven;
 
 /**
- * @class RVVCoreIntegration
- * @brief Integration layer between SCore and RVVBackend
- *
- * Bridges the Scalar Core and Vector Backend, translating vector
- * instructions from the core's decode stage to RVV backend interface.
- */
-class RVVCoreIntegration : public RVVCoreInterface {
- public:
-  RVVCoreIntegration(std::shared_ptr<RVVBackend> rvv_backend)
-      : rvv_backend_(rvv_backend) {}
-
-  // RVVCoreInterface implementation: Forward to RVV Backend
-  bool issueInstruction(const InstructionRequest& req) override {
-    return rvv_backend_->issueInstruction(req);
-  }
-
-  uint64_t readScalarRegister(uint32_t addr) const override {
-    return rvv_backend_->readScalarRegister(addr);
-  }
-
-  void writeScalarRegister(uint32_t addr, uint64_t data,
-                           uint8_t byte_enable) override {
-    rvv_backend_->writeScalarRegister(addr, data, byte_enable);
-  }
-
-  RVVConfigState getConfigState() const override {
-    return rvv_backend_->getConfigState();
-  }
-
-  void setConfigState(const RVVConfigState& state) override {
-    rvv_backend_->setConfigState(state);
-  }
-
-  std::vector<Rob2Rt> getRetireWrites() override {
-    return rvv_backend_->getRetireWrites();
-  }
-
-  bool isIdle() const override { return rvv_backend_->isIdle(); }
-
-  uint32_t getQueueCapacity() const override {
-    return rvv_backend_->getQueueCapacity();
-  }
-
-  bool getTrap(InstructionRequest& trap_inst) const override {
-    return rvv_backend_->getTrap(trap_inst);
-  }
-
- private:
-  std::shared_ptr<RVVBackend> rvv_backend_;
-};
-
-/**
  * @class RVVALUExample
  * @brief Vector ALU example with SCore frontend and RVV backend
  */
@@ -122,13 +70,9 @@ class RVVALUExample {
     core_config.num_instruction_lanes = 1;
     auto core = std::make_shared<SCore>("SCore-0", *scheduler, core_config);
 
-    // Create integration layer
-    auto integration = std::make_shared<RVVCoreIntegration>(rvv_backend);
-
-    // Set RVV interface in SCore's dispatch stage
-    // This allows SCore to recognize vector instructions and dispatch them to
-    // RVV
-    core->setRVVInterface(integration);
+    // Set RVV backend as the vector execution interface
+    // RVVBackend implements RVVCoreInterface, so it can be used directly
+    core->setRVVInterface(rvv_backend);
 
     // Setup instruction memory in SCore
     setupInstructions(core);
@@ -136,9 +80,8 @@ class RVVALUExample {
     // Configure RVV Backend with vector state
     setupVectorState(rvv_backend);
 
-    // Load vector instructions into SCore instruction buffer
-    // SCore's dispatch stage will recognize these as vector instructions
-    // and automatically dispatch them to RVV backend via the interface
+    // Load vector instructions into SCore instruction memory
+    // The pipeline will automatically fetch, decode, and dispatch these
     loadSCoreInstructions(core);
 
     // Initialize components
@@ -163,103 +106,16 @@ class RVVALUExample {
   /**
    * @brief Setup vector instructions in Scalar Core instruction memory
    *
-   * The Scalar Core will fetch these vector instructions from its
-   * instruction buffer, and we'll monitor when they get decoded.
+   * Vector instructions are loaded into SCore's instruction memory.
+   * SCore's pipeline will:
+   * 1. Fetch instructions from instruction memory
+   * 2. Decode stage recognizes vector instruction opcodes (0x57, etc.)
+   * 3. Dispatch stage automatically issues vector instructions to RVV backend
+   *    via the RVVCoreInterface
    */
   void setupInstructions(std::shared_ptr<SCore> core) {
-    std::cout << "Setup: Load vector instructions into RVV Backend\n"
-              << std::endl;
-
-    // For now, we directly populate RVV Backend instruction queue
-    // In a full implementation, SCore decode stage would do this
-    // Note: We'll load instructions separately below
-  }
-
-  /**
-   * @brief Load vector instructions directly into RVV Backend
-   */
-  void loadVectorInstructions(std::shared_ptr<RVVBackend> rvv) {
-    std::cout << "Setup: Issue vector instructions to RVV Backend\n"
-              << std::endl;
-
-    std::vector<RVVCoreInterface::InstructionRequest> instructions;
-
-    // Instruction 1: VADD v3, v1, v2
-    RVVCoreInterface::InstructionRequest inst1;
-    inst1.inst_id = 0;
-    inst1.opcode = 0x02;  // RVVALU
-    inst1.vs1_idx = 1;    // Source v1
-    inst1.vs2_idx = 2;    // Source v2
-    inst1.vd_idx = 3;     // Destination v3
-    inst1.vm = 1;         // Mask enabled
-    inst1.sew = 0;        // 8-bit
-    inst1.lmul = 0;       // LMUL=1
-    inst1.vl = 8;
-    inst1.pc = 0;
-    instructions.push_back(inst1);
-
-    // Instruction 2: VSUB v4, v3, v1
-    RVVCoreInterface::InstructionRequest inst2;
-    inst2.inst_id = 1;
-    inst2.opcode = 0x02;
-    inst2.vs1_idx = 3;  // Source v3 (result of VADD)
-    inst2.vs2_idx = 1;  // Source v1
-    inst2.vd_idx = 4;   // Destination v4
-    inst2.vm = 1;
-    inst2.sew = 0;
-    inst2.lmul = 0;
-    inst2.vl = 8;
-    inst2.pc = 4;
-    instructions.push_back(inst2);
-
-    // Instruction 3: VAND v5, v1, v2
-    RVVCoreInterface::InstructionRequest inst3;
-    inst3.inst_id = 2;
-    inst3.opcode = 0x02;
-    inst3.vs1_idx = 1;
-    inst3.vs2_idx = 2;
-    inst3.vd_idx = 5;  // Destination v5
-    inst3.vm = 1;
-    inst3.sew = 0;
-    inst3.lmul = 0;
-    inst3.vl = 8;
-    inst3.pc = 8;
-    instructions.push_back(inst3);
-
-    // Instruction 4: VOR v6, v1, v2
-    RVVCoreInterface::InstructionRequest inst4;
-    inst4.inst_id = 3;
-    inst4.opcode = 0x02;
-    inst4.vs1_idx = 1;
-    inst4.vs2_idx = 2;
-    inst4.vd_idx = 6;  // Destination v6
-    inst4.vm = 1;
-    inst4.sew = 0;
-    inst4.lmul = 0;
-    inst4.vl = 8;
-    inst4.pc = 12;
-    instructions.push_back(inst4);
-
-    // Issue all instructions
-    std::cout << "  Issuing instructions to RVV Backend:" << std::endl;
-    for (const auto& inst : instructions) {
-      bool accepted = rvv->issueInstruction(inst);
-      std::string op_name;
-      if (inst.inst_id == 0)
-        op_name = "VADD";
-      else if (inst.inst_id == 1)
-        op_name = "VSUB";
-      else if (inst.inst_id == 2)
-        op_name = "VAND";
-      else
-        op_name = "VOR";
-
-      std::cout << "    " << std::setw(2) << inst.inst_id << ". " << op_name
-                << " v" << inst.vd_idx << ", v" << inst.vs1_idx << ", v"
-                << inst.vs2_idx << " - " << (accepted ? "ACCEPTED" : "REJECTED")
-                << std::endl;
-    }
-    std::cout << std::endl;
+    // Instructions are loaded in loadSCoreInstructions()
+    // No manual issuing needed - SCore handles it automatically
   }
 
   /**
@@ -323,6 +179,10 @@ class RVVALUExample {
 
   /**
    * @brief Setup vector state in RVV Backend
+   *
+   * Initializes vector configuration and operand registers.
+   * This is similar to setupMemory() in mac_example - it prepares
+   * the architectural state before the core runs.
    */
   void setupVectorState(std::shared_ptr<RVVBackend> rvv) {
     std::cout << "Setup: Initialize vector state in RVV Backend\n" << std::endl;
@@ -343,10 +203,22 @@ class RVVALUExample {
     std::cout << "    vtype=0x" << std::hex << config.getVtype() << std::dec
               << std::endl;
 
+    // Initialize input vector registers v1 and v2 with test data
+    // v1: [10, 20, 30, 40, 50, 60, 70, 80]
+    // v2: [5, 6, 7, 8, 9, 10, 11, 12]
+    std::vector<uint8_t> v1_data = {10, 20, 30, 40, 50, 60, 70, 80};
+    std::vector<uint8_t> v2_data = {5, 6, 7, 8, 9, 10, 11, 12};
+
+    auto vrf = rvv->getVRF();
+    if (vrf) {
+      vrf->write(1, v1_data);  // v1
+      vrf->write(2, v2_data);  // v2
+      std::cout << "\n  Vector Register File initialized:" << std::endl;
+      std::cout << "    v1 = [10, 20, 30, 40, 50, 60, 70, 80]" << std::endl;
+      std::cout << "    v2 = [5, 6, 7, 8, 9, 10, 11, 12]" << std::endl;
+    }
+
     std::cout << "\n  Expected Results:" << std::endl;
-    std::cout << "    v1 (input):  [10, 20, 30, 40, 50, 60, 70, 80]"
-              << std::endl;
-    std::cout << "    v2 (input):  [5, 6, 7, 8, 9, 10, 11, 12]" << std::endl;
     std::cout << "    VADD v3:     [15, 26, 37, 48, 59, 70, 81, 92]"
               << std::endl;
     std::cout << "    VSUB v4:     [5, 6, 7, 8, 9, 10, 11, 12]" << std::endl;
