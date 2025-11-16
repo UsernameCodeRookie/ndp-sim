@@ -37,7 +37,7 @@ class TickingComponent : public Component {
   virtual ~TickingComponent() = default;
 
   // Start the ticking component
-  void start(uint64_t start_time = 0) { scheduleTick(start_time); }
+  void start(uint64_t start_time = 0) { schedule(start_time); }
 
   // Stop the ticking component
   void stop() { enabled_ = false; }
@@ -50,7 +50,7 @@ class TickingComponent : public Component {
   virtual void tick() = 0;
 
  protected:
-  void scheduleTick(uint64_t time) {
+  void schedule(uint64_t time) {
     if (!enabled_) return;
 
     auto tick_event = std::make_shared<EventDriven::LambdaEvent>(
@@ -68,7 +68,7 @@ class TickingComponent : public Component {
           tick_count_++;
 
           // Schedule next tick
-          scheduleTick(sched.getCurrentTime() + period_);
+          schedule(sched.getCurrentTime() + period_);
         },
         EVENT_PRIORITY_COMPONENT, name_ + "_Tick");
 
@@ -96,7 +96,7 @@ class TickingConnection : public Connection {
   // Start the ticking connection
   void start(uint64_t start_time = 0) {
     enabled_ = true;
-    schedulePropagate(start_time);
+    schedule(start_time);
   }
 
   // Stop the ticking connection
@@ -110,7 +110,7 @@ class TickingConnection : public Connection {
   virtual void propagate() {};
 
  protected:
-  void schedulePropagate(uint64_t time) {
+  void schedule(uint64_t time) {
     if (!enabled_) return;
 
     auto propagate_event = std::make_shared<EventDriven::LambdaEvent>(
@@ -128,7 +128,7 @@ class TickingConnection : public Connection {
           propagate();
 
           // Schedule next propagate
-          schedulePropagate(sched.getCurrentTime() + period_);
+          schedule(sched.getCurrentTime() + period_);
         },
         EVENT_PRIORITY_CONNECTION, name_ + "_Propagate");
 

@@ -69,7 +69,7 @@ class ReadyValidConnection : public TickingConnection {
           "Use bindReadyPort() and bindValidPort().");
     }
     enabled_ = true;
-    schedulePropagate(start_time);
+    schedule(start_time);
   }
 
   // Getters

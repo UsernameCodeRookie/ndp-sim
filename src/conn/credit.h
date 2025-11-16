@@ -54,7 +54,7 @@ class CreditConnection : public TickingConnection {
                                "Use bindCreditPort().");
     }
     enabled_ = true;
-    schedulePropagate(start_time);
+    schedule(start_time);
   }
 
   uint64_t getPeriod() const { return period_; }
