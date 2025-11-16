@@ -7,10 +7,10 @@
 #include <string>
 #include <vector>
 
-#include "connection.h"
 #include "event.h"
 #include "packet.h"
 #include "scheduler.h"
+#include "tick.h"
 
 namespace Architecture {
 
@@ -33,14 +33,12 @@ namespace Architecture {
  * - Checks valid_port value == 1 before enqueueing data from source
  * - Uses internal buffer to decouple source and destination timing
  */
-class ReadyValidConnection : public Connection {
+class ReadyValidConnection : public TickingConnection {
  public:
   ReadyValidConnection(const std::string& name,
                        EventDriven::EventScheduler& scheduler, uint64_t period,
                        size_t buffer_size = 2)
-      : Connection(name, scheduler),
-        period_(period),
-        enabled_(true),
+      : TickingConnection(name, scheduler, period),
         buffer_size_(buffer_size),
         transfers_(0),
         stalls_(0),
@@ -74,9 +72,6 @@ class ReadyValidConnection : public Connection {
     schedulePropagate(start_time);
   }
 
-  // Stop the connection
-  void stop() { enabled_ = false; }
-
   // Getters
   uint64_t getPeriod() const { return period_; }
   bool isEnabled() const { return enabled_; }
@@ -89,12 +84,15 @@ class ReadyValidConnection : public Connection {
    * @brief Propagate data with ready/valid handshake
    *
    * Two-phase protocol:
-   * 1. Transfer buffered data to destination if ready
-   * 2. Enqueue new data from source if valid
+   * 1. Enqueue new data from source if valid (first consume pending data)
+   * 2. Transfer buffered data to destination if ready
    */
   void propagate() override {
-    tryTransferToDestination();
+    // Phase 1: Enqueue new data from source if valid
     tryEnqueueFromSource();
+
+    // Phase 2: Transfer buffered data to destination if ready
+    tryTransferToDestination();
   }
 
   /** @brief Print connection statistics */
@@ -112,6 +110,34 @@ class ReadyValidConnection : public Connection {
     }
   }
 
+ protected:
+  // Override schedulePropagate to use priority 1 (execute before component
+  // ticks)
+  void schedulePropagate(uint64_t time) {
+    if (!enabled_) return;
+
+    auto propagate_event = std::make_shared<EventDriven::LambdaEvent>(
+        time,
+        [this](EventDriven::EventScheduler& sched) {
+          if (!enabled_) return;
+
+          // Trace propagate event
+          EventDriven::Tracer::getInstance().tracePropagate(
+              sched.getCurrentTime(), name_,
+              "src_ports=" + std::to_string(src_ports_.size()) +
+                  " dst_ports=" + std::to_string(dst_ports_.size()));
+
+          // Execute propagate logic
+          propagate();
+
+          // Schedule next propagate
+          schedulePropagate(sched.getCurrentTime() + period_);
+        },
+        1, name_ + "_Propagate");  // Priority 1 (higher than components' 0)
+
+    scheduler_.schedule(propagate_event);
+  }
+
  private:
   /** @brief Check if buffer can accept more data */
   bool canAcceptData() const { return data_buffer_.size() < buffer_size_; }
@@ -125,9 +151,15 @@ class ReadyValidConnection : public Connection {
     return data && data->getValue();
   }
 
-  /** @brief Phase 1: Transfer buffered data to destination if ready */
+  /** @brief Phase 2: Transfer buffered data to destination if ready */
   void tryTransferToDestination() {
     if (dst_ports_.empty() || !hasDataToSend()) return;
+
+    // Check if destination port is free (no data currently present)
+    if (dst_ports_[0]->hasData()) {
+      // Destination can't accept now
+      return;
+    }
 
     bool is_ready = readSignal(ready_port_);
 
@@ -140,12 +172,6 @@ class ReadyValidConnection : public Connection {
                   "ready=1 valid=1, buffer=" << data_buffer_.size() << "/"
                                              << buffer_size_
                                              << " transfers=" << transfers_);
-    } else {
-      stalls_++;
-      TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_STALL",
-                  "ready=0 valid=1, buffer=" << data_buffer_.size() << "/"
-                                             << buffer_size_
-                                             << " stalls=" << stalls_);
     }
   }
 
@@ -188,27 +214,7 @@ class ReadyValidConnection : public Connection {
   }
 
  protected:
-  void schedulePropagate(uint64_t time) {
-    if (!enabled_) return;
-
-    auto propagate_event = std::make_shared<EventDriven::LambdaEvent>(
-        time,
-        [this](EventDriven::EventScheduler& sched) {
-          if (!enabled_) return;
-
-          propagate();
-
-          // Schedule next propagate
-          schedulePropagate(sched.getCurrentTime() + period_);
-        },
-        1, name_ + "_Propagate");  // Priority 1 (higher than components' 0)
-
-    scheduler_.schedule(propagate_event);
-  }
-
-  uint64_t period_;     // Propagation period
-  bool enabled_;        // Connection enabled flag
-  size_t buffer_size_;  // Internal buffer size
+  size_t buffer_size_;                                   // Internal buffer size
   std::queue<std::shared_ptr<DataPacket>> data_buffer_;  // FIFO buffer
   uint64_t transfers_;  // Successful transfers count
   uint64_t stalls_;     // Stall cycles count

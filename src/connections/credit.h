@@ -7,10 +7,10 @@
 #include <string>
 #include <vector>
 
-#include "connection.h"
 #include "event.h"
 #include "packet.h"
 #include "scheduler.h"
+#include "tick.h"
 
 namespace Architecture {
 
@@ -30,14 +30,12 @@ namespace Architecture {
  * - Phase 2: Enqueue data from source ports only if credits_ > 0 and there is
  *   buffer space. Decrement internal credits_ on enqueue.
  */
-class CreditConnection : public Connection {
+class CreditConnection : public TickingConnection {
  public:
   CreditConnection(const std::string& name,
                    EventDriven::EventScheduler& scheduler, uint64_t period,
                    size_t buffer_size = 2)
-      : Connection(name, scheduler),
-        period_(period),
-        enabled_(true),
+      : TickingConnection(name, scheduler, period),
         buffer_size_(buffer_size),
         transfers_(0),
         stalls_(0),
@@ -58,8 +56,6 @@ class CreditConnection : public Connection {
     enabled_ = true;
     schedulePropagate(start_time);
   }
-
-  void stop() { enabled_ = false; }
 
   uint64_t getPeriod() const { return period_; }
   bool isEnabled() const { return enabled_; }
@@ -85,6 +81,34 @@ class CreditConnection : public Connection {
     std::cout << "Buffer occupancy: " << data_buffer_.size() << "/"
               << buffer_size_ << std::endl;
     std::cout << "Credits (last seen): " << credits_ << std::endl;
+  }
+
+ protected:
+  // Override schedulePropagate to use priority 1 (execute before component
+  // ticks)
+  void schedulePropagate(uint64_t time) {
+    if (!enabled_) return;
+
+    auto propagate_event = std::make_shared<EventDriven::LambdaEvent>(
+        time,
+        [this](EventDriven::EventScheduler& sched) {
+          if (!enabled_) return;
+
+          // Trace propagate event
+          EventDriven::Tracer::getInstance().tracePropagate(
+              sched.getCurrentTime(), name_,
+              "src_ports=" + std::to_string(src_ports_.size()) +
+                  " dst_ports=" + std::to_string(dst_ports_.size()));
+
+          // Execute propagate logic
+          propagate();
+
+          // Schedule next propagate
+          schedulePropagate(sched.getCurrentTime() + period_);
+        },
+        1, name_ + "_Propagate");  // Priority 1 (higher than components' 0)
+
+    scheduler_.schedule(propagate_event);
   }
 
  private:
@@ -181,26 +205,6 @@ class CreditConnection : public Connection {
   }
 
  protected:
-  void schedulePropagate(uint64_t time) {
-    if (!enabled_) return;
-
-    auto propagate_event = std::make_shared<EventDriven::LambdaEvent>(
-        time,
-        [this](EventDriven::EventScheduler& sched) {
-          if (!enabled_) return;
-
-          propagate();
-
-          // Schedule next propagate
-          schedulePropagate(sched.getCurrentTime() + period_);
-        },
-        1, name_ + "_Propagate");  // Priority 1 (higher than components' 0)
-
-    scheduler_.schedule(propagate_event);
-  }
-
-  uint64_t period_;
-  bool enabled_;
   size_t buffer_size_;  // Internal FIFO buffer size
   std::queue<std::shared_ptr<DataPacket>> data_buffer_;
   uint64_t transfers_;  // Successful transfers
