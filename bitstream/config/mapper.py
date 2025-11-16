@@ -769,13 +769,6 @@ class Mapper:
         """Return the physical resource assigned to a given node."""
         return self.node_to_resource.get(node)
     
-    def get_node_by_resource(self, resource: str) -> Optional[str]:
-        """Reverse lookup: Return the logical node assigned to a physical resource."""
-        for node, res in self.node_to_resource.items():
-            if res == resource:
-                return node
-        return None
-    
     def register_module(self, resource: str, module: any):
         """Register a module object for a physical resource."""
         self.resource_to_module[resource] = module

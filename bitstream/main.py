@@ -101,6 +101,19 @@ Examples:
     )
     
     parser.add_argument(
+        '--no-dump-parsed',
+        action='store_true',
+        help='Skip parsed bitstream generation (enabled by default)'
+    )
+    
+    parser.add_argument(
+        '--parsed-name',
+        type=str,
+        default='parsed_bitstream.txt',
+        help='Name of parsed bitstream file (default: parsed_bitstream.txt)'
+    )
+    
+    parser.add_argument(
         '--visualize-placement',
         action='store_true',
         help='Generate placement visualization (saves to placement.png)'
@@ -205,6 +218,7 @@ Examples:
         print(f"Mapping mode:     {mapping_mode}")
         print(f"Binary dump:      {'No' if args.no_dump_binary else 'Yes'}")
         print(f"Detailed dump:    {'No' if args.no_dump_detailed else 'Yes'}")
+        print(f"Parsed dump:      {'No' if args.no_dump_parsed else 'Yes'}")
         print(f"Placement viz:    {'Yes' if args.visualize_placement else 'No'}")
         print(f"Compare:          {'Yes' if args.compare else 'No'}")
         if args.compare:
@@ -263,15 +277,25 @@ Examples:
         bitstream = generate_bitstream(entries, config_mask)
         
         bitstream_path = output_dir / args.bitstream_name
-        write_bitstream(bitstream, output_file=str(bitstream_path))
+        write_bitstream(entries, output_file=str(bitstream_path))
+        
+        # Step 5.5: Generate parsed bitstream (default enabled)
+        if not args.no_dump_parsed:
+            if args.verbose:
+                print(f"[5.5/6] Generating parsed bitstream to {args.parsed_name}...")
+            parsed_path = output_dir / args.parsed_name
+            write_bitstream(entries, output_file=str(parsed_path))
+        elif args.verbose:
+            print("[5.5/6] Skipping parsed bitstream")
         
         if not args.quiet:
             print(f"\n✓ Bitstream generated: {bitstream_path}")
-            print(f"  Total size: {len(bitstream)} bits ({len(bitstream)//64} lines)")
             if not args.no_dump_binary:
                 print(f"✓ Binary dump: {output_dir / args.binary_name}")
             if not args.no_dump_detailed:
                 print(f"✓ Detailed dump: {output_dir / args.detailed_dump_output}")
+            if not args.no_dump_parsed:
+                print(f"✓ Parsed bitstream: {output_dir / args.parsed_name}")
         
         # Step 6: Compare with reference (if requested)
         if args.compare:

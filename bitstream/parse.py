@@ -190,12 +190,60 @@ def generate_bitstream(entries, config_mask):
     bitstream += '0' * ((64 - len(bitstream) % 64) % 64)
     return bitstream
 
-def write_bitstream(bitstream, output_file='./data/generated_bitstream.txt'):
-    """Write bitstream to file in 64-bit lines."""
+def write_bitstream(entries, output_file='./data/parsed_bitstream.txt'):
+    """
+    Write bitstream in human-readable format.
+    Groups entries by module type and shows each configuration.
+    Uses same chunking logic as generate_bitstream.
+    """
+    from collections import defaultdict
+    
+    # Module names for display
+    module_names = {
+        ModuleID.IGA_LC: "iga_lc",
+        ModuleID.IGA_ROW_LC: "iga_row_lc",
+        ModuleID.IGA_COL_LC: "iga_col_lc",
+        ModuleID.IGA_PE: "iga_pe",
+        ModuleID.SE_RD_MSE: "se_rd_mse",
+        ModuleID.SE_WR_MSE: "se_wr_mse",
+        ModuleID.SE_NSE: "se_nse",
+        ModuleID.BUFFER_MANAGER_CLUSTER: "buffer_manager_cluster",
+        ModuleID.SPECIAL_ARRAY: "special_array",
+        ModuleID.GA_INPORT_GROUP: "ga_inport_group",
+        ModuleID.GA_OUTPORT_GROUP: "ga_outport_group",
+        ModuleID.GENERAL_ARRAY: "general_array",
+    }
+    
+    # Group entries by module type
+    module_groups = defaultdict(list)
+    for mid, config in entries:
+        module_groups[mid].append(config)
+    
+    # Write to file
     with open(output_file, 'w') as f:
-        for i in range(0, len(bitstream), 64):
-            f.write(bitstream[i:i+64] + '\n')
-    print(f'Generated {len(bitstream)} bits ({len(bitstream)//64} lines)')
+        # Process each module type in order
+        for mid in sorted(module_groups.keys()):
+            configs = module_groups[mid]
+            module_name = module_names.get(mid, f"module_{mid}")
+            
+            # Write module header
+            f.write(f"{module_name}:\n")
+            
+            # Write each configuration entry
+            for config in configs:
+                if not config or set(config) == {'0'}:
+                    # Empty configuration
+                    f.write(f"0\n")
+                else:
+                    # Valid configuration with data
+                    # Use same chunking logic as generate_bitstream
+                    for chunk in split_config(config):
+                        f.write(f"1 {chunk}\n")
+            
+            # Add blank line after each module group
+            f.write("\n")
+    
+    print(f'Bitstream written to {output_file}')
 
 def dump_modules_detailed(modules, output_file=None):
     """
@@ -288,7 +336,7 @@ def main():
     entries = build_entries(modules)
     config_mask = [1, 1, 1, 0, 1, 1, 1, 0]  # Enable: IGA, SE, Buffer, Special
     bitstream = generate_bitstream(entries, config_mask)
-    write_bitstream(bitstream)
+    write_bitstream(entries)
     
     return {
         'bitstream': bitstream, 
