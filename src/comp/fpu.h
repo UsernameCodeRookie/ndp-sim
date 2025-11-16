@@ -100,13 +100,13 @@ class FPUDataPacket : public Architecture::DataPacket {
  *
  * Similar to Coral NPU's FPU with 5-stage pipeline
  */
-class FPUComponent : public PipelineComponent {
+class FPUComponent : public Pipeline {
  public:
   static constexpr size_t pipeline_stages = 5;  // 5-stage pipeline
 
   FPUComponent(const std::string& name, EventDriven::EventScheduler& scheduler,
                uint64_t period)
-      : PipelineComponent(name, scheduler, period, pipeline_stages),
+      : Pipeline(name, scheduler, period, pipeline_stages),
         operations_executed_(0) {
     setupPipeline();
   }
@@ -323,7 +323,7 @@ class FPUComponent : public PipelineComponent {
   uint64_t getOperationsExecuted() const { return operations_executed_; }
 
   void printStatistics() const {
-    PipelineComponent::printStatistics();
+    Pipeline::printStatistics();
     std::cout << "Pipeline stages: " << pipeline_stages << std::endl;
     std::cout << "Floating-point operations executed: " << operations_executed_
               << std::endl;

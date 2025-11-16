@@ -17,8 +17,7 @@ class PipelineTest : public ::testing::Test {
 };
 
 TEST_F(PipelineTest, BasicCreation) {
-  auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipeline", *scheduler, 1, 3);
+  auto pipeline = std::make_shared<Pipeline>("test_pipeline", *scheduler, 1, 3);
   pipeline->start();
 
   EXPECT_EQ(pipeline->getNumStages(), 3);
@@ -26,8 +25,7 @@ TEST_F(PipelineTest, BasicCreation) {
 }
 
 TEST_F(PipelineTest, SingleStagePassthrough) {
-  auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipeline", *scheduler, 1, 1);
+  auto pipeline = std::make_shared<Pipeline>("test_pipeline", *scheduler, 1, 1);
   pipeline->start();
 
   auto input_port = pipeline->getPort("in");
@@ -50,8 +48,7 @@ TEST_F(PipelineTest, SingleStagePassthrough) {
 }
 
 TEST_F(PipelineTest, MultiStagePassthrough) {
-  auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipeline", *scheduler, 1, 3);
+  auto pipeline = std::make_shared<Pipeline>("test_pipeline", *scheduler, 1, 3);
   pipeline->start();
 
   auto input_port = pipeline->getPort("in");
@@ -75,8 +72,7 @@ TEST_F(PipelineTest, MultiStagePassthrough) {
 }
 
 TEST_F(PipelineTest, CustomStageFunction) {
-  auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipeline", *scheduler, 1, 2);
+  auto pipeline = std::make_shared<Pipeline>("test_pipeline", *scheduler, 1, 2);
   pipeline->start();
 
   // Stage 0: Double the value
@@ -128,8 +124,7 @@ TEST_F(PipelineTest, CustomStageFunction) {
 }
 
 TEST_F(PipelineTest, PipelineDepth) {
-  auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipeline", *scheduler, 1, 3);
+  auto pipeline = std::make_shared<Pipeline>("test_pipeline", *scheduler, 1, 3);
   pipeline->start();
 
   auto input_port = pipeline->getPort("in");
@@ -156,8 +151,7 @@ TEST_F(PipelineTest, PipelineDepth) {
 }
 
 TEST_F(PipelineTest, PipelineFull) {
-  auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipeline", *scheduler, 1, 2);
+  auto pipeline = std::make_shared<Pipeline>("test_pipeline", *scheduler, 1, 2);
   pipeline->start();
 
   auto input_port = pipeline->getPort("in");
@@ -173,8 +167,7 @@ TEST_F(PipelineTest, PipelineFull) {
 }
 
 TEST_F(PipelineTest, PipelineEmpty) {
-  auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipeline", *scheduler, 1, 3);
+  auto pipeline = std::make_shared<Pipeline>("test_pipeline", *scheduler, 1, 3);
   pipeline->start();
 
   EXPECT_TRUE(pipeline->isEmpty());
@@ -187,8 +180,7 @@ TEST_F(PipelineTest, PipelineEmpty) {
 }
 
 TEST_F(PipelineTest, PipelineFlush) {
-  auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipeline", *scheduler, 1, 3);
+  auto pipeline = std::make_shared<Pipeline>("test_pipeline", *scheduler, 1, 3);
   pipeline->start();
 
   auto input_port = pipeline->getPort("in");
@@ -209,8 +201,7 @@ TEST_F(PipelineTest, PipelineFlush) {
 }
 
 TEST_F(PipelineTest, StallControl) {
-  auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipeline", *scheduler, 1, 2);
+  auto pipeline = std::make_shared<Pipeline>("test_pipeline", *scheduler, 1, 2);
   pipeline->start();
 
   auto input_port = pipeline->getPort("in");
@@ -246,8 +237,7 @@ TEST_F(PipelineTest, StallControl) {
 }
 
 TEST_F(PipelineTest, MultipleDataThroughput) {
-  auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipeline", *scheduler, 1, 3);
+  auto pipeline = std::make_shared<Pipeline>("test_pipeline", *scheduler, 1, 3);
   pipeline->start();
 
   auto input_port = pipeline->getPort("in");
@@ -290,8 +280,7 @@ TEST_F(PipelineTest, MultipleDataThroughput) {
 }
 
 TEST_F(PipelineTest, StageChaining) {
-  auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipeline", *scheduler, 1, 4);
+  auto pipeline = std::make_shared<Pipeline>("test_pipeline", *scheduler, 1, 4);
   pipeline->start();
 
   // Create a chain: input -> *2 -> +5 -> *3 -> -1
@@ -362,8 +351,7 @@ TEST_F(PipelineTest, EventDrivenPipelineFlow) {
   EventDriven::Tracer::getInstance().initialize(
       "test_pipeline_event_driven.log", true);
 
-  auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipe_ed", *scheduler, 2, 3);
+  auto pipeline = std::make_shared<Pipeline>("test_pipe_ed", *scheduler, 2, 3);
   pipeline->start();
 
   auto input_port = pipeline->getPort("in");
@@ -436,7 +424,7 @@ TEST_F(PipelineTest, EventDrivenStageProcessing) {
       "test_pipeline_stage_processing.log", true);
 
   auto pipeline =
-      std::make_shared<PipelineComponent>("test_pipe_stages", *scheduler, 1, 2);
+      std::make_shared<Pipeline>("test_pipe_stages", *scheduler, 1, 2);
   pipeline->start();
 
   // Set stage functions with logging

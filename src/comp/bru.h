@@ -105,7 +105,7 @@ class BruResultPacket : public Architecture::DataPacket {
  * - Jump instructions (JAL, JALR)
  * - System instructions (ECALL, EBREAK, MRET, WFI)
  */
-class BruComponent : public PipelineComponent {
+class BranchUnit : public Pipeline {
  public:
   /**
    * @brief Constructor
@@ -113,9 +113,9 @@ class BruComponent : public PipelineComponent {
    * @param scheduler Event scheduler reference
    * @param period Tick period
    */
-  BruComponent(const std::string& name, EventDriven::EventScheduler& scheduler,
-               uint64_t period = 1)
-      : PipelineComponent(name, scheduler, period, 3),
+  BranchUnit(const std::string& name, EventDriven::EventScheduler& scheduler,
+             uint64_t period = 1)
+      : Pipeline(name, scheduler, period, 3),
         branches_resolved_(0),
         branches_taken_(0),
         branches_mispredicted_(0),
@@ -128,7 +128,7 @@ class BruComponent : public PipelineComponent {
    * @brief Tick function (inherited from PipelineComponent)
    * Uses pipeline's tick mechanism for stage advancement
    */
-  void tick() override { PipelineComponent::tick(); }
+  void tick() override { Pipeline::tick(); }
 
   /**
    * @brief Get number of branches resolved

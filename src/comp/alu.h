@@ -84,11 +84,11 @@ class ALUDataPacket : public Architecture::DataPacket {
  * Supports RV32I base instruction set and ZBB bit manipulation extension.
  * Implements a 3-stage pipeline: Decode -> Execute -> Writeback
  */
-class ALUComponent : public PipelineComponent {
+class ArithmeticLogicUnit : public Pipeline {
  public:
-  ALUComponent(const std::string& name, EventDriven::EventScheduler& scheduler,
-               uint64_t period)
-      : PipelineComponent(name, scheduler, period, 3),
+  ArithmeticLogicUnit(const std::string& name,
+                      EventDriven::EventScheduler& scheduler, uint64_t period)
+      : Pipeline(name, scheduler, period, 3),
         operations_executed_(0),
         accumulator_(0) {
     setupPipelineStages();
@@ -361,7 +361,7 @@ class ALUComponent : public PipelineComponent {
   void setAccumulator(int64_t value) { accumulator_ = value; }
 
   void printStatistics() const {
-    PipelineComponent::printStatistics();
+    Pipeline::printStatistics();
     std::cout << "Precision: INT32" << std::endl;
     std::cout << "Pipeline stages: 3" << std::endl;
     std::cout << "Operations executed: " << operations_executed_ << std::endl;

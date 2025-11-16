@@ -34,7 +34,7 @@ struct PipelineStageData {
  * Multi-stage pipeline that processes data through sequential stages
  * Each stage can perform transformations on the data
  */
-class PipelineComponent : public Architecture::TickingComponent {
+class Pipeline : public Architecture::TickingComponent {
  public:
   using StageFunction = std::function<std::shared_ptr<Architecture::DataPacket>(
       std::shared_ptr<Architecture::DataPacket>)>;
@@ -46,9 +46,8 @@ class PipelineComponent : public Architecture::TickingComponent {
    * @param period Tick period
    * @param num_stages Number of pipeline stages
    */
-  PipelineComponent(const std::string& name,
-                    EventDriven::EventScheduler& scheduler, uint64_t period,
-                    size_t num_stages = 3)
+  Pipeline(const std::string& name, EventDriven::EventScheduler& scheduler,
+           uint64_t period, size_t num_stages = 3)
       : Architecture::TickingComponent(name, scheduler, period),
         num_stages_(num_stages),
         stall_(false),
@@ -290,13 +289,13 @@ class PipelineComponent : public Architecture::TickingComponent {
  *
  * 3-stage pipeline that performs: multiply -> add -> shift
  */
-class ArithmeticPipeline : public PipelineComponent {
+class ArithmeticPipeline : public Pipeline {
  public:
   ArithmeticPipeline(const std::string& name,
                      EventDriven::EventScheduler& scheduler, uint64_t period,
                      int multiply_factor = 2, int add_value = 10,
                      int shift_amount = 1)
-      : PipelineComponent(name, scheduler, period, 3) {
+      : Pipeline(name, scheduler, period, 3) {
     // Stage 0: Multiply
     setStageFunction(
         0, [multiply_factor](std::shared_ptr<Architecture::DataPacket> data) {

@@ -18,117 +18,123 @@ class ALUTest : public ::testing::Test {
 };
 
 TEST_F(ALUTest, BasicAddition) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test: 5 + 3 = 8
-  int result = ALUComponent::executeOperation(5, 3, ALUOp::ADD);
+  int result = ArithmeticLogicUnit::executeOperation(5, 3, ALUOp::ADD);
   EXPECT_EQ(result, 8);
 }
 
 TEST_F(ALUTest, BasicSubtraction) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test: 10 - 4 = 6
-  int result = ALUComponent::executeOperation(10, 4, ALUOp::SUB);
+  int result = ArithmeticLogicUnit::executeOperation(10, 4, ALUOp::SUB);
   EXPECT_EQ(result, 6);
 }
 
 TEST_F(ALUTest, BasicMultiplication) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test: 7 * 6 = 42
-  int result = ALUComponent::executeOperation(7, 6, ALUOp::MUL);
+  int result = ArithmeticLogicUnit::executeOperation(7, 6, ALUOp::MUL);
   EXPECT_EQ(result, 42);
 }
 
 TEST_F(ALUTest, BasicDivision) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test: 20 / 4 = 5
-  int result = ALUComponent::executeOperation(20, 4, ALUOp::DIV);
+  int result = ArithmeticLogicUnit::executeOperation(20, 4, ALUOp::DIV);
   EXPECT_EQ(result, 5);
 }
 
 TEST_F(ALUTest, BitwiseOperations) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test AND: 0b1100 & 0b1010 = 0b1000 (12 & 10 = 8)
-  EXPECT_EQ(ALUComponent::executeOperation(12, 10, ALUOp::AND), 8);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(12, 10, ALUOp::AND), 8);
 
   // Test OR: 0b1100 | 0b1010 = 0b1110 (12 | 10 = 14)
-  EXPECT_EQ(ALUComponent::executeOperation(12, 10, ALUOp::OR), 14);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(12, 10, ALUOp::OR), 14);
 
   // Test XOR: 0b1100 ^ 0b1010 = 0b0110 (12 ^ 10 = 6)
-  EXPECT_EQ(ALUComponent::executeOperation(12, 10, ALUOp::XOR), 6);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(12, 10, ALUOp::XOR), 6);
 }
 
 TEST_F(ALUTest, ShiftOperations) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test SLL: 4 << 2 = 16
-  EXPECT_EQ(ALUComponent::executeOperation(4, 2, ALUOp::SLL), 16);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(4, 2, ALUOp::SLL), 16);
 
   // Test SRL: 16 >> 2 = 4
-  EXPECT_EQ(ALUComponent::executeOperation(16, 2, ALUOp::SRL), 4);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(16, 2, ALUOp::SRL), 4);
 }
 
 TEST_F(ALUTest, ComparisonOperations) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu", *scheduler, 1);
   alu->start();
 
   // Test SLT: 3 < 5 = 1 (true)
-  EXPECT_EQ(ALUComponent::executeOperation(3, 5, ALUOp::SLT), 1);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(3, 5, ALUOp::SLT), 1);
 
   // Test SLT: 5 < 3 = 0 (false)
-  EXPECT_EQ(ALUComponent::executeOperation(5, 3, ALUOp::SLT), 0);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(5, 3, ALUOp::SLT), 0);
 
   // Test MAX
-  EXPECT_EQ(ALUComponent::executeOperation(3, 5, ALUOp::MAX), 5);
-  EXPECT_EQ(ALUComponent::executeOperation(5, 3, ALUOp::MAX), 5);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(3, 5, ALUOp::MAX), 5);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(5, 3, ALUOp::MAX), 5);
 
   // Test MIN
-  EXPECT_EQ(ALUComponent::executeOperation(3, 5, ALUOp::MIN), 3);
-  EXPECT_EQ(ALUComponent::executeOperation(5, 3, ALUOp::MIN), 3);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(3, 5, ALUOp::MIN), 3);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(5, 3, ALUOp::MIN), 3);
 }
 
 TEST_F(ALUTest, ExtendedBitOps) {
   // Test bit manipulation operations from ZBB extension
   // Test CLZ: count leading zeros
-  EXPECT_EQ(ALUComponent::executeOperation(0x00000001, 0, ALUOp::CLZ), 31);
-  EXPECT_EQ(ALUComponent::executeOperation(0x80000000, 0, ALUOp::CLZ), 0);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(0x00000001, 0, ALUOp::CLZ),
+            31);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(0x80000000, 0, ALUOp::CLZ),
+            0);
 
   // Test CTZ: count trailing zeros
-  EXPECT_EQ(ALUComponent::executeOperation(0x80000000, 0, ALUOp::CTZ), 31);
-  EXPECT_EQ(ALUComponent::executeOperation(0x00000001, 0, ALUOp::CTZ), 0);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(0x80000000, 0, ALUOp::CTZ),
+            31);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(0x00000001, 0, ALUOp::CTZ),
+            0);
 
   // Test CPOP: count population (number of 1 bits)
-  EXPECT_EQ(ALUComponent::executeOperation(0xFF, 0, ALUOp::CPOP), 8);
-  EXPECT_EQ(ALUComponent::executeOperation(0x0, 0, ALUOp::CPOP), 0);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(0xFF, 0, ALUOp::CPOP), 8);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(0x0, 0, ALUOp::CPOP), 0);
 
   // Test MAXU/MINU: unsigned comparisons
-  EXPECT_EQ(ALUComponent::executeOperation(-1, 1, ALUOp::MAXU),
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(-1, 1, ALUOp::MAXU),
             -1);  // -1 as unsigned is large
-  EXPECT_EQ(ALUComponent::executeOperation(-1, 1, ALUOp::MINU), 1);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(-1, 1, ALUOp::MINU), 1);
 
   // Test SEXTB: sign extend byte
-  EXPECT_EQ(ALUComponent::executeOperation(0x000000FF, 0, ALUOp::SEXTB),
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(0x000000FF, 0, ALUOp::SEXTB),
             -1);  // 0xFF -> -1
-  EXPECT_EQ(ALUComponent::executeOperation(0x0000007F, 0, ALUOp::SEXTB), 127);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(0x0000007F, 0, ALUOp::SEXTB),
+            127);
 
   // Test ZEXTH: zero extend half-word
-  EXPECT_EQ(ALUComponent::executeOperation(0xFFFF0000, 0, ALUOp::ZEXTH), 0);
-  EXPECT_EQ(ALUComponent::executeOperation(0x0000FFFF, 0, ALUOp::ZEXTH),
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(0xFFFF0000, 0, ALUOp::ZEXTH),
+            0);
+  EXPECT_EQ(ArithmeticLogicUnit::executeOperation(0x0000FFFF, 0, ALUOp::ZEXTH),
             0xFFFF);
 }
 
 TEST_F(ALUTest, PipelineOperation) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu", *scheduler, 1);
   alu->start();
 
   auto input_port = alu->getPort("in");
@@ -152,7 +158,7 @@ TEST_F(ALUTest, PipelineOperation) {
 }
 
 TEST_F(ALUTest, AccumulatorMACOperation) {
-  auto alu = std::make_shared<ALUComponent>("test_alu", *scheduler, 1);
+  auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu", *scheduler, 1);
   alu->start();
 
   // Reset accumulator
@@ -188,8 +194,8 @@ TEST_F(ALUTest, EventDrivenExecution) {
   EventDriven::Tracer::getInstance().initialize("test_alu_event_driven.log",
                                                 true);
 
-  auto alu = std::make_shared<ALUComponent>("test_alu_ed", *scheduler,
-                                            2);  // period=2
+  auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu_ed", *scheduler,
+                                                   2);  // period=2
   alu->start();
 
   auto input_port = alu->getPort("in");
@@ -227,8 +233,8 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
   EventDriven::Tracer::getInstance().initialize("test_alu_multiple_ops.log",
                                                 true);
 
-  auto alu = std::make_shared<ALUComponent>("test_alu_multi", *scheduler,
-                                            2);  // period=2
+  auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu_multi", *scheduler,
+                                                   2);  // period=2
   alu->start();
 
   auto input_port = alu->getPort("in");

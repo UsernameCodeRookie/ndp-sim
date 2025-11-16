@@ -30,7 +30,7 @@
  *
  * Inherits from PipelineComponent to reuse pipeline infrastructure.
  */
-class DvuComponent : public PipelineComponent {
+class DivideUnit : public Pipeline {
  public:
   enum class DivOp : uint8_t {
     DIV = 0,   // Signed division
@@ -76,9 +76,9 @@ class DvuComponent : public PipelineComponent {
     }
   };
 
-  DvuComponent(const std::string& name, EventDriven::EventScheduler& scheduler,
-               uint64_t period, uint32_t num_lanes = 4)
-      : PipelineComponent(name, scheduler, period, 3),
+  DivideUnit(const std::string& name, EventDriven::EventScheduler& scheduler,
+             uint64_t period, uint32_t num_lanes = 4)
+      : Pipeline(name, scheduler, period, 3),
         num_lanes_(num_lanes),
         requests_processed_(0),
         results_output_(0),

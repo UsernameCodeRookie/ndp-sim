@@ -82,6 +82,12 @@ target_include_directories(test_regfile PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_regfile gtest gtest_main pthread)
 add_test(NAME test_regfile COMMAND test_regfile)
 
+# --- SCore tests ---
+add_executable(test_core tests/test_core.cpp)
+target_include_directories(test_core PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_core gtest gtest_main pthread)
+add_test(NAME test_core COMMAND test_core)
+
 enable_testing()
 
 # -----------------------------

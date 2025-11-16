@@ -19,7 +19,7 @@ class BruTest : public ::testing::Test {
 
 // Test 1: BRU Initialization
 TEST_F(BruTest, Initialization) {
-  auto bru = std::make_shared<BruComponent>("test_bru", *scheduler, 1);
+  auto bru = std::make_shared<BranchUnit>("test_bru", *scheduler, 1);
   bru->start();
 
   EXPECT_EQ(bru->getName(), "test_bru");
@@ -30,7 +30,7 @@ TEST_F(BruTest, Initialization) {
 
 // Test 2: BEQ (Branch if equal) - condition true
 TEST_F(BruTest, BranchEqual) {
-  auto bru = std::make_shared<BruComponent>("test_bru", *scheduler, 1);
+  auto bru = std::make_shared<BranchUnit>("test_bru", *scheduler, 1);
   bru->start();
 
   auto input_port = bru->getPort("in");
@@ -54,7 +54,7 @@ TEST_F(BruTest, BranchEqual) {
 
 // Test 3: BEQ (Branch if equal) - condition false
 TEST_F(BruTest, BranchNotEqual) {
-  auto bru = std::make_shared<BruComponent>("test_bru", *scheduler, 1);
+  auto bru = std::make_shared<BranchUnit>("test_bru", *scheduler, 1);
   bru->start();
 
   auto input_port = bru->getPort("in");
@@ -77,7 +77,7 @@ TEST_F(BruTest, BranchNotEqual) {
 
 // Test 4: BNE (Branch if not equal)
 TEST_F(BruTest, BranchNotEqualOp) {
-  auto bru = std::make_shared<BruComponent>("test_bru", *scheduler, 1);
+  auto bru = std::make_shared<BranchUnit>("test_bru", *scheduler, 1);
   bru->start();
 
   auto input_port = bru->getPort("in");
@@ -100,7 +100,7 @@ TEST_F(BruTest, BranchNotEqualOp) {
 
 // Test 5: BLT (Branch if less than, signed)
 TEST_F(BruTest, BranchLessThanSigned) {
-  auto bru = std::make_shared<BruComponent>("test_bru", *scheduler, 1);
+  auto bru = std::make_shared<BranchUnit>("test_bru", *scheduler, 1);
   bru->start();
 
   auto input_port = bru->getPort("in");
@@ -123,7 +123,7 @@ TEST_F(BruTest, BranchLessThanSigned) {
 
 // Test 6: BLTU (Branch if less than unsigned)
 TEST_F(BruTest, BranchLessThanUnsigned) {
-  auto bru = std::make_shared<BruComponent>("test_bru", *scheduler, 1);
+  auto bru = std::make_shared<BranchUnit>("test_bru", *scheduler, 1);
   bru->start();
 
   auto input_port = bru->getPort("in");
@@ -145,7 +145,7 @@ TEST_F(BruTest, BranchLessThanUnsigned) {
 
 // Test 7: JAL (Jump and Link)
 TEST_F(BruTest, JumpAndLink) {
-  auto bru = std::make_shared<BruComponent>("test_bru", *scheduler, 1);
+  auto bru = std::make_shared<BranchUnit>("test_bru", *scheduler, 1);
   bru->start();
 
   auto input_port = bru->getPort("in");
@@ -171,7 +171,7 @@ TEST_F(BruTest, JumpAndLink) {
 
 // Test 8: JALR (Jump and Link Register)
 TEST_F(BruTest, JumpAndLinkRegister) {
-  auto bru = std::make_shared<BruComponent>("test_bru", *scheduler, 1);
+  auto bru = std::make_shared<BranchUnit>("test_bru", *scheduler, 1);
   bru->start();
 
   auto input_port = bru->getPort("in");
@@ -197,7 +197,7 @@ TEST_F(BruTest, JumpAndLinkRegister) {
 
 // Test 9: Multiple branch operations
 TEST_F(BruTest, MultipleBranches) {
-  auto bru = std::make_shared<BruComponent>("test_bru", *scheduler, 1);
+  auto bru = std::make_shared<BranchUnit>("test_bru", *scheduler, 1);
   bru->start();
 
   auto input_port = bru->getPort("in");
@@ -242,7 +242,7 @@ TEST_F(BruTest, MultipleBranches) {
 
 // Test 10: BGE (Branch if greater or equal, signed)
 TEST_F(BruTest, BranchGreaterEqualSigned) {
-  auto bru = std::make_shared<BruComponent>("test_bru", *scheduler, 1);
+  auto bru = std::make_shared<BranchUnit>("test_bru", *scheduler, 1);
   bru->start();
 
   auto input_port = bru->getPort("in");
@@ -264,7 +264,7 @@ TEST_F(BruTest, BranchGreaterEqualSigned) {
 
 // Test 11: BGEU (Branch if greater or equal unsigned)
 TEST_F(BruTest, BranchGreaterEqualUnsigned) {
-  auto bru = std::make_shared<BruComponent>("test_bru", *scheduler, 1);
+  auto bru = std::make_shared<BranchUnit>("test_bru", *scheduler, 1);
   bru->start();
 
   auto input_port = bru->getPort("in");
@@ -287,7 +287,7 @@ TEST_F(BruTest, BranchGreaterEqualUnsigned) {
 
 // Test 12: System operations (ECALL)
 TEST_F(BruTest, SystemOperations) {
-  auto bru = std::make_shared<BruComponent>("test_bru", *scheduler, 1);
+  auto bru = std::make_shared<BranchUnit>("test_bru", *scheduler, 1);
   bru->start();
 
   auto input_port = bru->getPort("in");
@@ -313,7 +313,7 @@ TEST_F(BruTest, EventDrivenExecution) {
   EventDriven::Tracer::getInstance().initialize("test_bru_event_driven.log",
                                                 true);
 
-  auto bru = std::make_shared<BruComponent>("test_bru_event", *scheduler, 2);
+  auto bru = std::make_shared<BranchUnit>("test_bru_event", *scheduler, 2);
   bru->start();
 
   auto input_port = bru->getPort("in");

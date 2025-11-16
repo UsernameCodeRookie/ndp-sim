@@ -32,7 +32,7 @@ TEST_F(MluTest, Initialization) {
   const uint64_t CLOCK_PERIOD = 1;
   const uint32_t NUM_LANES = 4;
 
-  auto mlu = std::make_shared<MluComponent>("MLU", *scheduler, CLOCK_PERIOD,
+  auto mlu = std::make_shared<MultiplyUnit>("MLU", *scheduler, CLOCK_PERIOD,
                                             NUM_LANES);
   mlu->start();
 
@@ -47,13 +47,13 @@ TEST_F(MluTest, MultiplyLowBits) {
   const uint64_t CLOCK_PERIOD = 1;
   const uint32_t NUM_LANES = 4;
 
-  auto mlu = std::make_shared<MluComponent>("MLU", *scheduler, CLOCK_PERIOD,
+  auto mlu = std::make_shared<MultiplyUnit>("MLU", *scheduler, CLOCK_PERIOD,
                                             NUM_LANES);
 
   mlu->start();
 
   // Test MUL: 3 * 4 = 12 (lower 32 bits)
-  mlu->processRequest(5, MluComponent::MulOp::MUL, 3, 4);
+  mlu->processRequest(5, MultiplyUnit::MulOp::MUL, 3, 4);
 
   // Run simulation for 4 cycles (3 pipeline stages + 1)
   scheduler->run(5);
@@ -71,7 +71,7 @@ TEST_F(MluTest, MultiplyHighBits) {
   const uint64_t CLOCK_PERIOD = 1;
   const uint32_t NUM_LANES = 4;
 
-  auto mlu = std::make_shared<MluComponent>("MLU", *scheduler, CLOCK_PERIOD,
+  auto mlu = std::make_shared<MultiplyUnit>("MLU", *scheduler, CLOCK_PERIOD,
                                             NUM_LANES);
 
   mlu->start();
@@ -79,7 +79,7 @@ TEST_F(MluTest, MultiplyHighBits) {
   // Test MULH: 0xFFFFFFFF * 0xFFFFFFFF = 0xFFFFFFFE00000001
   // High 32 bits: 0xFFFFFFFE
   // -1 (signed) * -1 (signed) = 1, high bits = 0
-  mlu->processRequest(10, MluComponent::MulOp::MULH, -1, -1);
+  mlu->processRequest(10, MultiplyUnit::MulOp::MULH, -1, -1);
 
   // Run simulation
   scheduler->run(5);
@@ -97,17 +97,17 @@ TEST_F(MluTest, MultipleRequests) {
   const uint64_t CLOCK_PERIOD = 1;
   const uint32_t NUM_LANES = 4;
 
-  auto mlu = std::make_shared<MluComponent>("MLU", *scheduler, CLOCK_PERIOD,
+  auto mlu = std::make_shared<MultiplyUnit>("MLU", *scheduler, CLOCK_PERIOD,
                                             NUM_LANES);
 
   mlu->start();
 
   // Submit multiple requests at different times
-  mlu->processRequest(1, MluComponent::MulOp::MUL, 5, 6);  // 5*6=30
+  mlu->processRequest(1, MultiplyUnit::MulOp::MUL, 5, 6);  // 5*6=30
 
   scheduler->run(5);
 
-  mlu->processRequest(2, MluComponent::MulOp::MUL, 7, 8);  // 7*8=56
+  mlu->processRequest(2, MultiplyUnit::MulOp::MUL, 7, 8);  // 7*8=56
 
   // Continue simulation
   scheduler->run(10);
@@ -125,13 +125,13 @@ TEST_F(MluTest, MulhsuOperation) {
   const uint64_t CLOCK_PERIOD = 1;
   const uint32_t NUM_LANES = 4;
 
-  auto mlu = std::make_shared<MluComponent>("MLU", *scheduler, CLOCK_PERIOD,
+  auto mlu = std::make_shared<MultiplyUnit>("MLU", *scheduler, CLOCK_PERIOD,
                                             NUM_LANES);
 
   mlu->start();
 
   // Test MULHSU: -1 (signed) * 2 (unsigned) = -2, high bits
-  mlu->processRequest(20, MluComponent::MulOp::MULHSU, -1, 2);
+  mlu->processRequest(20, MultiplyUnit::MulOp::MULHSU, -1, 2);
 
   // Run simulation
   scheduler->run(5);

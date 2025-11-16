@@ -27,7 +27,7 @@
  *
  * Inherits from PipelineComponent to reuse pipeline infrastructure
  */
-class MluComponent : public PipelineComponent {
+class MultiplyUnit : public Pipeline {
  public:
   enum class MulOp : uint8_t {
     MUL = 0,
@@ -67,9 +67,9 @@ class MluComponent : public PipelineComponent {
     }
   };
 
-  MluComponent(const std::string& name, EventDriven::EventScheduler& scheduler,
+  MultiplyUnit(const std::string& name, EventDriven::EventScheduler& scheduler,
                uint64_t period, uint32_t num_lanes = 4)
-      : PipelineComponent(name, scheduler, period, 3),
+      : Pipeline(name, scheduler, period, 3),
         num_lanes_(num_lanes),
         requests_processed_(0),
         results_output_(0) {
@@ -77,7 +77,7 @@ class MluComponent : public PipelineComponent {
     setupPipelineStages();
   }
 
-  virtual ~MluComponent() = default;
+  virtual ~MultiplyUnit() = default;
 
   /**
    * @brief Process a multiplication request
@@ -110,14 +110,14 @@ class MluComponent : public PipelineComponent {
   uint32_t getResultsOutput() const { return results_output_; }
 
   void printStatistics() const {
-    PipelineComponent::printStatistics();
+    Pipeline::printStatistics();
     std::cout << "MLU Requests processed: " << requests_processed_ << std::endl;
     std::cout << "MLU Results output: " << results_output_ << std::endl;
   }
 
   void tick() override {
     // Call parent tick for pipeline processing
-    PipelineComponent::tick();
+    Pipeline::tick();
 
     // Post-process output in stage 2
     if (stages_[num_stages_ - 1].valid) {

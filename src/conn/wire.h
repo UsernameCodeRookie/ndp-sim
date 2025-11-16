@@ -21,13 +21,13 @@ namespace Architecture {
  * - No flow control: always transfers if data is available
  * - Supports optional latency for simulating wire delay
  */
-class WireConnection : public TickingConnection {
+class Wire : public TickingConnection {
  public:
-  WireConnection(const std::string& name,
-                 EventDriven::EventScheduler& scheduler, uint64_t period)
+  Wire(const std::string& name, EventDriven::EventScheduler& scheduler,
+       uint64_t period)
       : TickingConnection(name, scheduler, period), transfers_(0) {}
 
-  virtual ~WireConnection() = default;
+  virtual ~Wire() = default;
 
   // Getters
   uint64_t getTransfers() const { return transfers_; }
