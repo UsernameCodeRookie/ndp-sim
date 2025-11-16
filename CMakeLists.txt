@@ -58,6 +58,18 @@ target_include_directories(test_credit_connection PRIVATE ${CMAKE_SOURCE_DIR}/sr
 target_link_libraries(test_credit_connection gtest gtest_main pthread)
 add_test(NAME test_credit_connection COMMAND test_credit_connection)
 
+# --- MLU tests ---
+add_executable(test_mlu tests/test_mlu.cpp)
+target_include_directories(test_mlu PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_mlu gtest gtest_main pthread)
+add_test(NAME test_mlu COMMAND test_mlu)
+
+# --- DVU tests ---
+add_executable(test_dvu tests/test_dvu.cpp)
+target_include_directories(test_dvu PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_dvu gtest gtest_main pthread)
+add_test(NAME test_dvu COMMAND test_dvu)
+
 enable_testing()
 
 # -----------------------------
