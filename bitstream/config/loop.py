@@ -166,7 +166,7 @@ class LCPEConfig(BaseConfigModule):
                     inport_list.append({})
                 
                 # Extract fields for each port (note: reversed order - port2, port1, port0)
-                for i, port in enumerate(inport_list):
+                for i, port in enumerate(inport_list[::-1]):
                     src_id = port.get('src_id')
                     # If src_id is a string (node name), create a Connect object
                     if isinstance(src_id, str):
