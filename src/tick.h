@@ -16,6 +16,13 @@
 namespace Architecture {
 
 /**
+ * @brief Event priority levels for scheduling
+ */
+constexpr int EVENT_PRIORITY_COMPONENT = 0;  // Component ticks
+constexpr int EVENT_PRIORITY_CONNECTION =
+    1;  // Connection propagates (before components)
+
+/**
  * @brief TickingComponent class
  *
  * A component that operates on a periodic tick cycle
@@ -63,7 +70,7 @@ class TickingComponent : public Component {
           // Schedule next tick
           scheduleTick(sched.getCurrentTime() + period_);
         },
-        0, name_ + "_Tick");
+        EVENT_PRIORITY_COMPONENT, name_ + "_Tick");
 
     scheduler_.schedule(tick_event);
   }
@@ -167,7 +174,7 @@ class TickingConnection : public Connection {
           // Schedule next propagate
           schedulePropagate(sched.getCurrentTime() + period_);
         },
-        0, name_ + "_Propagate");
+        EVENT_PRIORITY_CONNECTION, name_ + "_Propagate");
 
     scheduler_.schedule(propagate_event);
   }

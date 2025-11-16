@@ -83,34 +83,6 @@ class CreditConnection : public TickingConnection {
     std::cout << "Credits (last seen): " << credits_ << std::endl;
   }
 
- protected:
-  // Override schedulePropagate to use priority 1 (execute before component
-  // ticks)
-  void schedulePropagate(uint64_t time) {
-    if (!enabled_) return;
-
-    auto propagate_event = std::make_shared<EventDriven::LambdaEvent>(
-        time,
-        [this](EventDriven::EventScheduler& sched) {
-          if (!enabled_) return;
-
-          // Trace propagate event
-          EventDriven::Tracer::getInstance().tracePropagate(
-              sched.getCurrentTime(), name_,
-              "src_ports=" + std::to_string(src_ports_.size()) +
-                  " dst_ports=" + std::to_string(dst_ports_.size()));
-
-          // Execute propagate logic
-          propagate();
-
-          // Schedule next propagate
-          schedulePropagate(sched.getCurrentTime() + period_);
-        },
-        1, name_ + "_Propagate");  // Priority 1 (higher than components' 0)
-
-    scheduler_.schedule(propagate_event);
-  }
-
  private:
   bool canAcceptData() const { return data_buffer_.size() < buffer_size_; }
   bool hasDataToSend() const { return !data_buffer_.empty(); }
