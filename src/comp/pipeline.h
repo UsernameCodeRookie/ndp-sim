@@ -185,12 +185,16 @@ class Pipeline : public Architecture::TickingComponent {
       }
     }
 
-    // Stage 0: read from input
-    if (in->hasData()) {
-      auto input_data = in->read();
-      if (input_data && input_data->valid) {
-        // Apply stage 0 function
-        auto processed_data = stage_functions_[0](input_data);
+    // Stage 0: read from input OR generate data internally
+    // If input has data, use it; otherwise call stage 0 function with null data
+    // to allow components like SCore to generate their own data from buffers
+    auto input_data = in->hasData() ? in->read() : nullptr;
+
+    // Always try to process stage 0 (even without external input)
+    // This allows stage functions to generate data from internal buffers
+    if (!stages_[0].valid) {  // Only if stage 0 is not already occupied
+      auto processed_data = stage_functions_[0](input_data);
+      if (processed_data) {
         stages_[0] =
             PipelineStageData(processed_data, scheduler_.getCurrentTime());
 

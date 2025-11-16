@@ -30,7 +30,7 @@ class SCoreDispatchTest : public ::testing::Test {
 TEST_F(SCoreDispatchTest, InstructionDecoding) {
   // Test decoding of ALU ADD instruction (0x33 opcode base)
   // Simple test: decode a word and verify fields are extracted
-  auto inst = Architecture::InstructionDecoder::decode(0x1000, 0x00310333);
+  auto inst = Architecture::DecodeStage::decode(0x1000, 0x00310333);
   EXPECT_EQ(inst.addr, 0x1000);
   EXPECT_EQ(inst.word, 0x00310333);
   EXPECT_NE(inst.op_type, Architecture::DecodedInstruction::OpType::INVALID);
@@ -213,23 +213,23 @@ TEST_F(SCoreDispatchTest, DecodeValidInstruction) {
   // Test the InstructionDecoder with various opcodes
 
   // ALU ADD opcode (0x33)
-  auto alu_inst = Architecture::InstructionDecoder::decode(0x0, 0x00310333);
+  auto alu_inst = Architecture::DecodeStage::decode(0x0, 0x00310333);
   EXPECT_EQ(alu_inst.op_type, Architecture::DecodedInstruction::OpType::ALU);
 
   // Branch opcode (0x63)
-  auto bru_inst = Architecture::InstructionDecoder::decode(0x0, 0x00000063);
+  auto bru_inst = Architecture::DecodeStage::decode(0x0, 0x00000063);
   EXPECT_EQ(bru_inst.op_type, Architecture::DecodedInstruction::OpType::BRU);
 
   // JAL opcode (0x6F)
-  auto jal_inst = Architecture::InstructionDecoder::decode(0x0, 0x0000006F);
+  auto jal_inst = Architecture::DecodeStage::decode(0x0, 0x0000006F);
   EXPECT_EQ(jal_inst.op_type, Architecture::DecodedInstruction::OpType::BRU);
 
   // Load opcode (0x03)
-  auto load_inst = Architecture::InstructionDecoder::decode(0x0, 0x00000003);
+  auto load_inst = Architecture::DecodeStage::decode(0x0, 0x00000003);
   EXPECT_EQ(load_inst.op_type, Architecture::DecodedInstruction::OpType::LSU);
 
   // Store opcode (0x23)
-  auto store_inst = Architecture::InstructionDecoder::decode(0x0, 0x00000023);
+  auto store_inst = Architecture::DecodeStage::decode(0x0, 0x00000023);
   EXPECT_EQ(store_inst.op_type, Architecture::DecodedInstruction::OpType::LSU);
 }
 

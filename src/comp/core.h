@@ -10,6 +10,8 @@
 
 #include "comp/alu.h"
 #include "comp/bru.h"
+#include "comp/core/decode.h"
+#include "comp/core/dispatch.h"
 #include "comp/dvu.h"
 #include "comp/fpu.h"
 #include "comp/lsu.h"
@@ -25,132 +27,6 @@
 #include "trace.h"
 
 namespace Architecture {
-
-/**
- * @brief Simplified instruction representation for dispatch
- *
- * Contains decoded instruction fields needed for dispatch decisions
- */
-struct DecodedInstruction {
-  uint32_t addr;  // Program counter
-  uint32_t word;  // Instruction word
-
-  // Operation classification (simplified)
-  enum class OpType {
-    ALU,     // Arithmetic/Logic
-    BRU,     // Branch
-    MLU,     // Multiply
-    DVU,     // Divide
-    LSU,     // Load/Store
-    CSR,     // Control/Status Register
-    FENCE,   // Fence/barrier
-    INVALID  // Invalid instruction
-  };
-
-  OpType op_type;
-  uint32_t rd;   // Destination register
-  uint32_t rs1;  // Source register 1
-  uint32_t rs2;  // Source register 2
-  uint32_t imm;  // Immediate value
-
-  // Operation-specific code
-  uint32_t opcode;
-
-  DecodedInstruction()
-      : addr(0),
-        word(0),
-        op_type(OpType::INVALID),
-        rd(0),
-        rs1(0),
-        rs2(0),
-        imm(0),
-        opcode(0) {}
-};
-
-/**
- * @brief Simple decoder for instruction words
- *
- * Simplified version - only recognizes basic RV32I patterns
- */
-class InstructionDecoder {
- public:
-  static DecodedInstruction decode(uint32_t pc, uint32_t word) {
-    DecodedInstruction inst;
-    inst.addr = pc;
-    inst.word = word;
-
-    // Extract fields (RV32I format)
-    uint32_t opcode_bits = word & 0x7F;
-    inst.rd = (word >> 7) & 0x1F;
-    inst.rs1 = (word >> 15) & 0x1F;
-    inst.rs2 = (word >> 20) & 0x1F;
-    inst.opcode = (word >> 25) & 0x7F;
-
-    // Decode immediate fields
-    inst.imm = (word >> 20) & 0xFFF;  // I-type immediate
-
-    // Classify instruction type based on opcode
-    switch (opcode_bits) {
-      // ALU immediate instructions
-      case 0x13:  // ADDI, SLTI, XORI, ORI, ANDI, SLLI, SRLI, SRAI
-        inst.op_type = DecodedInstruction::OpType::ALU;
-        inst.opcode = static_cast<uint32_t>(ALUOp::ADD);
-        break;
-
-      // ALU register instructions
-      case 0x33:  // ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND
-        inst.op_type = DecodedInstruction::OpType::ALU;
-        inst.opcode = static_cast<uint32_t>(ALUOp::ADD);
-        break;
-
-      // Branch instructions
-      case 0x63:  // BEQ, BNE, BLT, BGE, BLTU, BGEU
-        inst.op_type = DecodedInstruction::OpType::BRU;
-        inst.opcode = static_cast<uint32_t>(BruOp::BEQ);
-        break;
-
-      // JAL
-      case 0x6F:
-        inst.op_type = DecodedInstruction::OpType::BRU;
-        inst.opcode = static_cast<uint32_t>(BruOp::JAL);
-        break;
-
-      // JALR
-      case 0x67:
-        inst.op_type = DecodedInstruction::OpType::BRU;
-        inst.opcode = static_cast<uint32_t>(BruOp::JALR);
-        break;
-
-      // Load instructions
-      case 0x03:  // LB, LH, LW, LBU, LHU
-        inst.op_type = DecodedInstruction::OpType::LSU;
-        inst.opcode = static_cast<uint32_t>(LSUOp::LOAD);
-        break;
-
-      // Store instructions
-      case 0x23:  // SB, SH, SW
-        inst.op_type = DecodedInstruction::OpType::LSU;
-        inst.opcode = static_cast<uint32_t>(LSUOp::STORE);
-        break;
-
-      // CSR instructions
-      case 0x73:  // CSRRW, CSRRS, CSRRC, EBREAK, ECALL
-        inst.op_type = DecodedInstruction::OpType::CSR;
-        break;
-
-      // FENCE
-      case 0x0F:
-        inst.op_type = DecodedInstruction::OpType::FENCE;
-        break;
-
-      default:
-        inst.op_type = DecodedInstruction::OpType::INVALID;
-        break;
-    }
-
-    return inst;
-  }
-};
 
 /**
  * @brief Coral NPU Scalar Core (SCore)
@@ -249,6 +125,8 @@ class SCore : public Pipeline {
         const Config& config = Config())
       : Pipeline(name, scheduler, 1, 3),  // 3-stage pipeline with period 1
         config_(config),
+        dispatch_ctrl_(name + "_DispatchCtrl", config.num_registers,
+                       config.num_instruction_lanes),
         instructions_dispatched_(0),
         instructions_retired_(0),
         branch_taken_(false),
@@ -474,26 +352,81 @@ class SCore : public Pipeline {
   }
 
   /**
-   * @brief Override tick to ensure dispatch happens every cycle
+   * @brief Setup pipeline stage functions
+   *
+   * Configures the 3-stage instruction pipeline:
+   * - Stage 0: Fetch/Decode - Extract instruction from buffer, decode fields
+   * - Stage 1: Dispatch - Issue instruction to execution unit
+   * - Stage 2: Execute/Writeback - Monitor completion
    */
-  void tick() override {
-    uint64_t current_time = scheduler_.getCurrentTime();
+  void setupPipelineStages() {
+    // Stage 0: Fetch/Decode
+    // Read from fetch buffer and decode the instruction
+    setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
+      uint64_t current_time = scheduler_.getCurrentTime();
 
-    TRACE_COMPUTE(current_time, getName(), "TICK_START",
-                  "fetch_buffer_size=" << fetch_buffer_.size());
+      // If we have instructions in fetch buffer, create a packet to drive the
+      // pipeline
+      if (!fetch_buffer_.empty()) {
+        const auto& inst_word = fetch_buffer_[0];
+        DecodedInstruction inst =
+            DecodeStage::decode(inst_word.first, inst_word.second);
 
-    // Call parent Pipeline::tick()
-    Pipeline::tick();
+        // Create a packet containing the decoded instruction information
+        auto decoded_packet =
+            std::make_shared<Architecture::IntDataPacket>(inst.word);
+        decoded_packet->timestamp = current_time;
 
-    // Additionally, try to dispatch every cycle if we have instructions in
-    // fetch buffer
-    if (!fetch_buffer_.empty()) {
-      uint32_t dispatched = dispatchCycle();
-      if (dispatched > 0) {
-        TRACE_COMPUTE(current_time, getName(), "TICK_DISPATCH",
-                      "Dispatched " << dispatched << " instructions");
+        TRACE_COMPUTE(current_time, getName(), "STAGE0_DECODE",
+                      "PC=0x" << std::hex << inst_word.first << " word=0x"
+                              << inst_word.second << std::dec);
+
+        return std::static_pointer_cast<Architecture::DataPacket>(
+            decoded_packet);
       }
-    }
+
+      // No instruction in buffer, return original data to avoid stalling
+      // pipeline
+      return data;
+    });
+
+    // Stage 1: Dispatch
+    // Take decoded instruction and dispatch to execution unit
+    setStageFunction(1, [this](std::shared_ptr<Architecture::DataPacket> data) {
+      uint64_t current_time = scheduler_.getCurrentTime();
+
+      // Dispatch cycle processes instructions from fetch buffer
+      if (!fetch_buffer_.empty()) {
+        uint32_t dispatched = dispatchCycle();
+        if (dispatched > 0) {
+          TRACE_COMPUTE(current_time, getName(), "STAGE1_DISPATCH",
+                        "Dispatched " << dispatched << " instructions, total="
+                                      << instructions_dispatched_);
+        } else if (!fetch_buffer_.empty()) {
+          TRACE_COMPUTE(
+              current_time, getName(), "STAGE1_STALL",
+              "Cannot dispatch, fetch_buffer size=" << fetch_buffer_.size());
+        }
+      }
+      return data;
+    });
+
+    // Stage 2: Execute/Writeback
+    // Monitor execution unit completions and update statistics
+    setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
+      uint64_t current_time = scheduler_.getCurrentTime();
+
+      // Only count retirement if data is valid
+      if (data) {
+        instructions_retired_++;
+
+        TRACE_COMPUTE(
+            current_time, getName(), "STAGE2_WRITEBACK",
+            "Retired " << 1 << " instruction, total=" << instructions_retired_);
+      }
+
+      return data;
+    });
   }
 
   /**
@@ -513,34 +446,6 @@ class SCore : public Pipeline {
 
     instructions_dispatched_ = 0;
     instructions_retired_ = 0;
-  }
-
-  /**
-   * @brief Setup pipeline stage functions
-   *
-   * Configures the 3-stage instruction pipeline:
-   * - Stage 0: Fetch/Decode - Extract instruction from buffer
-   * - Stage 1: Dispatch - Issue instruction to execution unit
-   * - Stage 2: Execute/Writeback - Monitor completion
-   */
-  void setupPipelineStages() {
-    // Stage 0: Fetch/Decode
-    setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      // Empty for now - fetch buffer is handled in tick()
-      return data;
-    });
-
-    // Stage 1: Dispatch
-    setStageFunction(1, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      // Empty for now - dispatch is handled in tick()
-      return data;
-    });
-
-    // Stage 2: Execute/Writeback
-    setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      // Empty for now
-      return data;
-    });
   }
 
   /**
@@ -687,6 +592,7 @@ class SCore : public Pipeline {
     uint64_t current_time = scheduler_.getCurrentTime();
 
     // Clear resource usage trackers for this cycle
+    dispatch_ctrl_.clearResourceTrackers();
     mlu_busy_ = false;
     dvu_busy_ = false;
     lsu_busy_ = false;
@@ -703,7 +609,7 @@ class SCore : public Pipeline {
          lane++) {
       const auto& inst_word = fetch_buffer_[fetch_index];
       DecodedInstruction inst =
-          InstructionDecoder::decode(inst_word.first, inst_word.second);
+          DecodeStage::decode(inst_word.first, inst_word.second);
 
       // Check if instruction is valid
       if (inst.op_type == DecodedInstruction::OpType::INVALID) {
@@ -726,8 +632,25 @@ class SCore : public Pipeline {
                     "Dispatched to lane=" << lane << ", rd=" << inst.rd);
 
       // Update scoreboard with destination register
+      dispatch_ctrl_.updateScoreboard(inst.rd);
       if (inst.rd != 0) {  // Register 0 is hardwired to 0
         scoreboard_[inst.rd] = true;
+      }
+
+      // Mark resource busy if needed
+      dispatch_ctrl_.setResourceBusy(inst);
+      switch (inst.op_type) {
+        case DecodedInstruction::OpType::MLU:
+          mlu_busy_ = true;
+          break;
+        case DecodedInstruction::OpType::DVU:
+          dvu_busy_ = true;
+          break;
+        case DecodedInstruction::OpType::LSU:
+          lsu_busy_ = true;
+          break;
+        default:
+          break;
       }
 
       // Check if this is a control flow instruction
@@ -764,36 +687,7 @@ class SCore : public Pipeline {
    * Implements hazard detection and resource constraints
    */
   bool canDispatch(const DecodedInstruction& inst, uint32_t lane) {
-    // Special instructions (CSR, FENCE) only in slot 0
-    if (lane > 0 && isSpecialInstruction(inst)) {
-      return false;
-    }
-
-    // Check RAW hazard (instruction reads operand written by pending
-    // instruction)
-    if (inst.rs1 != 0 && scoreboard_[inst.rs1]) {
-      return false;
-    }
-    if (inst.rs2 != 0 && scoreboard_[inst.rs2]) {
-      return false;
-    }
-
-    // Check resource constraints
-    switch (inst.op_type) {
-      case DecodedInstruction::OpType::MLU:
-        if (mlu_busy_) return false;
-        break;
-      case DecodedInstruction::OpType::DVU:
-        if (dvu_busy_) return false;
-        break;
-      case DecodedInstruction::OpType::LSU:
-        if (lsu_busy_) return false;
-        break;
-      default:
-        break;
-    }
-
-    return true;
+    return dispatch_ctrl_.canDispatch(inst, lane);
   }
 
   /**
@@ -931,25 +825,21 @@ class SCore : public Pipeline {
    * @brief Check if instruction is a control flow instruction
    */
   bool isControlFlowInstruction(const DecodedInstruction& inst) const {
-    return inst.op_type == DecodedInstruction::OpType::BRU ||
-           (inst.op_type == DecodedInstruction::OpType::CSR &&
-            inst.opcode == static_cast<uint32_t>(BruOp::ECALL)) ||
-           (inst.op_type == DecodedInstruction::OpType::CSR &&
-            inst.opcode == static_cast<uint32_t>(BruOp::MRET));
+    return DispatchStage::isControlFlowInstruction(inst);
   }
 
   /**
    * @brief Check if instruction is special (CSR, FENCE, etc)
    */
   bool isSpecialInstruction(const DecodedInstruction& inst) const {
-    return inst.op_type == DecodedInstruction::OpType::CSR ||
-           inst.op_type == DecodedInstruction::OpType::FENCE;
+    return DispatchStage::isSpecialInstruction(inst);
   }
 
   /**
    * @brief Clear scoreboard after instruction retirement
    */
   void retireInstruction(uint32_t rd) {
+    dispatch_ctrl_.retireRegister(rd);
     if (rd != 0 && rd < scoreboard_.size()) {
       scoreboard_[rd] = false;
     }
@@ -1051,6 +941,9 @@ class SCore : public Pipeline {
  private:
   // Configuration
   Config config_;
+
+  // Dispatch controller
+  DispatchStage dispatch_ctrl_;
 
   // Functional units
   std::vector<std::shared_ptr<ArithmeticLogicUnit>> alusv_;  // ALU instances
