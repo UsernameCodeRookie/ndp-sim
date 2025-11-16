@@ -49,8 +49,8 @@ class Wire : public TickingConnection {
         deliverData(dst_ports_[0], data);
         transfers_++;
 
-        TRACE_EVENT(scheduler_.getCurrentTime(), name_, "WIRE_TRANSFER",
-                    "transfers=" << transfers_);
+        // TRACE_EVENT(scheduler_.getCurrentTime(), name_, "WIRE_TRANSFER",
+        //             "transfers=" << transfers_);
       }
     }
   }
