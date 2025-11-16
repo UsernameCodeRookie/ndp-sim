@@ -160,13 +160,9 @@ class LCPEConfig(BaseConfigModule):
                 
                 self.values['opcode'] = entry.get('alu_opcode', 0)
                 
-                inport_list = entry.get('inport', [])
-                # Pad to 3 inports
-                while len(inport_list) < 3:
-                    inport_list.append({})
-                
                 # Extract fields for each port (note: reversed order - port2, port1, port0)
-                for i, port in enumerate(inport_list[::-1]):
+                for i in range(3):
+                    port = entry.get(f'inport{i}', {})
                     src_id = port.get('src_id')
                     # If src_id is a string (node name), create a Connect object
                     if isinstance(src_id, str):
