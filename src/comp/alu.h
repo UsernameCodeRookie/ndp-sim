@@ -1,38 +1,15 @@
 #ifndef ALU_H
 #define ALU_H
 
-#include <cmath>
 #include <cstring>
 #include <memory>
 #include <string>
-#include <type_traits>
 
 #include "../packet.h"
 #include "../port.h"
 #include "../tick.h"
 #include "../trace.h"
 #include "pipeline.h"
-
-/**
- * @brief Precision type tags
- */
-struct Int32Precision {};
-
-/**
- * @brief Precision traits for different data types
- *
- * Defines the data type, pipeline stages, and type name for precision
- */
-template <typename PrecisionType>
-struct PrecisionTraits;
-
-// Specialization for Int32
-template <>
-struct PrecisionTraits<Int32Precision> {
-  using DataType = int32_t;
-  static constexpr size_t pipeline_stages = 3;  // Decode, Execute, Writeback
-  static constexpr const char* name = "INT32";
-};
 
 /**
  * @brief ALU operation types
@@ -83,173 +60,70 @@ enum class ALUOp {
 };
 
 /**
- * @brief ALU Command
+ * @brief ALU Data Packet for int32 operations
  *
- * Contains the ALU operation and destination register address
- * Similar to Coral NPU's AluCmd structure
+ * Contains two int32 operands and operation code
  */
-class ALUCmd {
- public:
-  ALUCmd(uint32_t addr = 0, ALUOp op = ALUOp::ADD) : addr_(addr), op_(op) {}
-
-  uint32_t getAddr() const { return addr_; }
-  ALUOp getOp() const { return op_; }
-
-  void setAddr(uint32_t addr) { addr_ = addr; }
-  void setOp(ALUOp op) { op_ = op; }
-
- private:
-  uint32_t addr_;  // Destination register address (5 bits in RISC-V)
-  ALUOp op_;       // Operation code
-};
-
-/**
- * @brief ALU Data Packet (template version)
- *
- * Contains two operands and operation code
- */
-template <typename PrecisionType>
 class ALUDataPacket : public Architecture::DataPacket {
  public:
-  using DataType = typename PrecisionTraits<PrecisionType>::DataType;
-
-  ALUDataPacket(DataType operand_a, DataType operand_b, ALUOp op)
+  ALUDataPacket(int32_t operand_a, int32_t operand_b, ALUOp op)
       : operand_a_(operand_a), operand_b_(operand_b), op_(op) {}
 
-  DataType getOperandA() const { return operand_a_; }
-  DataType getOperandB() const { return operand_b_; }
+  int32_t getOperandA() const { return operand_a_; }
+  int32_t getOperandB() const { return operand_b_; }
   ALUOp getOperation() const { return op_; }
 
-  void setOperandA(DataType value) { operand_a_ = value; }
-  void setOperandB(DataType value) { operand_b_ = value; }
+  void setOperandA(int32_t value) { operand_a_ = value; }
+  void setOperandB(int32_t value) { operand_b_ = value; }
   void setOperation(ALUOp op) { op_ = op; }
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    auto cloned = std::make_shared<ALUDataPacket<PrecisionType>>(
-        operand_a_, operand_b_, op_);
+    auto cloned = std::make_shared<ALUDataPacket>(operand_a_, operand_b_, op_);
     cloned->setTimestamp(timestamp_);
     cloned->setValid(valid_);
     return cloned;
   }
 
  private:
-  DataType operand_a_;
-  DataType operand_b_;
+  int32_t operand_a_;
+  int32_t operand_b_;
   ALUOp op_;
 };
 
 /**
- * @brief ALU Component with accumulator support (template version)
+ * @brief ALU Component - 3-stage pipelined integer arithmetic unit
  *
- * Arithmetic Logic Unit implemented as a pipeline
- * Pipeline stages depend on precision type:
- *   Int32: 3 stages (Decode, Execute, Writeback)
- *   Float32: 5 stages (Decode, Execute1, Execute2, Execute3, Writeback)
+ * Supports RV32I base instruction set and ZBB bit manipulation extension.
+ * Implements a 3-stage pipeline: Decode -> Execute -> Writeback
  */
-template <typename PrecisionType>
 class ALUComponent : public PipelineComponent {
  public:
-  using DataType = typename PrecisionTraits<PrecisionType>::DataType;
-  static constexpr size_t pipeline_stages =
-      PrecisionTraits<PrecisionType>::pipeline_stages;
-
   ALUComponent(const std::string& name, EventDriven::EventScheduler& scheduler,
                uint64_t period)
-      : PipelineComponent(name, scheduler, period, pipeline_stages),
+      : PipelineComponent(name, scheduler, period, 3),
         operations_executed_(0),
         accumulator_(0) {
     setupPipelineStages();
   }
 
- private:
-  void setupPipelineStages() {
-    if constexpr (std::is_same_v<PrecisionType, Int32Precision>) {
-      setupInt32Pipeline();
-    }
-  }
-
-  void setupInt32Pipeline() {
-    // Stage 0: Decode - just pass through
-    setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      return data;
-    });
-
-    // Stage 1: Execute - perform the actual operation
-    setStageFunction(1, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      return executeStage(data);
-    });
-
-    // Stage 2: Write back - just pass through
-    setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      return data;
-    });
-  }
-
-  std::shared_ptr<Architecture::DataPacket> executeStage(
-      std::shared_ptr<Architecture::DataPacket> data) {
-    auto alu_data =
-        std::dynamic_pointer_cast<ALUDataPacket<PrecisionType>>(data);
-    if (alu_data) {
-      DataType a = alu_data->getOperandA();
-      DataType b = alu_data->getOperandB();
-      DataType result =
-          executeOperationWithAccumulator(a, b, alu_data->getOperation());
-
-      operations_executed_++;
-
-      TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(),
-                    getOpName(alu_data->getOperation()),
-                    a << " " << getOpSymbol(alu_data->getOperation()) << " "
-                      << b << " = " << result
-                      << " | ops=" << operations_executed_
-                      << " type=" << PrecisionTraits<PrecisionType>::name);
-
-      // Create result packet based on precision type
-      std::shared_ptr<Architecture::DataPacket> result_packet;
-      if constexpr (std::is_same_v<PrecisionType, Int32Precision>) {
-        result_packet = std::make_shared<Architecture::IntDataPacket>(
-            static_cast<int>(result));
-      } else {
-        // For Float32, we still use IntDataPacket but with float bits
-        // In a real implementation, you'd want a FloatDataPacket
-        int float_as_int;
-        std::memcpy(&float_as_int, &result, sizeof(float));
-        result_packet =
-            std::make_shared<Architecture::IntDataPacket>(float_as_int);
-      }
-      result_packet->setTimestamp(scheduler_.getCurrentTime());
-      return result_packet;
-    }
-    return data;
-  }
-
- public:
   /**
    * @brief Execute ALU operation with accumulator support
    */
-  DataType executeOperationWithAccumulator(DataType a, DataType b, ALUOp op) {
-    switch (op) {
-      case ALUOp::MAC:
-        // Multiply-Accumulate: accumulator = accumulator + (a * b)
-        accumulator_ = accumulator_ + (a * b);
-        return accumulator_;
-      default:
-        return executeOperation(a, b, op);
+  static int32_t executeOperationWithAccumulator(int32_t a, int32_t b, ALUOp op,
+                                                 int64_t& accumulator) {
+    if (op == ALUOp::MAC) {
+      // Multiply-Accumulate: accumulator = accumulator + (a * b)
+      accumulator =
+          accumulator + (static_cast<int64_t>(a) * static_cast<int64_t>(b));
+      return static_cast<int32_t>(accumulator);
     }
+    return executeOperation(a, b, op);
   }
 
   /**
    * @brief Execute ALU operation
    */
-  static DataType executeOperation(DataType a, DataType b, ALUOp op) {
-    if constexpr (std::is_same_v<PrecisionType, Int32Precision>) {
-      return executeInt32Operation(a, b, op);
-    }
-    return DataType{};
-  }
-
- private:
-  static DataType executeInt32Operation(DataType a, DataType b, ALUOp op) {
+  static int32_t executeOperation(int32_t a, int32_t b, ALUOp op) {
     switch (op) {
       // RV32I Base Instructions
       case ALUOp::ADD:
@@ -267,34 +141,33 @@ class ALUComponent : public PipelineComponent {
       case ALUOp::AND:
         return a & b;
       case ALUOp::SLL:
-        return a << (b & 0x1F);  // Mask to 5 bits (shift amount)
+        return a << (b & 0x1F);
       case ALUOp::SRL:
-        return static_cast<uint32_t>(a) >> (b & 0x1F);  // Logical shift
+        return static_cast<int32_t>(static_cast<uint32_t>(a) >> (b & 0x1F));
       case ALUOp::SRA:
-        return a >> (b & 0x1F);  // Arithmetic shift (sign-extended)
+        return a >> (b & 0x1F);
       case ALUOp::LUI:
-        return b;  // Load upper immediate: just use rs2
+        return b;
 
       // RV32M Multiply Extension
       case ALUOp::MUL:
         return a * b;
       case ALUOp::DIV:
-        return (b != 0) ? a / b : 0;  // Avoid division by zero
+        return (b != 0) ? a / b : 0;
 
       // ZBB Bit Manipulation Extension
       case ALUOp::ANDN:
-        return a & ~b;  // AND with NOT
+        return a & ~b;
       case ALUOp::ORN:
-        return a | ~b;  // OR with NOT
+        return a | ~b;
       case ALUOp::XNOR:
-        return ~(a ^ b);  // XNOR
+        return ~(a ^ b);
       case ALUOp::CLZ:
-        return __builtin_clz(static_cast<uint32_t>(a));  // Count leading zeros
+        return __builtin_clz(static_cast<uint32_t>(a));
       case ALUOp::CTZ:
-        return __builtin_ctz(static_cast<uint32_t>(a));  // Count trailing zeros
+        return __builtin_ctz(static_cast<uint32_t>(a));
       case ALUOp::CPOP:
-        return __builtin_popcount(
-            static_cast<uint32_t>(a));  // Population count
+        return __builtin_popcount(static_cast<uint32_t>(a));
       case ALUOp::MAX:
         return (a > b) ? a : b;
       case ALUOp::MAXU:
@@ -304,45 +177,37 @@ class ALUComponent : public PipelineComponent {
       case ALUOp::MINU:
         return (static_cast<uint32_t>(a) < static_cast<uint32_t>(b)) ? a : b;
       case ALUOp::SEXTB:
-        // Sign extend byte (8-bit to 32-bit)
         return static_cast<int8_t>(a & 0xFF);
       case ALUOp::SEXTH:
-        // Sign extend half-word (16-bit to 32-bit)
         return static_cast<int16_t>(a & 0xFFFF);
       case ALUOp::ROL:
-        // Rotate left
         return (a << (b & 0x1F)) |
-               (static_cast<uint32_t>(a) >> ((32 - (b & 0x1F)) & 0x1F));
+               (static_cast<int32_t>(static_cast<uint32_t>(a) >>
+                                     ((32 - (b & 0x1F)) & 0x1F)));
       case ALUOp::ROR:
-        // Rotate right
-        return (static_cast<uint32_t>(a) >> (b & 0x1F)) |
-               (a << ((32 - (b & 0x1F)) & 0x1F));
-      case ALUOp::ORCB:
-        // OR combine bytes: each byte becomes 0x00 or 0xFF
-        {
-          uint32_t ua = static_cast<uint32_t>(a);
-          uint32_t result = 0;
-          for (int i = 0; i < 4; i++) {
-            uint8_t byte = (ua >> (i * 8)) & 0xFF;
-            if (byte != 0) result |= (0xFF << (i * 8));
-          }
-          return static_cast<int32_t>(result);
+        return static_cast<int32_t>(
+            (static_cast<uint32_t>(a) >> (b & 0x1F)) |
+            (static_cast<uint32_t>(a) << ((32 - (b & 0x1F)) & 0x1F)));
+      case ALUOp::ORCB: {
+        uint32_t ua = static_cast<uint32_t>(a);
+        uint32_t result = 0;
+        for (int i = 0; i < 4; i++) {
+          uint8_t byte = (ua >> (i * 8)) & 0xFF;
+          if (byte != 0) result |= (0xFF << (i * 8));
         }
-      case ALUOp::REV8:
-        // Reverse bytes in 32-bit word
-        {
-          uint32_t ua = static_cast<uint32_t>(a);
-          return static_cast<int32_t>(
-              ((ua & 0xFF000000) >> 24) | ((ua & 0x00FF0000) >> 8) |
-              ((ua & 0x0000FF00) << 8) | ((ua & 0x000000FF) << 24));
-        }
+        return static_cast<int32_t>(result);
+      }
+      case ALUOp::REV8: {
+        uint32_t ua = static_cast<uint32_t>(a);
+        return static_cast<int32_t>(
+            ((ua & 0xFF000000) >> 24) | ((ua & 0x00FF0000) >> 8) |
+            ((ua & 0x0000FF00) << 8) | ((ua & 0x000000FF) << 24));
+      }
       case ALUOp::ZEXTH:
-        // Zero extend half-word (keep only lower 16 bits)
         return a & 0xFFFF;
 
       // Extra operations
       case ALUOp::MAC:
-        // MAC without accumulator context, just multiply
         return a * b;
       case ALUOp::PASS_A:
         return a;
@@ -353,13 +218,11 @@ class ALUComponent : public PipelineComponent {
     }
   }
 
- public:
   /**
    * @brief Get operation name as string
    */
   static std::string getOpName(ALUOp op) {
     switch (op) {
-      // RV32I Base Instructions
       case ALUOp::ADD:
         return "ADD";
       case ALUOp::SUB:
@@ -382,14 +245,10 @@ class ALUComponent : public PipelineComponent {
         return "SRA";
       case ALUOp::LUI:
         return "LUI";
-
-      // RV32M Multiply
       case ALUOp::MUL:
         return "MUL";
       case ALUOp::DIV:
         return "DIV";
-
-      // ZBB Bit Manipulation
       case ALUOp::ANDN:
         return "ANDN";
       case ALUOp::ORN:
@@ -424,8 +283,6 @@ class ALUComponent : public PipelineComponent {
         return "REV8";
       case ALUOp::ZEXTH:
         return "ZEXTH";
-
-      // Extra
       case ALUOp::MAC:
         return "MAC";
       case ALUOp::PASS_A:
@@ -511,25 +368,58 @@ class ALUComponent : public PipelineComponent {
   uint64_t getOperationsExecuted() const { return operations_executed_; }
 
   // Accumulator access
-  DataType getAccumulator() const { return accumulator_; }
-  void resetAccumulator() { accumulator_ = DataType{}; }
-  void setAccumulator(DataType value) { accumulator_ = value; }
+  int64_t getAccumulator() const { return accumulator_; }
+  void resetAccumulator() { accumulator_ = 0; }
+  void setAccumulator(int64_t value) { accumulator_ = value; }
 
   void printStatistics() const {
     PipelineComponent::printStatistics();
-    std::cout << "Precision: " << PrecisionTraits<PrecisionType>::name
-              << std::endl;
-    std::cout << "Pipeline stages: " << pipeline_stages << std::endl;
+    std::cout << "Precision: INT32" << std::endl;
+    std::cout << "Pipeline stages: 3" << std::endl;
     std::cout << "Operations executed: " << operations_executed_ << std::endl;
     std::cout << "Accumulator value: " << accumulator_ << std::endl;
   }
 
  private:
   uint64_t operations_executed_;
-  DataType accumulator_;  // Internal accumulator for MAC operations
-};
+  int64_t accumulator_;
 
-// Type alias for integer ALU
-using INTUComponent = ALUComponent<Int32Precision>;
+  void setupPipelineStages() {
+    // Stage 0: Decode - just pass through
+    setStageFunction(
+        0, [](std::shared_ptr<Architecture::DataPacket> data) { return data; });
+
+    // Stage 1: Execute - perform the actual operation
+    setStageFunction(1, [this](std::shared_ptr<Architecture::DataPacket> data) {
+      auto alu_data = std::dynamic_pointer_cast<ALUDataPacket>(data);
+      if (alu_data) {
+        int32_t a = alu_data->getOperandA();
+        int32_t b = alu_data->getOperandB();
+        int32_t result = executeOperationWithAccumulator(
+            a, b, alu_data->getOperation(), accumulator_);
+
+        operations_executed_++;
+
+        TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(),
+                      getOpName(alu_data->getOperation()),
+                      a << " " << getOpSymbol(alu_data->getOperation()) << " "
+                        << b << " = " << result
+                        << " | ops=" << operations_executed_);
+
+        // Create result packet
+        auto result_packet =
+            std::make_shared<Architecture::IntDataPacket>(result);
+        result_packet->setTimestamp(scheduler_.getCurrentTime());
+        return std::static_pointer_cast<Architecture::DataPacket>(
+            result_packet);
+      }
+      return data;
+    });
+
+    // Stage 2: Write back - just pass through
+    setStageFunction(
+        2, [](std::shared_ptr<Architecture::DataPacket> data) { return data; });
+  }
+};
 
 #endif  // ALU_H
