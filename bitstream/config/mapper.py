@@ -763,11 +763,16 @@ class Mapper:
                             break
         
         self.node_to_resource = best_mapping
+        self.last_mapping_cost = best_cost  # Store cost for later access
         return best_mapping
 
     def get(self, node: str) -> Optional[str]:
         """Return the physical resource assigned to a given node."""
         return self.node_to_resource.get(node)
+    
+    def get_last_mapping_cost(self) -> float:
+        """Return the cost (penalty) of the last mapping search."""
+        return getattr(self, 'last_mapping_cost', float('inf'))
     
     def register_module(self, resource: str, module: any):
         """Register a module object for a physical resource."""
@@ -881,7 +886,11 @@ class NodeGraph:
         print(f"[Success] Direct mapping completed with {len(result)} nodes")
     
     def heuristic_search_mapping(self, max_iterations: int = 5000):
-        """Use simulated annealing to find a valid mapping for large graphs."""
+        """Use simulated annealing to find a valid mapping for large graphs.
+        
+        Returns:
+            float: The cost (penalty) of the best mapping found, or inf if search failed.
+        """
         print(f"[Heuristic Search] Using {len(self.connections)} connections")
         for c in self.connections:
             print(f"  Connection: {c['src']} -> {c['dst']}")
@@ -889,9 +898,12 @@ class NodeGraph:
                                               node_metadata=self.node_metadata)
         if result is None or len(result) == 0:
             print("[Warning] Heuristic search failed, keeping initial allocation")
+            return float('inf')
         else:
             print(f"[Success] Heuristic search completed with {len(result)} nodes")
             self.mapping.node_to_resource = result
+            # Return the cost of the best mapping found
+            return self.mapping.get_last_mapping_cost()
 
     def summary(self):
         """Print nodes, connections, and their corresponding physical resources."""

@@ -51,7 +51,7 @@ def load_config(config_file='./data/gemm_config_reference_aligned.json'):
     with open(config_file) as f:
         return json.load(f)
 
-def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuristic_iterations=5000):
+def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuristic_iterations=5000, heuristic_restarts=1):
     """Initialize all hardware modules from config and perform resource mapping.
     
     Args:
@@ -59,6 +59,7 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
         use_direct_mapping: If True, use direct logical→physical mapping without constraint search
         use_heuristic_search: If True, use simulated annealing heuristic search for large graphs
         heuristic_iterations: Maximum iterations for heuristic search (default: 5000)
+        heuristic_restarts: Number of restart attempts if heuristic search fails (default: 1)
     """
     # Reset NodeIndex state for clean initialization
     NodeIndex._queue = []
@@ -97,14 +98,47 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
     NodeGraph.get().allocate_resources(only_connected_nodes=True)
     
     # Choose mapping strategy based on parameters (heuristic enabled by default)
+    mapping_success = False
     if use_direct_mapping:
         # Direct mapping: use allocation order without constraint search
         print("\n=== Using Direct Mapping (No Constraint Search) ===")
         NodeGraph.get().direct_mapping()
+        mapping_success = True
     elif use_heuristic_search:
-        # Heuristic search: use simulated annealing for large graphs
+        # Heuristic search: use simulated annealing for large graphs with retries
         print("\n=== Using Heuristic Search (Simulated Annealing) ===")
-        NodeGraph.get().heuristic_search_mapping(max_iterations=heuristic_iterations)
+        for attempt in range(heuristic_restarts):
+            if attempt > 0:
+                print(f"\n[Retry] Attempt {attempt + 1}/{heuristic_restarts}")
+                # Reset NodeGraph and reload configurations for retry
+                NodeGraph._instance = None
+                NodeIndex._queue = []
+                NodeIndex._registry = {}
+                NodeIndex._counter = 0
+                NodeIndex._resolved = False
+                
+                # Reload modules
+                for module in modules:
+                    module.from_json(cfg)
+                NodeGraph.get().allocate_resources(only_connected_nodes=True)
+            
+            # Perform heuristic search and get the cost of the best mapping found
+            mapping_cost = NodeGraph.get().heuristic_search_mapping(max_iterations=heuristic_iterations)
+            
+            # Check if mapping is valid (cost == 0 means no constraint violations)
+            if mapping_cost == 0:
+                print("[✓] Mapping successful with zero violations")
+                mapping_success = True
+                break
+            elif attempt < heuristic_restarts - 1:
+                # More retries available - continue loop
+                print(f"[→] Found violations (penalty: {mapping_cost:.2f}), retrying...")
+                continue
+            else:
+                # Last attempt - accept the mapping even with violations
+                print(f"[⚠] Max retries reached. Accepting mapping with penalty: {mapping_cost:.2f}")
+                mapping_success = True
+                break
     
     # After mapping, allocate remaining resources for unconnected nodes
     NodeGraph.get().allocate_resources(only_connected_nodes=False)

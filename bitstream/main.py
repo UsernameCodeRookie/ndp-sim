@@ -67,10 +67,10 @@ Examples:
     
     # Output file names
     parser.add_argument(
-        '--bitstream-name',
+        '--parsed-name',
         type=str,
-        default='generated_bitstream.txt',
-        help='Name of generated bitstream file (default: generated_bitstream.txt)'
+        default='parsed_bitstream.txt',
+        help='Name of parsed bitstream file (default: parsed_bitstream.txt)'
     )
     
     parser.add_argument(
@@ -104,13 +104,6 @@ Examples:
         '--no-dump-parsed',
         action='store_true',
         help='Skip parsed bitstream generation (enabled by default)'
-    )
-    
-    parser.add_argument(
-        '--parsed-name',
-        type=str,
-        default='parsed_bitstream.txt',
-        help='Name of parsed bitstream file (default: parsed_bitstream.txt)'
     )
     
     parser.add_argument(
@@ -170,6 +163,13 @@ Examples:
         help='Maximum iterations for heuristic search (default: 5000)'
     )
     
+    parser.add_argument(
+        '--heuristic-restarts',
+        type=int,
+        default=10,
+        help='Number of restart attempts for heuristic search if initial attempt fails (default: 10)'
+    )
+    
     # Output control
     parser.add_argument(
         '-q', '--quiet',
@@ -212,7 +212,7 @@ Examples:
         if args.direct_mapping:
             mapping_mode = "Direct (no search)"
         elif args.heuristic_search:
-            mapping_mode = f"Heuristic (simulated annealing, {args.heuristic_iterations} iters)"
+            mapping_mode = f"Heuristic (simulated annealing, {args.heuristic_iterations} iters, {args.heuristic_restarts} restarts)"
         else:
             mapping_mode = "Heuristic (simulated annealing - fallback)"
         print(f"Mapping mode:     {mapping_mode}")
@@ -220,9 +220,6 @@ Examples:
         print(f"Detailed dump:    {'No' if args.no_dump_detailed else 'Yes'}")
         print(f"Parsed dump:      {'No' if args.no_dump_parsed else 'Yes'}")
         print(f"Placement viz:    {'Yes' if args.visualize_placement else 'No'}")
-        print(f"Compare:          {'Yes' if args.compare else 'No'}")
-        if args.compare:
-            print(f"Reference file:   {args.compare}")
         print("="*80)
     
     try:
@@ -238,7 +235,8 @@ Examples:
         modules = init_modules(cfg, 
                              use_direct_mapping=args.direct_mapping,
                              use_heuristic_search=args.heuristic_search,
-                             heuristic_iterations=args.heuristic_iterations)
+                             heuristic_iterations=args.heuristic_iterations,
+                             heuristic_restarts=args.heuristic_restarts)
         
         # Step 3: Generate placement visualization (if requested)
         if args.visualize_placement:
@@ -274,10 +272,8 @@ Examples:
         if args.verbose:
             print("[5/6] Building bitstream entries and generating bitstream...")
         entries = build_entries(modules)
+        config_mask = [int(b) for b in args.config_mask]
         bitstream = generate_bitstream(entries, config_mask)
-        
-        bitstream_path = output_dir / args.bitstream_name
-        write_bitstream(entries, output_file=str(bitstream_path))
         
         # Step 5.5: Generate parsed bitstream (default enabled)
         if not args.no_dump_parsed:
@@ -289,7 +285,7 @@ Examples:
             print("[5.5/6] Skipping parsed bitstream")
         
         if not args.quiet:
-            print(f"\n✓ Bitstream generated: {bitstream_path}")
+            print(f"\n✓ Bitstream generated successfully")
             if not args.no_dump_binary:
                 print(f"✓ Binary dump: {output_dir / args.binary_name}")
             if not args.no_dump_detailed:
