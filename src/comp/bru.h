@@ -11,6 +11,8 @@
 #include "../trace.h"
 #include "pipeline.h"
 
+namespace Architecture {
+
 /**
  * @brief BRU operation types
  *
@@ -73,20 +75,23 @@ class BruCommandPacket : public Architecture::DataPacket {
 class BruResultPacket : public Architecture::DataPacket {
  public:
   BruResultPacket(uint32_t target = 0, bool taken = false,
-                  bool link_valid = false, uint32_t link_data = 0)
+                  bool link_valid = false, uint32_t link_data = 0,
+                  uint32_t rd = 0)
       : target(target),
         taken(taken),
         link_valid(link_valid),
-        link_data(link_data) {}
+        link_data(link_data),
+        rd(rd) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return cloneImpl<BruResultPacket>(target, taken, link_valid, link_data);
+    return cloneImpl<BruResultPacket>(target, taken, link_valid, link_data, rd);
   }
 
   uint32_t target;     // Branch target address
   bool taken;          // Whether branch is taken
   bool link_valid;     // Whether link register is valid
   uint32_t link_data;  // Link register data (return address)
+  uint32_t rd;         // Destination register (for JAL/JALR write-back)
 };
 
 /**
@@ -207,8 +212,8 @@ class BranchUnit : public Pipeline {
           (cmd->op == BruOp::JAL || cmd->op == BruOp::JALR) && (rd != 0);
       uint32_t link_data = pc + 4;
 
-      auto result = std::make_shared<BruResultPacket>(branch_target, taken,
-                                                      link_valid, link_data);
+      auto result = std::make_shared<BruResultPacket>(
+          branch_target, taken, link_valid, link_data, rd);
       result->timestamp = data->timestamp;
 
       return std::static_pointer_cast<Architecture::DataPacket>(result);
@@ -311,5 +316,7 @@ class BranchUnit : public Pipeline {
 
   std::shared_ptr<BruCommandPacket> current_cmd_;
 };
+
+}  // namespace Architecture
 
 #endif  // BRU_H

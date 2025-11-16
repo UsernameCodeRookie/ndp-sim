@@ -8,6 +8,7 @@
 #include "../alu.h"
 #include "../bru.h"
 #include "../lsu.h"
+#include "../mlu.h"
 
 namespace Architecture {
 
@@ -85,12 +86,22 @@ class DecodeStage {
         // rs2 stays 0 for I-type
         break;
 
-      // ALU register instructions
-      case 0x33:  // ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND
-        inst.op_type = DecodedInstruction::OpType::ALU;
-        inst.opcode = static_cast<uint32_t>(ALUOp::ADD);
+      // ALU register instructions and MLU operations (both opcode 0x33)
+      case 0x33: {                       // ADD, SUB, MUL, MULH, etc.
         inst.rs2 = (word >> 20) & 0x1F;  // R-type: extract rs2
+        uint32_t funct7 = (word >> 25) & 0x7F;
+
+        if (funct7 == 0x01) {
+          // MUL operations (funct7=0x01)
+          inst.op_type = DecodedInstruction::OpType::MLU;
+          inst.opcode = static_cast<uint32_t>(MultiplyUnit::MulOp::MUL);
+        } else {
+          // ALU operations (funct7=0x00)
+          inst.op_type = DecodedInstruction::OpType::ALU;
+          inst.opcode = static_cast<uint32_t>(ALUOp::ADD);
+        }
         break;
+      }
 
       // Branch instructions
       case 0x63:  // BEQ, BNE, BLT, BGE, BLTU, BGEU

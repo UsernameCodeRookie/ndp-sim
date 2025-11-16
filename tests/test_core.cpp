@@ -115,7 +115,7 @@ TEST_F(SCoreTest, BRUExecution) {
               0,       // unused lane for BRU
               0x1000,  // target address
               0,       // unused
-              static_cast<uint32_t>(BruOp::JAL),
+              static_cast<uint32_t>(Architecture::BruOp::JAL),
               1  // rd (link register)
   );
 
@@ -175,7 +175,7 @@ TEST_F(SCoreTest, StatisticsReporting) {
               static_cast<uint32_t>(ALUOp::ADD), 1);
 
   core->issue(Architecture::SCore::OpType::BRU, 0, 0x2000, 0,
-              static_cast<uint32_t>(BruOp::JAL), 2);
+              static_cast<uint32_t>(Architecture::BruOp::JAL), 2);
 
   // Test that statistics are accessible
   EXPECT_EQ(core->getInstructionsDispatched(), 2);

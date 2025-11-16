@@ -18,9 +18,9 @@ namespace Architecture {
 /**
  * @brief Event priority levels for scheduling
  */
-constexpr int EVENT_PRIORITY_COMPONENT = 0;  // Component ticks
+constexpr int EVENT_PRIORITY_COMPONENT = 0;  // Component ticks (execute first)
 constexpr int EVENT_PRIORITY_CONNECTION =
-    1;  // Connection propagates (before components)
+    1;  // Connection propagates (execute after components)
 
 /**
  * @brief TickingComponent class

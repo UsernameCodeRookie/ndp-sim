@@ -261,6 +261,31 @@ class SCore : public Pipeline {
       conn->setLatency(config_.connection_latency);
       lsu_wb_connection_ = conn;
     }
+
+    // Connect functional unit outputs to wire connections
+    // This enables data buffering through wire instead of direct port access
+    for (uint32_t i = 0; i < alusv_.size() && i < alu_wb_connections_.size();
+         i++) {
+      auto alu = alusv_[i];
+      auto out_port = alu->getPort("out");
+      if (out_port && alu_wb_connections_[i]) {
+        alu_wb_connections_[i]->addSourcePort(out_port);
+      }
+    }
+
+    if (bru_) {
+      auto out_port = bru_->getPort("out");
+      if (out_port && bru_wb_connection_) {
+        bru_wb_connection_->addSourcePort(out_port);
+      }
+    }
+
+    if (mlu_) {
+      auto out_port = mlu_->getPort("out");
+      if (out_port && mlu_wb_connection_) {
+        mlu_wb_connection_->addSourcePort(out_port);
+      }
+    }
   }
 
   /**
@@ -458,30 +483,80 @@ class SCore : public Pipeline {
 
     // Stage 2: Execute/Writeback
     // Monitor execution unit completions and update statistics
+    // Poll results from wire connections (which buffer FU outputs)
     setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
       uint64_t current_time = scheduler_.getCurrentTime();
 
-      // Poll ALU outputs for completed instructions
+      // Poll ALL ALU writeback wires every cycle
       std::shared_ptr<Architecture::DataPacket> wb_result = nullptr;
-      for (uint32_t i = 0; i < alusv_.size(); i++) {
-        auto alu = alusv_[i];
-        auto out_port = alu->getPort("out");
-        if (out_port && out_port->hasData()) {
-          auto result = out_port->read();
-          auto alu_result =
-              std::dynamic_pointer_cast<Architecture::ALUResultPacket>(result);
-          if (alu_result) {
-            // Write result to register file and clear scoreboard
-            if (alu_result->rd != 0) {
-              regfile_->writeRegister(alu_result->rd, alu_result->value);
-              retireInstruction(alu_result->rd);
+      for (uint32_t i = 0; i < alu_wb_connections_.size(); i++) {
+        auto conn = alu_wb_connections_[i];
+        if (conn && !conn->getSourcePorts().empty()) {
+          auto src_port = conn->getSourcePorts()[0];
+          if (src_port && src_port->hasData()) {
+            auto result = src_port->read();
+            auto alu_result =
+                std::dynamic_pointer_cast<Architecture::ALUResultPacket>(
+                    result);
+            if (alu_result) {
+              // Write result to register file and clear scoreboard
+              if (alu_result->rd != 0) {
+                regfile_->writeRegister(alu_result->rd, alu_result->value);
+                TRACE_COMPUTE(current_time, getName(), "REGFILE_WRITE",
+                              "ALU wrote x" << alu_result->rd << " = "
+                                            << alu_result->value);
+                retireInstruction(alu_result->rd);
 
-              TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
-                            "Retired ALU result=" << alu_result->value
-                                                  << " to x" << alu_result->rd);
+                TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
+                              "Retired ALU result=" << alu_result->value
+                                                    << " to x" << alu_result->rd
+                                                    << " from ALU" << i);
+              }
+              instructions_retired_++;
+              wb_result = result;  // Keep last result
             }
+          }
+        }
+      }
+
+      // Poll BRU output from wire
+      if (bru_wb_connection_ && !bru_wb_connection_->getSourcePorts().empty()) {
+        auto src_port = bru_wb_connection_->getSourcePorts()[0];
+        if (src_port && src_port->hasData()) {
+          auto result = src_port->read();
+          auto bru_result =
+              std::dynamic_pointer_cast<Architecture::BruResultPacket>(result);
+          if (bru_result && bru_result->link_valid && bru_result->rd != 0) {
+            // For JAL/JALR, write back the link address
+            regfile_->writeRegister(bru_result->rd, bru_result->link_data);
+            TRACE_COMPUTE(current_time, getName(), "REGFILE_WRITE",
+                          "BRU wrote x" << bru_result->rd << " = "
+                                        << bru_result->link_data);
+            retireInstruction(bru_result->rd);
             instructions_retired_++;
-            wb_result = result;  // Return ALU result to keep pipeline moving
+            wb_result = result;
+          }
+        }
+      }
+
+      // Poll MLU output from wire
+      if (mlu_wb_connection_ && !mlu_wb_connection_->getSourcePorts().empty()) {
+        auto src_port = mlu_wb_connection_->getSourcePorts()[0];
+        if (src_port && src_port->hasData()) {
+          auto result = src_port->read();
+          auto mlu_result =
+              std::dynamic_pointer_cast<Architecture::MLUResultPacket>(result);
+          if (mlu_result && mlu_result->rd != 0) {
+            regfile_->writeRegister(mlu_result->rd, mlu_result->value);
+            TRACE_COMPUTE(
+                current_time, getName(), "REGFILE_WRITE",
+                "MLU wrote x" << mlu_result->rd << " = " << mlu_result->value);
+            retireInstruction(mlu_result->rd);
+            TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
+                          "Retired MLU result=" << mlu_result->value << " to x"
+                                                << mlu_result->rd);
+            instructions_retired_++;
+            wb_result = result;
           }
         }
       }
@@ -768,6 +843,8 @@ class SCore : public Pipeline {
   bool dispatchToALU(const DecodedInstruction& inst, uint32_t lane) {
     // Read operands and dispatch using helper
     uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+    TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
+                  "Dispatch: x" << inst.rs1 << " = " << rs1_val);
 
     // For I-type instructions (like ADDI), use immediate as second operand
     // For R-type instructions (like ADD), use rs2 register
@@ -779,6 +856,8 @@ class SCore : public Pipeline {
     // A better check would examine the funct3 field
     if ((inst.word & 0x7F) == 0x33) {  // R-type opcode (ADD, SUB, etc)
       rs2_val = regfile_->readRegister(inst.rs2);
+      TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
+                    "Dispatch: x" << inst.rs2 << " = " << rs2_val);
     }
 
     return issueALU(lane, rs1_val, rs2_val, inst.opcode, inst.rd);
@@ -790,7 +869,11 @@ class SCore : public Pipeline {
   bool dispatchToBRU(const DecodedInstruction& inst) {
     // Read operands and dispatch using helper
     uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+    TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
+                  "Dispatch: x" << inst.rs1 << " = " << rs1_val);
     uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+    TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
+                  "Dispatch: x" << inst.rs2 << " = " << rs2_val);
     return issueBRU(pc_ + 4, inst.opcode, rs1_val, rs2_val, inst.rd);
   }
 
@@ -800,7 +883,11 @@ class SCore : public Pipeline {
   bool dispatchToMLU(const DecodedInstruction& inst) {
     // Read operands and dispatch using helper
     uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+    TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
+                  "Dispatch: x" << inst.rs1 << " = " << rs1_val);
     uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+    TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
+                  "Dispatch: x" << inst.rs2 << " = " << rs2_val);
     return issueMLU(
         inst.rd, inst.opcode,
         static_cast<int64_t>(rs1_val) * static_cast<int64_t>(rs2_val));
@@ -812,7 +899,11 @@ class SCore : public Pipeline {
   bool dispatchToDVU(const DecodedInstruction& inst) {
     // Read operands and dispatch using helper
     uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+    TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
+                  "Dispatch: x" << inst.rs1 << " = " << rs1_val);
     uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+    TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
+                  "Dispatch: x" << inst.rs2 << " = " << rs2_val);
     return issueDVU(inst.rd, inst.opcode, static_cast<int32_t>(rs1_val),
                     static_cast<int32_t>(rs2_val));
   }
@@ -823,7 +914,11 @@ class SCore : public Pipeline {
   bool dispatchToLSU(const DecodedInstruction& inst) {
     // Read operands and dispatch using helper
     uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+    TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
+                  "Dispatch: x" << inst.rs1 << " = " << rs1_val);
     uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+    TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
+                  "Dispatch: x" << inst.rs2 << " = " << rs2_val);
     return issueLSU(inst.opcode, rs1_val, static_cast<int32_t>(rs2_val));
   }
 
@@ -955,7 +1050,10 @@ class SCore : public Pipeline {
    */
   uint32_t readRegister(uint32_t addr) {
     if (regfile_) {
-      return regfile_->readRegister(addr);
+      uint32_t val = regfile_->readRegister(addr);
+      TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
+                    "Debug read: x" << addr << " = " << val);
+      return val;
     }
     return 0;
   }
@@ -966,6 +1064,8 @@ class SCore : public Pipeline {
   void writeRegister(uint32_t addr, uint32_t data) {
     if (regfile_) {
       regfile_->writeRegister(addr, data);
+      TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_WRITE",
+                    "Debug write: x" << addr << " = " << data);
     }
   }
 

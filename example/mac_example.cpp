@@ -80,38 +80,82 @@ class MACExample {
     std::cout << "  Load instruction sequence into instruction memory:"
               << std::endl;
 
-    // Create RISC-V ADDI instructions with different immediate values
-    // ADDI rd, rs1, imm: opcode=0x13
-    // Encode: imm[11:0](12) | rs1(5) | funct3(3) | rd(5) | opcode(7)
+    // Generate MAC instructions: multiply then add
+    // Step 1: Load immediates into registers (use ADDI)
+    // Step 2: Multiply a[i] * b[i] using MLU (MUL rd, rs1, rs2 = opcode 0x33)
+    // Step 3: Accumulate results using ALU ADD
+    // Expected: (10*5) + (20*6) + (30*7) + (40*8) = 50 + 120 + 210 + 320 = 700
 
     std::vector<uint32_t> instructions;
 
-    // Generate 16 ADDI instructions, each writing to a unique register (x1-x16)
-    // All source from x0 to avoid input dependencies
-    // This ensures all instructions can execute in parallel with no conflicts
-    for (int i = 0; i < 16; i++) {
-      // Use values from a[] and b[] arrays as immediates
-      int imm = a[i % 4] + b[i % 4];  // 15, 26, 37, 48 ...
-      imm = imm & 0xFFF;              // Keep 12-bit immediate
+    // Load a[0]=10 into x1: ADDI x1, x0, 10
+    instructions.push_back((10 << 20) | (0 << 15) | (0 << 12) | (1 << 7) |
+                           0x13);
 
-      int rd =
-          i +
-          1;  // Use x1, x2, x3, ..., x16 (unique register for each instruction)
-      int rs1 = 0;  // Always use x0 as source to avoid input dependencies
+    // Load b[0]=5 into x2: ADDI x2, x0, 5
+    instructions.push_back((5 << 20) | (0 << 15) | (0 << 12) | (2 << 7) | 0x13);
 
-      // ADDI encoding: ADDI rd, x0, imm
-      uint32_t inst = (imm << 20) | (rs1 << 15) | (0 << 12) | (rd << 7) | 0x13;
-      instructions.push_back(inst);
-    }
+    // Load a[1]=20 into x3: ADDI x3, x0, 20
+    instructions.push_back((20 << 20) | (0 << 15) | (0 << 12) | (3 << 7) |
+                           0x13);
+
+    // Load b[1]=6 into x4: ADDI x4, x0, 6
+    instructions.push_back((6 << 20) | (0 << 15) | (0 << 12) | (4 << 7) | 0x13);
+
+    // Load a[2]=30 into x5: ADDI x5, x0, 30
+    instructions.push_back((30 << 20) | (0 << 15) | (0 << 12) | (5 << 7) |
+                           0x13);
+
+    // Load b[2]=7 into x6: ADDI x6, x0, 7
+    instructions.push_back((7 << 20) | (0 << 15) | (0 << 12) | (6 << 7) | 0x13);
+
+    // Load a[3]=40 into x7: ADDI x7, x0, 40
+    instructions.push_back((40 << 20) | (0 << 15) | (0 << 12) | (7 << 7) |
+                           0x13);
+
+    // Load b[3]=8 into x8: ADDI x8, x0, 8
+    instructions.push_back((8 << 20) | (0 << 15) | (0 << 12) | (8 << 7) | 0x13);
+
+    // MUL x9, x1, x2 (10 * 5 = 50)
+    // MUL encoding: funct7=1, rs2, rs1, funct3=0, rd, opcode=0x33
+    instructions.push_back((1 << 25) | (2 << 20) | (1 << 15) | (0 << 12) |
+                           (9 << 7) | 0x33);
+
+    // MUL x10, x3, x4 (20 * 6 = 120)
+    instructions.push_back((1 << 25) | (4 << 20) | (3 << 15) | (0 << 12) |
+                           (10 << 7) | 0x33);
+
+    // MUL x11, x5, x6 (30 * 7 = 210)
+    instructions.push_back((1 << 25) | (6 << 20) | (5 << 15) | (0 << 12) |
+                           (11 << 7) | 0x33);
+
+    // MUL x12, x7, x8 (40 * 8 = 320)
+    instructions.push_back((1 << 25) | (8 << 20) | (7 << 15) | (0 << 12) |
+                           (12 << 7) | 0x33);
+
+    // ADD x13, x9, x10 (50 + 120 = 170)
+    // ADD encoding: funct7=0, rs2, rs1, funct3=0, rd, opcode=0x33
+    instructions.push_back((0 << 25) | (10 << 20) | (9 << 15) | (0 << 12) |
+                           (13 << 7) | 0x33);
+
+    // ADD x14, x11, x12 (210 + 320 = 530)
+    instructions.push_back((0 << 25) | (12 << 20) | (11 << 15) | (0 << 12) |
+                           (14 << 7) | 0x33);
+
+    // ADD x15, x13, x14 (170 + 530 = 700)
+    instructions.push_back((0 << 25) | (14 << 20) | (13 << 15) | (0 << 12) |
+                           (15 << 7) | 0x33);
 
     for (size_t i = 0; i < instructions.size(); i++) {
       core->loadInstruction(i * 4, instructions[i]);
     }
-    std::cout << "    Loaded " << instructions.size() << " ADDI instructions\n"
+    std::cout << "    Loaded " << instructions.size() << " instructions\n"
               << std::endl;
-    std::cout << "    Each instruction: ADDI x(i+1), x0, (a[i%4] + b[i%4])\n"
-              << std::endl;
-    std::cout << "    All instructions are independent - maximum parallelism!\n"
+    std::cout << "    Instruction sequence:\n"
+              << "      1. Load operands into x1-x8 (8 ADDI instructions)\n"
+              << "      2. Multiply 4 pairs using MLU (4 MUL instructions)\n"
+              << "      3. Add partial sums using ALU (3 ADD instructions)\n"
+              << "      4. Final result in x15 = 700\n"
               << std::endl;
   }
 

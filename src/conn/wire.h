@@ -37,17 +37,29 @@ class Wire : public TickingConnection {
    *
    * Simple protocol:
    * 1. Read data from source port (if available)
-   * 2. Write data to destination port
+   * 2. Write data to destination port or buffer locally if no destination
+   * 3. Data remains available on source port if no destination exists
    */
   void propagate() override {
-    if (src_ports_.empty() || dst_ports_.empty()) return;
+    if (src_ports_.empty()) return;
 
     // Check if source port has data
     if (src_ports_[0]->hasData()) {
       auto data = src_ports_[0]->read();
       if (data && data->valid) {
-        deliverData(dst_ports_[0], data);
-        transfers_++;
+        // If we have destination ports, deliver to them
+        if (!dst_ports_.empty()) {
+          deliverData(dst_ports_[0], data);
+          transfers_++;
+        }
+        // If no destination ports, keep data in a buffer on source port
+        // so it can be read by core's stage 2
+        // Note: we still need to keep the data somewhere - let's store it
+        // back on the source port so core can read it in stage 2
+        else {
+          // Buffer the data back to the source port for core to read
+          src_ports_[0]->setData(data);
+        }
 
         // TRACE_EVENT(scheduler_.getCurrentTime(), name_, "WIRE_TRANSFER",
         //             "transfers=" << transfers_);

@@ -11,6 +11,25 @@
 #include "../trace.h"
 #include "pipeline.h"
 
+namespace Architecture {
+
+/**
+ * @brief ALU result packet with destination register info
+ */
+class ALUResultPacket : public DataPacket {
+ public:
+  ALUResultPacket(int val = 0, uint32_t rd = 0) : value(val), rd(rd) {}
+
+  std::shared_ptr<DataPacket> clone() const override {
+    return cloneImpl<ALUResultPacket>(value, rd);
+  }
+
+  int value;
+  uint32_t rd;  // Destination register
+};
+
+}  // namespace Architecture
+
 /**
  * @brief ALU operation types
  *

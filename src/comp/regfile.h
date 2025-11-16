@@ -6,6 +6,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -319,6 +320,8 @@ class RegisterFile : public Architecture::Component {
    * 4. Update read data ports
    */
   void updatePorts() {
+    write_count_ = 0;  // Reset write count for this cycle
+
     // Process write operations and update scoreboard
     processWrites();
 
@@ -417,6 +420,15 @@ class RegisterFile : public Architecture::Component {
       read_port_valid_[i] = true;
       total_reads_++;
 
+      // Trace the read operation
+      std::stringstream ss;
+      ss << "Port " << i << ": x" << addr << " = " << data;
+      if (isScoreboardSet(addr)) {
+        ss << " (pending)";
+      }
+      TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
+                    ss.str());
+
       // Check for forwarding (read from pending write)
       if (params_.use_forwarding && isScoreboardSet(addr)) {
         total_forwards_++;
@@ -483,7 +495,7 @@ class RegisterFile : public Architecture::Component {
     }
 
     // Priority encode writes (first writer wins)
-    write_count_ = 0;
+    // write_count_ will be reset by updatePorts()
     std::vector<bool> write_applied(params_.num_registers, false);
 
     for (uint32_t i = 0; i < writes.size(); ++i) {
@@ -499,6 +511,15 @@ class RegisterFile : public Architecture::Component {
       writeRegister(addr, data, write_masked[i]);
       write_applied[addr] = true;
       write_count_++;
+
+      // Trace the write operation
+      std::stringstream ss;
+      ss << "Port " << i << ": x" << addr << " = " << data;
+      if (write_masked[i]) {
+        ss << " (masked)";
+      }
+      TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_WRITE",
+                    ss.str());
 
       // Update scoreboard if not masked
       if (!write_masked[i]) {

@@ -268,7 +268,7 @@ TEST_F(SCoreDispatchTest, ControlFlowDetection) {
   // Create a JAL instruction
   Architecture::DecodedInstruction jal_inst;
   jal_inst.op_type = Architecture::DecodedInstruction::OpType::BRU;
-  jal_inst.opcode = static_cast<uint32_t>(BruOp::JAL);
+  jal_inst.opcode = static_cast<uint32_t>(Architecture::BruOp::JAL);
 
   EXPECT_TRUE(core->isControlFlowInstruction(jal_inst));
 

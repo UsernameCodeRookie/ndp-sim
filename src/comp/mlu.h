@@ -6,7 +6,27 @@
 #include <string>
 #include <vector>
 
+#include "../packet.h"
 #include "pipeline.h"
+
+namespace Architecture {
+
+/**
+ * @brief MLU (Multiplier) result packet
+ */
+class MLUResultPacket : public DataPacket {
+ public:
+  MLUResultPacket(uint32_t val = 0, uint32_t rd = 0) : value(val), rd(rd) {}
+
+  std::shared_ptr<DataPacket> clone() const override {
+    return cloneImpl<MLUResultPacket>(value, rd);
+  }
+
+  uint32_t value;
+  uint32_t rd;  // Destination register
+};
+
+}  // namespace Architecture
 
 /**
  * @brief MLU (Multiplication Logic Unit) Component
@@ -119,23 +139,31 @@ class MultiplyUnit : public Pipeline {
     // Call parent tick for pipeline processing
     Pipeline::tick();
 
-    // Post-process output in stage 2
+    // Post-process output in stage 2 and create result packet
     if (stages_[num_stages_ - 1].valid) {
       auto mlu_data =
           std::dynamic_pointer_cast<MluData>(stages_[num_stages_ - 1].data);
       if (mlu_data) {
         // Compute result based on operation
+        uint32_t result = 0;
         switch (mlu_data->op) {
           case MulOp::MUL:
-            mlu_data->result =
-                static_cast<uint32_t>(mlu_data->product & 0xFFFFFFFFUL);
+            result = static_cast<uint32_t>(mlu_data->product & 0xFFFFFFFFUL);
             break;
           case MulOp::MULH:
           case MulOp::MULHSU:
           case MulOp::MULHU:
-            mlu_data->result =
+            result =
                 static_cast<uint32_t>((mlu_data->product >> 32) & 0xFFFFFFFFUL);
             break;
+        }
+
+        // Create and enqueue result packet to output port
+        auto result_packet = std::make_shared<Architecture::MLUResultPacket>(
+            result, mlu_data->rd_addr);
+        auto out_port = getPort("out");
+        if (out_port) {
+          out_port->write(result_packet);
         }
 
         results_output_++;
@@ -143,7 +171,7 @@ class MultiplyUnit : public Pipeline {
         TRACE_EVENT(scheduler_.getCurrentTime(), name_, "MLU_OUTPUT",
                     "rd_addr=0x" << std::hex << mlu_data->rd_addr << std::dec
                                  << " op=" << static_cast<int>(mlu_data->op)
-                                 << " result=0x" << std::hex << mlu_data->result
+                                 << " result=0x" << std::hex << result
                                  << std::dec);
       }
     }
@@ -166,10 +194,18 @@ class MultiplyUnit : public Pipeline {
   }
 
   void setupPipelineStages() {
-    // Stage 0: Arbitration and decode (identity for now, actual arbitration
-    // happens in processRequest)
-    setStageFunction(0, [](std::shared_ptr<Architecture::DataPacket> data) {
-      return data;  // Pass through
+    // Stage 0: Read input port and feed into pipeline
+    setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
+      // First, try to read from input port (from dispatch)
+      auto in_port = getPort("in");
+      if (in_port && in_port->hasData()) {
+        auto input_data = in_port->read();
+        if (input_data) {
+          requests_processed_++;
+          return input_data;  // Feed into pipeline
+        }
+      }
+      return data;  // Pass through if no new input
     });
 
     // Stage 1: Multiplication is done in processRequest
