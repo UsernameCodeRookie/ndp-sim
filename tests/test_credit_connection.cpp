@@ -73,11 +73,11 @@ class Consumer : public TickingComponent {
       if ((int)internal_buffer_.size() < buffer_capacity_) {
         auto data = std::dynamic_pointer_cast<IntDataPacket>(in->read());
         if (data) {
-          internal_buffer_.push(data->getValue());
+          internal_buffer_.push(data->value);
           // Update available slots
           available_slots_ = buffer_capacity_ - (int)internal_buffer_.size();
           TRACE_EVENT(scheduler_.getCurrentTime(), getName(), "ACCEPT",
-                      "val=" << data->getValue());
+                      "val=" << data->value);
         }
       }
     }

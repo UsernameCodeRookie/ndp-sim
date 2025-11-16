@@ -44,7 +44,7 @@ TEST_F(PipelineTest, SingleStagePassthrough) {
   auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
       output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_EQ(result->getValue(), 42);
+  EXPECT_EQ(result->value, 42);
 }
 
 TEST_F(PipelineTest, MultiStagePassthrough) {
@@ -68,7 +68,7 @@ TEST_F(PipelineTest, MultiStagePassthrough) {
   auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
       output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_EQ(result->getValue(), 100);
+  EXPECT_EQ(result->value, 100);
 }
 
 TEST_F(PipelineTest, CustomStageFunction) {
@@ -83,7 +83,7 @@ TEST_F(PipelineTest, CustomStageFunction) {
         auto int_data =
             std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         if (int_data) {
-          int value = int_data->getValue();
+          int value = int_data->value;
           return std::make_shared<Architecture::IntDataPacket>(value * 2);
         }
         return data;
@@ -97,7 +97,7 @@ TEST_F(PipelineTest, CustomStageFunction) {
         auto int_data =
             std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         if (int_data) {
-          int value = int_data->getValue();
+          int value = int_data->value;
           return std::make_shared<Architecture::IntDataPacket>(value + 10);
         }
         return data;
@@ -120,7 +120,7 @@ TEST_F(PipelineTest, CustomStageFunction) {
   auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
       output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_EQ(result->getValue(), 20);
+  EXPECT_EQ(result->value, 20);
 }
 
 TEST_F(PipelineTest, PipelineDepth) {
@@ -255,7 +255,7 @@ TEST_F(PipelineTest, MultipleDataThroughput) {
       auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
           output_port->read());
       if (result) {
-        output_values.push_back(result->getValue());
+        output_values.push_back(result->value);
       }
     }
   }
@@ -267,7 +267,7 @@ TEST_F(PipelineTest, MultipleDataThroughput) {
       auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
           output_port->read());
       if (result) {
-        output_values.push_back(result->getValue());
+        output_values.push_back(result->value);
       }
     }
   }
@@ -291,7 +291,7 @@ TEST_F(PipelineTest, StageChaining) {
         auto int_data =
             std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         return int_data ? std::make_shared<Architecture::IntDataPacket>(
-                              int_data->getValue() * 2)
+                              int_data->value * 2)
                         : data;
       });
 
@@ -302,7 +302,7 @@ TEST_F(PipelineTest, StageChaining) {
         auto int_data =
             std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         return int_data ? std::make_shared<Architecture::IntDataPacket>(
-                              int_data->getValue() + 5)
+                              int_data->value + 5)
                         : data;
       });
 
@@ -313,7 +313,7 @@ TEST_F(PipelineTest, StageChaining) {
         auto int_data =
             std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         return int_data ? std::make_shared<Architecture::IntDataPacket>(
-                              int_data->getValue() * 3)
+                              int_data->value * 3)
                         : data;
       });
 
@@ -324,7 +324,7 @@ TEST_F(PipelineTest, StageChaining) {
         auto int_data =
             std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         return int_data ? std::make_shared<Architecture::IntDataPacket>(
-                              int_data->getValue() - 1)
+                              int_data->value - 1)
                         : data;
       });
 
@@ -343,7 +343,7 @@ TEST_F(PipelineTest, StageChaining) {
   auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
       output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_EQ(result->getValue(), 32);
+  EXPECT_EQ(result->value, 32);
 }
 
 // Event-driven execution mode tests
@@ -382,7 +382,7 @@ TEST_F(PipelineTest, EventDrivenPipelineFlow) {
     if (output_port->hasData()) {
       auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
           output_port->read());
-      if (result) outputs.push_back(result->getValue());
+      if (result) outputs.push_back(result->value);
     }
   });
 
@@ -390,7 +390,7 @@ TEST_F(PipelineTest, EventDrivenPipelineFlow) {
     if (output_port->hasData()) {
       auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
           output_port->read());
-      if (result) outputs.push_back(result->getValue());
+      if (result) outputs.push_back(result->value);
     }
   });
 
@@ -402,7 +402,7 @@ TEST_F(PipelineTest, EventDrivenPipelineFlow) {
     auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
         output_port->read());
     if (result) {
-      outputs.push_back(result->getValue());
+      outputs.push_back(result->value);
     }
   }
 
@@ -435,7 +435,7 @@ TEST_F(PipelineTest, EventDrivenStageProcessing) {
         auto int_data =
             std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         if (int_data) {
-          int value = int_data->getValue() * 2;
+          int value = int_data->value * 2;
           return std::make_shared<Architecture::IntDataPacket>(value);
         }
         return data;
@@ -448,7 +448,7 @@ TEST_F(PipelineTest, EventDrivenStageProcessing) {
         auto int_data =
             std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
         if (int_data) {
-          int value = int_data->getValue() + 10;
+          int value = int_data->value + 10;
           return std::make_shared<Architecture::IntDataPacket>(value);
         }
         return data;
@@ -473,11 +473,10 @@ TEST_F(PipelineTest, EventDrivenStageProcessing) {
   auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
       output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_EQ(result->getValue(), 20);  // (5*2)+10 = 20
+  EXPECT_EQ(result->value, 20);  // (5*2)+10 = 20
 
   std::cout << "\n=== Event-Driven Stage Processing ===" << std::endl;
-  std::cout << "Input: 5, Expected: 20, Got: " << result->getValue()
-            << std::endl;
+  std::cout << "Input: 5, Expected: 20, Got: " << result->value << std::endl;
   std::cout << "Final time: " << scheduler->getCurrentTime() << std::endl;
 
   EventDriven::Tracer::getInstance().dump();

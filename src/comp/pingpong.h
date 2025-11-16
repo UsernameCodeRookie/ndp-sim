@@ -168,7 +168,7 @@ class PingPongController : public Architecture::TickingComponent {
         responses_received_++;
 
         TRACE_EVENT(scheduler_.getCurrentTime(), getName(), "PING_STORE_ACK",
-                    "STORE_ACK addr=0x" << std::hex << response->getAddress()
+                    "STORE_ACK addr=0x" << std::hex << response->address
                                         << std::dec
                                         << " wait=" << wait_cycles_);
 
@@ -212,21 +212,20 @@ class PingPongController : public Architecture::TickingComponent {
         responses_received_++;
 
         // Verify data
-        int32_t received_data = response->getData();
+        int32_t received_data = response->data;
         if (received_data == current_value_) {
           TRACE_EVENT(scheduler_.getCurrentTime(), getName(), "PONG_VERIFY_OK",
-                      "VERIFY_OK addr=0x" << std::hex << response->getAddress()
+                      "VERIFY_OK addr=0x" << std::hex << response->address
                                           << std::dec
                                           << " data=" << received_data
                                           << " wait=" << wait_cycles_);
         } else {
           errors_++;
-          TRACE_EVENT(scheduler_.getCurrentTime(), getName(),
-                      "PONG_VERIFY_ERROR",
-                      "VERIFY_ERROR addr=0x"
-                          << std::hex << response->getAddress() << std::dec
-                          << " expected=" << current_value_
-                          << " got=" << received_data);
+          TRACE_EVENT(
+              scheduler_.getCurrentTime(), getName(), "PONG_VERIFY_ERROR",
+              "VERIFY_ERROR addr=0x"
+                  << std::hex << response->address << std::dec << " expected="
+                  << current_value_ << " got=" << received_data);
         }
 
         // Move to next iteration

@@ -117,12 +117,3 @@ enable_testing()
 
 #     message(STATUS "Python module ndp_sim_py enabled")
 # endif()
-
-# Debug trace utility
-add_executable(debug_trace debug_trace.cpp)
-target_link_libraries(debug_trace PRIVATE 
-  alu bru mlu dvu lsu fpu regfile 
-  credit_conn ready_valid_conn wire_conn
-  gtest gtest_main pthread m
-)
-target_include_directories(debug_trace PRIVATE ${CMAKE_SOURCE_DIR}/src)

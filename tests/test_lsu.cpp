@@ -283,9 +283,9 @@ TEST_F(LSUTest, MemoryRequestPacketClone) {
   EXPECT_EQ(request->op, LSUOp::LOAD);
   EXPECT_EQ(request->address, 100);
   EXPECT_EQ(request->data, 50);
-  EXPECT_EQ(request->getStride(), 2);
-  EXPECT_EQ(request->getLength(), 4);
-  EXPECT_TRUE(request->getMask());
+  EXPECT_EQ(request->stride, 2);
+  EXPECT_EQ(request->length, 4);
+  EXPECT_TRUE(request->mask);
 
   // Test clone
   auto cloned =
@@ -314,9 +314,9 @@ TEST_F(LSUTest, MemoryRequestPacketModification) {
   auto request = std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, 50);
 
   // Modify request
-  request->setOperation(LSUOp::STORE);
-  request->setAddress(100);
-  request->setData(999);
+  request->op = LSUOp::STORE;
+  request->address = 100;
+  request->data = 999;
 
   EXPECT_EQ(request->op, LSUOp::STORE);
   EXPECT_EQ(request->address, 100);
