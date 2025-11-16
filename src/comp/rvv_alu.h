@@ -27,9 +27,9 @@ class RVVALUResultPacket : public DataPacket {
       : rd(rd), eew(eew), vlen(vlen), result_data(vlen / 8, 0) {}
 
   std::shared_ptr<DataPacket> clone() const override {
-    auto cloned = std::make_shared<RVVALUResultPacket>(rd, eew, vlen);
-    cloned->result_data = result_data;
-    return cloned;
+    return cloneWithVectors<RVVALUResultPacket>(
+        [this](RVVALUResultPacket* p) { p->result_data = result_data; }, rd,
+        eew, vlen);
   }
 
   uint32_t rd;                       // Destination vector register
@@ -94,11 +94,12 @@ class RVVALUDataPacket : public Architecture::DataPacket {
         operand_b(vlen / 8, 0) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    auto cloned =
-        std::make_shared<RVVALUDataPacket>(rd, rs1, rs2, eew, vlen, category);
-    cloned->operand_a = operand_a;
-    cloned->operand_b = operand_b;
-    return cloned;
+    return cloneWithVectors<RVVALUDataPacket>(
+        [this](RVVALUDataPacket* p) {
+          p->operand_a = operand_a;
+          p->operand_b = operand_b;
+        },
+        rd, rs1, rs2, eew, vlen, category);
   }
 
   uint32_t rd;                     // Destination vector register

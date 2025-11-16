@@ -41,6 +41,19 @@ class DataPacket {
     return cloned;
   }
 
+  // Helper method for classes with vector members that need copying
+  // Usage: return cloneWithVectors<DerivedType>(constructor_args...,
+  //        [](DerivedType* clone) { clone->vec_member = vec_member; });
+  template <typename DerivedType, typename CopyFunc, typename... Args>
+  std::shared_ptr<DataPacket> cloneWithVectors(CopyFunc copy_func,
+                                               Args&&... args) const {
+    auto cloned = std::make_shared<DerivedType>(std::forward<Args>(args)...);
+    cloned->timestamp = timestamp;
+    cloned->valid = valid;
+    copy_func(cloned.get());
+    return cloned;
+  }
+
   uint64_t timestamp;  // Data creation timestamp
   bool valid;          // Data validity flag
 };

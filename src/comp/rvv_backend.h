@@ -46,13 +46,13 @@ struct RVVBackendPacket : public DataPacket {
   }
 
   std::shared_ptr<DataPacket> clone() const override {
-    auto cloned = std::make_shared<RVVBackendPacket>();
-    cloned->uop = uop;
-    cloned->result_data = result_data;
-    cloned->byte_enable = byte_enable;
-    cloned->execution_complete = execution_complete;
-    cloned->rob_index = rob_index;
-    return cloned;
+    return cloneWithVectors<RVVBackendPacket>([this](RVVBackendPacket* p) {
+      p->uop = uop;
+      p->result_data = result_data;
+      p->byte_enable = byte_enable;
+      p->execution_complete = execution_complete;
+      p->rob_index = rob_index;
+    });
   }
 };
 
@@ -407,7 +407,7 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
             execute_count_++;
           }
 
-          return std::dynamic_pointer_cast<DataPacket>(rvv_pkt);
+          return pkt;
         });
 
     setStageStallPredicate(
