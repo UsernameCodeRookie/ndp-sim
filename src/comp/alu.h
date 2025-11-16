@@ -78,10 +78,7 @@ class ALUDataPacket : public Architecture::DataPacket {
   void setOperation(ALUOp op) { op_ = op; }
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    auto cloned = std::make_shared<ALUDataPacket>(operand_a_, operand_b_, op_);
-    cloned->setTimestamp(timestamp_);
-    cloned->setValid(valid_);
-    return cloned;
+    return cloneImpl<ALUDataPacket>(operand_a_, operand_b_, op_);
   }
 
  private:

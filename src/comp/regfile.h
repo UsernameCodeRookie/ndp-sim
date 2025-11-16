@@ -69,10 +69,7 @@ class RegfileReadAddrPacket : public Architecture::DataPacket {
   void setValidRead(bool valid) { valid_read_ = valid; }
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    auto cloned = std::make_shared<RegfileReadAddrPacket>(addr_, valid_read_);
-    cloned->setTimestamp(timestamp_);
-    cloned->setValid(valid_);
-    return cloned;
+    return cloneImpl<RegfileReadAddrPacket>(addr_, valid_read_);
   }
 
  private:
@@ -97,10 +94,7 @@ class RegfileReadDataPacket : public Architecture::DataPacket {
   void setValidData(bool valid) { valid_data_ = valid; }
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    auto cloned = std::make_shared<RegfileReadDataPacket>(data_, valid_data_);
-    cloned->setTimestamp(timestamp_);
-    cloned->setValid(valid_);
-    return cloned;
+    return cloneImpl<RegfileReadDataPacket>(data_, valid_data_);
   }
 
  private:
@@ -130,11 +124,7 @@ class RegfileWritePacket : public Architecture::DataPacket {
   void setMasked(bool masked) { masked_ = masked; }
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    auto cloned = std::make_shared<RegfileWritePacket>(addr_, data_,
-                                                       valid_write_, masked_);
-    cloned->setTimestamp(timestamp_);
-    cloned->setValid(valid_);
-    return cloned;
+    return cloneImpl<RegfileWritePacket>(addr_, data_, valid_write_, masked_);
   }
 
  private:

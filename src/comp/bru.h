@@ -69,11 +69,8 @@ class BruCommandPacket : public Architecture::DataPacket {
   void setRegisterDestination(int rd) { rd_ = rd; }
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    auto cloned = std::make_shared<BruCommandPacket>(pc_, target_, op_,
-                                                     rs1_data_, rs2_data_, rd_);
-    cloned->setTimestamp(timestamp_);
-    cloned->setValid(valid_);
-    return cloned;
+    return cloneImpl<BruCommandPacket>(pc_, target_, op_, rs1_data_, rs2_data_,
+                                       rd_);
   }
 
  private:
@@ -110,11 +107,7 @@ class BruResultPacket : public Architecture::DataPacket {
   void setLinkData(uint32_t data) { link_data_ = data; }
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    auto cloned = std::make_shared<BruResultPacket>(target_, taken_,
-                                                    link_valid_, link_data_);
-    cloned->setTimestamp(timestamp_);
-    cloned->setValid(valid_);
-    return cloned;
+    return cloneImpl<BruResultPacket>(target_, taken_, link_valid_, link_data_);
   }
 
  private:

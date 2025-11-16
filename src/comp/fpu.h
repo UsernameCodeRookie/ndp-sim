@@ -88,10 +88,7 @@ class FPUDataPacket : public Architecture::DataPacket {
   void setOperation(FPUOp op) { op_ = op; }
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    auto cloned = std::make_shared<FPUDataPacket>(ina_, inb_, inc_, op_);
-    cloned->setTimestamp(timestamp_);
-    cloned->setValid(valid_);
-    return cloned;
+    return cloneImpl<FPUDataPacket>(ina_, inb_, inc_, op_);
   }
 
  private:

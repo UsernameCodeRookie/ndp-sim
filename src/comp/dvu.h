@@ -91,7 +91,7 @@ class DvuComponent : public PipelineComponent {
           result(0) {}
 
     std::shared_ptr<Architecture::DataPacket> clone() const override {
-      return std::make_shared<DvuData>(*this);
+      return cloneImpl<DvuData>(rd_addr, op, dividend, divisor);
     }
   };
 

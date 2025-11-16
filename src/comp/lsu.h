@@ -54,8 +54,8 @@ class MemoryRequestPacket : public Architecture::DataPacket {
   void setData(int32_t data) { data_ = data; }
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return std::make_shared<MemoryRequestPacket>(op_, address_, data_, stride_,
-                                                 length_, mask_);
+    return cloneImpl<MemoryRequestPacket>(op_, address_, data_, stride_,
+                                          length_, mask_);
   }
 
  private:
@@ -79,7 +79,7 @@ class MemoryResponsePacket : public Architecture::DataPacket {
   uint32_t getAddress() const { return address_; }
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return std::make_shared<MemoryResponsePacket>(data_, address_);
+    return cloneImpl<MemoryResponsePacket>(data_, address_);
   }
 
  private:

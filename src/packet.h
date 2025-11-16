@@ -10,6 +10,18 @@ namespace Architecture {
  * @brief Data packet base class
  *
  * Represents data transmitted through ports and connections
+ *
+ * Subclasses can use the convenience method cloneImpl<DerivedType>(args...)
+ * to implement clone() without boilerplate. Example:
+ *
+ * class MyPacket : public DataPacket {
+ *   int value_;
+ * public:
+ *   MyPacket(int v) : value_(v) {}
+ *   std::shared_ptr<DataPacket> clone() const override {
+ *     return cloneImpl<MyPacket>(value_);
+ *   }
+ * };
  */
 class DataPacket {
  public:
@@ -26,6 +38,27 @@ class DataPacket {
   virtual std::shared_ptr<DataPacket> clone() const = 0;
 
  protected:
+  /**
+   * @brief Helper method for implementing clone in derived classes
+   *
+   * Usage in derived class:
+   *   std::shared_ptr<DataPacket> clone() const override {
+   *     return cloneImpl<DerivedType>(arg1, arg2, ...);
+   *   }
+   *
+   * @tparam DerivedType The derived class type
+   * @tparam Args Constructor argument types
+   * @param args Arguments to pass to derived class constructor
+   * @return Cloned packet with timestamp and valid flag copied
+   */
+  template <typename DerivedType, typename... Args>
+  std::shared_ptr<DataPacket> cloneImpl(Args&&... args) const {
+    auto cloned = std::make_shared<DerivedType>(std::forward<Args>(args)...);
+    cloned->setTimestamp(timestamp_);
+    cloned->setValid(valid_);
+    return cloned;
+  }
+
   uint64_t timestamp_;  // Data creation timestamp
   bool valid_;          // Data validity flag
 };
@@ -41,10 +74,7 @@ class BoolDataPacket : public DataPacket {
   void setValue(bool value) { value_ = value; }
 
   std::shared_ptr<DataPacket> clone() const override {
-    auto cloned = std::make_shared<BoolDataPacket>(value_);
-    cloned->setTimestamp(timestamp_);
-    cloned->setValid(valid_);
-    return cloned;
+    return cloneImpl<BoolDataPacket>(value_);
   }
 
  private:
@@ -62,10 +92,7 @@ class IntDataPacket : public DataPacket {
   void setValue(int value) { value_ = value; }
 
   std::shared_ptr<DataPacket> clone() const override {
-    auto cloned = std::make_shared<IntDataPacket>(value_);
-    cloned->setTimestamp(timestamp_);
-    cloned->setValid(valid_);
-    return cloned;
+    return cloneImpl<IntDataPacket>(value_);
   }
 
  private:

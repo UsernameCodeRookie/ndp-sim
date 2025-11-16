@@ -66,7 +66,7 @@ class MluComponent : public PipelineComponent {
 
     bool isValid() const { return true; }
     std::shared_ptr<Architecture::DataPacket> clone() const override {
-      return std::make_shared<MluData>(*this);
+      return cloneImpl<MluData>(rd_addr, op, product);
     }
   };
 
