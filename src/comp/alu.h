@@ -66,25 +66,16 @@ enum class ALUOp {
  */
 class ALUDataPacket : public Architecture::DataPacket {
  public:
-  ALUDataPacket(int32_t operand_a, int32_t operand_b, ALUOp op)
-      : operand_a_(operand_a), operand_b_(operand_b), op_(op) {}
-
-  int32_t getOperandA() const { return operand_a_; }
-  int32_t getOperandB() const { return operand_b_; }
-  ALUOp getOperation() const { return op_; }
-
-  void setOperandA(int32_t value) { operand_a_ = value; }
-  void setOperandB(int32_t value) { operand_b_ = value; }
-  void setOperation(ALUOp op) { op_ = op; }
+  ALUDataPacket(int32_t a = 0, int32_t b = 0, ALUOp op = ALUOp::ADD)
+      : operand_a(a), operand_b(b), op(op) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return cloneImpl<ALUDataPacket>(operand_a_, operand_b_, op_);
+    return cloneImpl<ALUDataPacket>(operand_a, operand_b, op);
   }
 
- private:
-  int32_t operand_a_;
-  int32_t operand_b_;
-  ALUOp op_;
+  int32_t operand_a;
+  int32_t operand_b;
+  ALUOp op;
 };
 
 /**
@@ -390,23 +381,22 @@ class ALUComponent : public PipelineComponent {
     setStageFunction(1, [this](std::shared_ptr<Architecture::DataPacket> data) {
       auto alu_data = std::dynamic_pointer_cast<ALUDataPacket>(data);
       if (alu_data) {
-        int32_t a = alu_data->getOperandA();
-        int32_t b = alu_data->getOperandB();
-        int32_t result = executeOperationWithAccumulator(
-            a, b, alu_data->getOperation(), accumulator_);
+        int32_t a = alu_data->operand_a;
+        int32_t b = alu_data->operand_b;
+        int32_t result =
+            executeOperationWithAccumulator(a, b, alu_data->op, accumulator_);
 
         operations_executed_++;
 
         TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(),
-                      getOpName(alu_data->getOperation()),
-                      a << " " << getOpSymbol(alu_data->getOperation()) << " "
-                        << b << " = " << result
-                        << " | ops=" << operations_executed_);
+                      getOpName(alu_data->op),
+                      a << " " << getOpSymbol(alu_data->op) << " " << b << " = "
+                        << result << " | ops=" << operations_executed_);
 
         // Create result packet
         auto result_packet =
             std::make_shared<Architecture::IntDataPacket>(result);
-        result_packet->setTimestamp(scheduler_.getCurrentTime());
+        result_packet->timestamp = scheduler_.getCurrentTime();
         return std::static_pointer_cast<Architecture::DataPacket>(
             result_packet);
       }

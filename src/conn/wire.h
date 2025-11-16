@@ -45,7 +45,7 @@ class WireConnection : public TickingConnection {
     // Check if source port has data
     if (src_ports_[0]->hasData()) {
       auto data = src_ports_[0]->read();
-      if (data && data->isValid()) {
+      if (data && data->valid) {
         deliverData(dst_ports_[0], data);
         transfers_++;
 

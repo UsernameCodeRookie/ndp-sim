@@ -203,7 +203,7 @@ TEST_F(RegisterFileTest, PortBasedRead) {
     auto data_packet = std::dynamic_pointer_cast<RegfileReadDataPacket>(
         read_data_port->read());
     ASSERT_NE(data_packet, nullptr);
-    EXPECT_EQ(data_packet->getData(), 0xABCD);
+    EXPECT_EQ(data_packet->data, 0xABCD);
   }
 }
 
@@ -266,7 +266,7 @@ TEST_F(RegisterFileTest, MultiplePortsSimultaneous) {
       auto data_packet = std::dynamic_pointer_cast<RegfileReadDataPacket>(
           read_data_port->read());
       ASSERT_NE(data_packet, nullptr);
-      EXPECT_EQ(data_packet->getData(), addrs[i] == 3 ? 0x3333 : 0x7777);
+      EXPECT_EQ(data_packet->data, addrs[i] == 3 ? 0x3333 : 0x7777);
     }
   }
 }

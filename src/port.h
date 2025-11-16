@@ -47,7 +47,7 @@ class Port {
   // Data operations
   void setData(std::shared_ptr<DataPacket> data) { data_ = data; }
   std::shared_ptr<DataPacket> getData() const { return data_; }
-  bool hasData() const { return data_ != nullptr && data_->isValid(); }
+  bool hasData() const { return data_ != nullptr && data_->valid; }
   void clearData() { data_ = nullptr; }
 
   // Read data (for input ports)

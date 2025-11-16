@@ -120,7 +120,7 @@ class PipelineComponent : public Architecture::TickingComponent {
           std::dynamic_pointer_cast<Architecture::IntDataPacket>(
               stall_ctrl->read());
       if (stall_packet) {
-        stall_ = (stall_packet->getValue() != 0);
+        stall_ = (stall_packet->value != 0);
       }
     }
 
@@ -134,7 +134,7 @@ class PipelineComponent : public Architecture::TickingComponent {
     if (stages_[num_stages_ - 1].valid) {
       auto processed_data = stages_[num_stages_ - 1].data;
       if (processed_data) {
-        processed_data->setTimestamp(scheduler_.getCurrentTime());
+        processed_data->timestamp = scheduler_.getCurrentTime();
         out->write(processed_data);
         total_processed_++;
 
@@ -144,7 +144,7 @@ class PipelineComponent : public Architecture::TickingComponent {
         if (int_data) {
           TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "PIPELINE_OUT",
                         "Stage[" << (num_stages_ - 1)
-                                 << "]->OUT value=" << int_data->getValue()
+                                 << "]->OUT value=" << int_data->value
                                  << " cycle=" << scheduler_.getCurrentTime()
                                  << " latency="
                                  << (scheduler_.getCurrentTime() -
@@ -177,7 +177,7 @@ class PipelineComponent : public Architecture::TickingComponent {
         if (int_data) {
           TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "STAGE_PROP",
                         "Stage[" << (i - 1) << "]->Stage[" << i
-                                 << "] value=" << int_data->getValue()
+                                 << "] value=" << int_data->value
                                  << " cycle=" << scheduler_.getCurrentTime()
                                  << " period=" << getPeriod());
         }
@@ -189,7 +189,7 @@ class PipelineComponent : public Architecture::TickingComponent {
     // Stage 0: read from input
     if (in->hasData()) {
       auto input_data = in->read();
-      if (input_data && input_data->isValid()) {
+      if (input_data && input_data->valid) {
         // Apply stage 0 function
         auto processed_data = stage_functions_[0](input_data);
         stages_[0] =
@@ -199,12 +199,11 @@ class PipelineComponent : public Architecture::TickingComponent {
         auto int_data = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
             processed_data);
         if (int_data) {
-          TRACE_COMPUTE(
-              scheduler_.getCurrentTime(), getName(), "PIPELINE_IN",
-              "IN->Stage[0] value=" << int_data->getValue()
-                                    << " cycle=" << scheduler_.getCurrentTime()
-                                    << " period=" << getPeriod()
-                                    << " depth=" << num_stages_);
+          TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "PIPELINE_IN",
+                        "IN->Stage[0] value=" << int_data->value << " cycle="
+                                              << scheduler_.getCurrentTime()
+                                              << " period=" << getPeriod()
+                                              << " depth=" << num_stages_);
         }
       }
     }
@@ -304,7 +303,7 @@ class ArithmeticPipeline : public PipelineComponent {
           auto int_data =
               std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
           if (int_data) {
-            int result = int_data->getValue() * multiply_factor;
+            int result = int_data->value * multiply_factor;
             return std::static_pointer_cast<Architecture::DataPacket>(
                 std::make_shared<Architecture::IntDataPacket>(result));
           }
@@ -317,7 +316,7 @@ class ArithmeticPipeline : public PipelineComponent {
           auto int_data =
               std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
           if (int_data) {
-            int result = int_data->getValue() + add_value;
+            int result = int_data->value + add_value;
             return std::static_pointer_cast<Architecture::DataPacket>(
                 std::make_shared<Architecture::IntDataPacket>(result));
           }
@@ -330,7 +329,7 @@ class ArithmeticPipeline : public PipelineComponent {
           auto int_data =
               std::dynamic_pointer_cast<Architecture::IntDataPacket>(data);
           if (int_data) {
-            int result = int_data->getValue() >> shift_amount;
+            int result = int_data->value >> shift_amount;
             return std::static_pointer_cast<Architecture::DataPacket>(
                 std::make_shared<Architecture::IntDataPacket>(result));
           }

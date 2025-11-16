@@ -48,8 +48,8 @@ TEST_F(BruTest, BranchEqual) {
   EXPECT_TRUE(output_port->hasData());
   auto result = std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_TRUE(result->isTaken());
-  EXPECT_EQ(result->getTarget(), 0x100);
+  EXPECT_TRUE(result->taken);
+  EXPECT_EQ(result->target, 0x100);
 }
 
 // Test 3: BEQ (Branch if equal) - condition false
@@ -72,7 +72,7 @@ TEST_F(BruTest, BranchNotEqual) {
   EXPECT_TRUE(output_port->hasData());
   auto result = std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_FALSE(result->isTaken());
+  EXPECT_FALSE(result->taken);
 }
 
 // Test 4: BNE (Branch if not equal)
@@ -94,8 +94,8 @@ TEST_F(BruTest, BranchNotEqualOp) {
   EXPECT_TRUE(output_port->hasData());
   auto result = std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_TRUE(result->isTaken());
-  EXPECT_EQ(result->getTarget(), 0x200);
+  EXPECT_TRUE(result->taken);
+  EXPECT_EQ(result->target, 0x200);
 }
 
 // Test 5: BLT (Branch if less than, signed)
@@ -118,7 +118,7 @@ TEST_F(BruTest, BranchLessThanSigned) {
   EXPECT_TRUE(output_port->hasData());
   auto result = std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_TRUE(result->isTaken());
+  EXPECT_TRUE(result->taken);
 }
 
 // Test 6: BLTU (Branch if less than unsigned)
@@ -140,7 +140,7 @@ TEST_F(BruTest, BranchLessThanUnsigned) {
   EXPECT_TRUE(output_port->hasData());
   auto result = std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_TRUE(result->isTaken());
+  EXPECT_TRUE(result->taken);
 }
 
 // Test 7: JAL (Jump and Link)
@@ -163,10 +163,10 @@ TEST_F(BruTest, JumpAndLink) {
   EXPECT_TRUE(output_port->hasData());
   auto result = std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_TRUE(result->isTaken());
-  EXPECT_EQ(result->getTarget(), 0x400);
-  EXPECT_TRUE(result->isLinkValid());
-  EXPECT_EQ(result->getLinkData(), 0x104);  // PC + 4
+  EXPECT_TRUE(result->taken);
+  EXPECT_EQ(result->target, 0x400);
+  EXPECT_TRUE(result->link_valid);
+  EXPECT_EQ(result->link_data, 0x104);  // PC + 4
 }
 
 // Test 8: JALR (Jump and Link Register)
@@ -189,10 +189,10 @@ TEST_F(BruTest, JumpAndLinkRegister) {
   EXPECT_TRUE(output_port->hasData());
   auto result = std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_TRUE(result->isTaken());
-  EXPECT_EQ(result->getTarget(), 0x500);  // 0x501 & ~1 = 0x500
-  EXPECT_TRUE(result->isLinkValid());
-  EXPECT_EQ(result->getLinkData(), 0x204);
+  EXPECT_TRUE(result->taken);
+  EXPECT_EQ(result->target, 0x500);  // 0x501 & ~1 = 0x500
+  EXPECT_TRUE(result->link_valid);
+  EXPECT_EQ(result->link_data, 0x204);
 }
 
 // Test 9: Multiple branch operations
@@ -211,7 +211,7 @@ TEST_F(BruTest, MultipleBranches) {
   }
   auto result1 =
       std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
-  EXPECT_TRUE(result1->isTaken());
+  EXPECT_TRUE(result1->taken);
 
   // Test 2: BNE with condition true
   auto cmd2 =
@@ -222,7 +222,7 @@ TEST_F(BruTest, MultipleBranches) {
   }
   auto result2 =
       std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
-  EXPECT_TRUE(result2->isTaken());
+  EXPECT_TRUE(result2->taken);
 
   // Test 3: JAL
   auto cmd3 =
@@ -233,7 +233,7 @@ TEST_F(BruTest, MultipleBranches) {
   }
   auto result3 =
       std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
-  EXPECT_TRUE(result3->isTaken());
+  EXPECT_TRUE(result3->taken);
 
   // Verify statistics
   EXPECT_EQ(bru->getBranchesResolved(), 3);
@@ -259,7 +259,7 @@ TEST_F(BruTest, BranchGreaterEqualSigned) {
   EXPECT_TRUE(output_port->hasData());
   auto result = std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_TRUE(result->isTaken());
+  EXPECT_TRUE(result->taken);
 }
 
 // Test 11: BGEU (Branch if greater or equal unsigned)
@@ -282,7 +282,7 @@ TEST_F(BruTest, BranchGreaterEqualUnsigned) {
   EXPECT_TRUE(output_port->hasData());
   auto result = std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_TRUE(result->isTaken());
+  EXPECT_TRUE(result->taken);
 }
 
 // Test 12: System operations (ECALL)
@@ -304,7 +304,7 @@ TEST_F(BruTest, SystemOperations) {
   EXPECT_TRUE(output_port->hasData());
   auto result = std::dynamic_pointer_cast<BruResultPacket>(output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_TRUE(result->isTaken());
+  EXPECT_TRUE(result->taken);
   EXPECT_EQ(bru->getSystemExceptions(), 1);
 }
 

@@ -74,28 +74,18 @@ class FPUCmd {
  */
 class FPUDataPacket : public Architecture::DataPacket {
  public:
-  FPUDataPacket(float ina, float inb, float inc, FPUOp op)
-      : ina_(ina), inb_(inb), inc_(inc), op_(op) {}
-
-  float getInputA() const { return ina_; }
-  float getInputB() const { return inb_; }
-  float getInputC() const { return inc_; }
-  FPUOp getOperation() const { return op_; }
-
-  void setInputA(float value) { ina_ = value; }
-  void setInputB(float value) { inb_ = value; }
-  void setInputC(float value) { inc_ = value; }
-  void setOperation(FPUOp op) { op_ = op; }
+  FPUDataPacket(float ina = 0.0f, float inb = 0.0f, float inc = 0.0f,
+                FPUOp op = FPUOp::PASS)
+      : ina(ina), inb(inb), inc(inc), op(op) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return cloneImpl<FPUDataPacket>(ina_, inb_, inc_, op_);
+    return cloneImpl<FPUDataPacket>(ina, inb, inc, op);
   }
 
- private:
-  float ina_;  // Input A (rs1)
-  float inb_;  // Input B (rs2)
-  float inc_;  // Input C (rs3, for FMA operations)
-  FPUOp op_;   // Operation code
+  float ina;  // Input A (rs1)
+  float inb;  // Input B (rs2)
+  float inc;  // Input C (rs3, for FMA operations)
+  FPUOp op;   // Operation code
 };
 
 /**
@@ -153,10 +143,10 @@ class FPUComponent : public PipelineComponent {
       std::shared_ptr<Architecture::DataPacket> data) {
     auto fpu_data = std::dynamic_pointer_cast<FPUDataPacket>(data);
     if (fpu_data) {
-      float ina = fpu_data->getInputA();
-      float inb = fpu_data->getInputB();
-      float inc = fpu_data->getInputC();
-      FPUOp op = fpu_data->getOperation();
+      float ina = fpu_data->ina;
+      float inb = fpu_data->inb;
+      float inc = fpu_data->inc;
+      FPUOp op = fpu_data->op;
 
       float result = executeOperation(ina, inb, inc, op);
       operations_executed_++;
@@ -170,7 +160,7 @@ class FPUComponent : public PipelineComponent {
       std::memcpy(&float_as_int, &result, sizeof(float));
       auto result_packet =
           std::make_shared<Architecture::IntDataPacket>(float_as_int);
-      result_packet->setTimestamp(scheduler_.getCurrentTime());
+      result_packet->timestamp = scheduler_.getCurrentTime();
       return result_packet;
     }
     return data;

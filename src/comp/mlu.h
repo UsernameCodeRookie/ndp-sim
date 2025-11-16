@@ -59,12 +59,9 @@ class MluComponent : public PipelineComponent {
     int64_t product;  // 66-bit product
     uint32_t result;  // Final 32-bit result
 
-    MluData() : rd_addr(0), op(MulOp::MUL), product(0), result(0) {}
-
-    MluData(uint32_t addr, MulOp op_code, int64_t prod)
+    MluData(uint32_t addr = 0, MulOp op_code = MulOp::MUL, int64_t prod = 0)
         : rd_addr(addr), op(op_code), product(prod), result(0) {}
 
-    bool isValid() const { return true; }
     std::shared_ptr<Architecture::DataPacket> clone() const override {
       return cloneImpl<MluData>(rd_addr, op, product);
     }

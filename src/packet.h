@@ -25,42 +25,24 @@ namespace Architecture {
  */
 class DataPacket {
  public:
-  DataPacket() : timestamp_(0), valid_(true) {}
+  DataPacket() : timestamp(0), valid(true) {}
   virtual ~DataPacket() = default;
-
-  uint64_t getTimestamp() const { return timestamp_; }
-  void setTimestamp(uint64_t ts) { timestamp_ = ts; }
-
-  bool isValid() const { return valid_; }
-  void setValid(bool valid) { valid_ = valid; }
 
   // Clone method for copying data
   virtual std::shared_ptr<DataPacket> clone() const = 0;
 
- protected:
-  /**
-   * @brief Helper method for implementing clone in derived classes
-   *
-   * Usage in derived class:
-   *   std::shared_ptr<DataPacket> clone() const override {
-   *     return cloneImpl<DerivedType>(arg1, arg2, ...);
-   *   }
-   *
-   * @tparam DerivedType The derived class type
-   * @tparam Args Constructor argument types
-   * @param args Arguments to pass to derived class constructor
-   * @return Cloned packet with timestamp and valid flag copied
-   */
+  // Helper method for implementing clone in derived classes using variadic
+  // templates
   template <typename DerivedType, typename... Args>
   std::shared_ptr<DataPacket> cloneImpl(Args&&... args) const {
     auto cloned = std::make_shared<DerivedType>(std::forward<Args>(args)...);
-    cloned->setTimestamp(timestamp_);
-    cloned->setValid(valid_);
+    cloned->timestamp = timestamp;
+    cloned->valid = valid;
     return cloned;
   }
 
-  uint64_t timestamp_;  // Data creation timestamp
-  bool valid_;          // Data validity flag
+  uint64_t timestamp;  // Data creation timestamp
+  bool valid;          // Data validity flag
 };
 
 /**
@@ -68,17 +50,13 @@ class DataPacket {
  */
 class BoolDataPacket : public DataPacket {
  public:
-  explicit BoolDataPacket(bool value) : value_(value) {}
-
-  bool getValue() const { return value_; }
-  void setValue(bool value) { value_ = value; }
+  explicit BoolDataPacket(bool val = false) : value(val) {}
 
   std::shared_ptr<DataPacket> clone() const override {
-    return cloneImpl<BoolDataPacket>(value_);
+    return cloneImpl<BoolDataPacket>(value);
   }
 
- private:
-  bool value_;
+  bool value;
 };
 
 /**
@@ -86,17 +64,13 @@ class BoolDataPacket : public DataPacket {
  */
 class IntDataPacket : public DataPacket {
  public:
-  IntDataPacket(int value) : value_(value) {}
-
-  int getValue() const { return value_; }
-  void setValue(int value) { value_ = value; }
+  explicit IntDataPacket(int val = 0) : value(val) {}
 
   std::shared_ptr<DataPacket> clone() const override {
-    return cloneImpl<IntDataPacket>(value_);
+    return cloneImpl<IntDataPacket>(value);
   }
 
- private:
-  int value_;
+  int value;
 };
 
 }  // namespace Architecture

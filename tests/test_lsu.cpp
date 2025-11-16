@@ -79,8 +79,8 @@ TEST_F(LSUTest, MemoryBankLoadRequest) {
   // Get response
   auto response = bank->getResponse();
   ASSERT_NE(response, nullptr);
-  EXPECT_EQ(response->getData(), 123);
-  EXPECT_EQ(response->getAddress(), 10);
+  EXPECT_EQ(response->data, 123);
+  EXPECT_EQ(response->address, 10);
 }
 
 TEST_F(LSUTest, MemoryBankStoreRequest) {
@@ -154,8 +154,8 @@ TEST_F(LSUTest, LSULoadOperation) {
       auto response =
           std::dynamic_pointer_cast<MemoryResponsePacket>(resp_out->read());
       ASSERT_NE(response, nullptr);
-      EXPECT_EQ(response->getData(), 777);
-      EXPECT_EQ(response->getAddress(), 5);
+      EXPECT_EQ(response->data, 777);
+      EXPECT_EQ(response->address, 5);
       got_response = true;
       break;
     }
@@ -200,7 +200,7 @@ TEST_F(LSUTest, LSUStoreOperation) {
       auto response =
           std::dynamic_pointer_cast<MemoryResponsePacket>(resp_out->read());
       ASSERT_NE(response, nullptr);
-      EXPECT_EQ(response->getData(), 888);
+      EXPECT_EQ(response->data, 888);
       got_response = true;
       break;
     }
@@ -251,7 +251,7 @@ TEST_F(LSUTest, LSUMultipleRequests) {
         auto response =
             std::dynamic_pointer_cast<MemoryResponsePacket>(resp_out->read());
         ASSERT_NE(response, nullptr);
-        EXPECT_EQ(response->getData(), expected_value);
+        EXPECT_EQ(response->data, expected_value);
         got_response = true;
         break;
       }
@@ -280,9 +280,9 @@ TEST_F(LSUTest, MemoryRequestPacketClone) {
   auto request =
       std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, 100, 50, 2, 4, true);
 
-  EXPECT_EQ(request->getOperation(), LSUOp::LOAD);
-  EXPECT_EQ(request->getAddress(), 100);
-  EXPECT_EQ(request->getData(), 50);
+  EXPECT_EQ(request->op, LSUOp::LOAD);
+  EXPECT_EQ(request->address, 100);
+  EXPECT_EQ(request->data, 50);
   EXPECT_EQ(request->getStride(), 2);
   EXPECT_EQ(request->getLength(), 4);
   EXPECT_TRUE(request->getMask());
@@ -291,23 +291,23 @@ TEST_F(LSUTest, MemoryRequestPacketClone) {
   auto cloned =
       std::dynamic_pointer_cast<MemoryRequestPacket>(request->clone());
   ASSERT_NE(cloned, nullptr);
-  EXPECT_EQ(cloned->getOperation(), LSUOp::LOAD);
-  EXPECT_EQ(cloned->getAddress(), 100);
-  EXPECT_EQ(cloned->getData(), 50);
+  EXPECT_EQ(cloned->op, LSUOp::LOAD);
+  EXPECT_EQ(cloned->address, 100);
+  EXPECT_EQ(cloned->data, 50);
 }
 
 TEST_F(LSUTest, MemoryResponsePacketClone) {
   auto response = std::make_shared<MemoryResponsePacket>(42, 200);
 
-  EXPECT_EQ(response->getData(), 42);
-  EXPECT_EQ(response->getAddress(), 200);
+  EXPECT_EQ(response->data, 42);
+  EXPECT_EQ(response->address, 200);
 
   // Test clone
   auto cloned =
       std::dynamic_pointer_cast<MemoryResponsePacket>(response->clone());
   ASSERT_NE(cloned, nullptr);
-  EXPECT_EQ(cloned->getData(), 42);
-  EXPECT_EQ(cloned->getAddress(), 200);
+  EXPECT_EQ(cloned->data, 42);
+  EXPECT_EQ(cloned->address, 200);
 }
 
 TEST_F(LSUTest, MemoryRequestPacketModification) {
@@ -318,9 +318,9 @@ TEST_F(LSUTest, MemoryRequestPacketModification) {
   request->setAddress(100);
   request->setData(999);
 
-  EXPECT_EQ(request->getOperation(), LSUOp::STORE);
-  EXPECT_EQ(request->getAddress(), 100);
-  EXPECT_EQ(request->getData(), 999);
+  EXPECT_EQ(request->op, LSUOp::STORE);
+  EXPECT_EQ(request->address, 100);
+  EXPECT_EQ(request->data, 999);
 }
 
 TEST_F(LSUTest, MultipleBanks) {
@@ -366,7 +366,7 @@ TEST_F(LSUTest, MultipleBanks) {
         auto response =
             std::dynamic_pointer_cast<MemoryResponsePacket>(resp_out->read());
         ASSERT_NE(response, nullptr);
-        EXPECT_EQ(response->getData(), expected_value)
+        EXPECT_EQ(response->data, expected_value)
             << "Failed for address " << addr;
         got_response = true;
         break;
@@ -416,8 +416,8 @@ TEST_F(LSUTest, EventDrivenMemoryAccess) {
   while (resp_out->hasData()) {
     auto response =
         std::dynamic_pointer_cast<MemoryResponsePacket>(resp_out->read());
-    if (response && response->getAddress() == 10) {
-      EXPECT_EQ(response->getData(), 999);
+    if (response && response->address == 10) {
+      EXPECT_EQ(response->data, 999);
       found_result = true;
     }
   }
@@ -468,7 +468,7 @@ TEST_F(LSUTest, EventDrivenMultipleBankAccess) {
     if (resp_out->hasData()) {
       auto response =
           std::dynamic_pointer_cast<MemoryResponsePacket>(resp_out->read());
-      if (response) results[response->getAddress()] = response->getData();
+      if (response) results[response->address] = response->data;
     }
   });
 
@@ -494,7 +494,7 @@ TEST_F(LSUTest, EventDrivenMultipleBankAccess) {
     if (resp_out->hasData()) {
       auto response =
           std::dynamic_pointer_cast<MemoryResponsePacket>(resp_out->read());
-      if (response) results[response->getAddress()] = response->getData();
+      if (response) results[response->address] = response->data;
     }
   });
 
@@ -507,9 +507,9 @@ TEST_F(LSUTest, EventDrivenMultipleBankAccess) {
     auto response =
         std::dynamic_pointer_cast<MemoryResponsePacket>(resp_out->read());
     if (response) {
-      std::cout << "Got response: addr=" << response->getAddress()
-                << " data=" << response->getData() << std::endl;
-      results[response->getAddress()] = response->getData();
+      std::cout << "Got response: addr=" << response->address
+                << " data=" << response->data << std::endl;
+      results[response->address] = response->data;
     }
   }
   std::cout << "Total responses: " << results.size() << std::endl;

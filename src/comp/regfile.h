@@ -59,22 +59,15 @@ struct RegisterFileParameters {
  */
 class RegfileReadAddrPacket : public Architecture::DataPacket {
  public:
-  RegfileReadAddrPacket(uint32_t addr, bool valid = true)
-      : addr_(addr), valid_read_(valid) {}
-
-  uint32_t getAddress() const { return addr_; }
-  bool isValidRead() const { return valid_read_; }
-
-  void setAddress(uint32_t addr) { addr_ = addr; }
-  void setValidRead(bool valid) { valid_read_ = valid; }
+  RegfileReadAddrPacket(uint32_t addr = 0, bool valid_read = true)
+      : addr(addr), valid_read(valid_read) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return cloneImpl<RegfileReadAddrPacket>(addr_, valid_read_);
+    return cloneImpl<RegfileReadAddrPacket>(addr, valid_read);
   }
 
- private:
-  uint32_t addr_;
-  bool valid_read_;
+  uint32_t addr;
+  bool valid_read;
 };
 
 /**
@@ -84,22 +77,15 @@ class RegfileReadAddrPacket : public Architecture::DataPacket {
  */
 class RegfileReadDataPacket : public Architecture::DataPacket {
  public:
-  RegfileReadDataPacket(uint32_t data, bool valid = true)
-      : data_(data), valid_data_(valid) {}
-
-  uint32_t getData() const { return data_; }
-  bool isValidData() const { return valid_data_; }
-
-  void setData(uint32_t data) { data_ = data; }
-  void setValidData(bool valid) { valid_data_ = valid; }
+  RegfileReadDataPacket(uint32_t data = 0, bool valid_data = true)
+      : data(data), valid_data(valid_data) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return cloneImpl<RegfileReadDataPacket>(data_, valid_data_);
+    return cloneImpl<RegfileReadDataPacket>(data, valid_data);
   }
 
- private:
-  uint32_t data_;
-  bool valid_data_;
+  uint32_t data;
+  bool valid_data;
 };
 
 /**
@@ -109,29 +95,18 @@ class RegfileReadDataPacket : public Architecture::DataPacket {
  */
 class RegfileWritePacket : public Architecture::DataPacket {
  public:
-  RegfileWritePacket(uint32_t addr, uint32_t data, bool valid = true,
-                     bool masked = false)
-      : addr_(addr), data_(data), valid_write_(valid), masked_(masked) {}
-
-  uint32_t getAddress() const { return addr_; }
-  uint32_t getData() const { return data_; }
-  bool isValidWrite() const { return valid_write_; }
-  bool isMasked() const { return masked_; }
-
-  void setAddress(uint32_t addr) { addr_ = addr; }
-  void setData(uint32_t data) { data_ = data; }
-  void setValidWrite(bool valid) { valid_write_ = valid; }
-  void setMasked(bool masked) { masked_ = masked; }
+  RegfileWritePacket(uint32_t addr = 0, uint32_t data = 0,
+                     bool valid_write = true, bool masked = false)
+      : addr(addr), data(data), valid_write(valid_write), masked(masked) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return cloneImpl<RegfileWritePacket>(addr_, data_, valid_write_, masked_);
+    return cloneImpl<RegfileWritePacket>(addr, data, valid_write, masked);
   }
 
- private:
-  uint32_t addr_;
-  uint32_t data_;
-  bool valid_write_;
-  bool masked_;  // Write masked (under branch shadow in speculative execution)
+  uint32_t addr;
+  uint32_t data;
+  bool valid_write;
+  bool masked;  // Write masked (under branch shadow in speculative execution)
 };
 
 /**
@@ -431,11 +406,11 @@ class RegisterFile : public Architecture::Component {
 
       auto addr_packet =
           std::dynamic_pointer_cast<RegfileReadAddrPacket>(addr_port->read());
-      if (!addr_packet || !addr_packet->isValidRead()) {
+      if (!addr_packet || !addr_packet->valid_read) {
         continue;
       }
 
-      uint32_t addr = addr_packet->getAddress();
+      uint32_t addr = addr_packet->addr;
       uint32_t data = readRegister(addr);
 
       read_port_data_[i] = data;
@@ -483,7 +458,7 @@ class RegisterFile : public Architecture::Component {
       auto data_packet =
           std::dynamic_pointer_cast<RegfileWritePacket>(data_port->read());
 
-      if (!addr_packet || !addr_packet->isValidWrite()) {
+      if (!addr_packet || !addr_packet->valid_write) {
         continue;
       }
 
@@ -492,10 +467,10 @@ class RegisterFile : public Architecture::Component {
           (mask_port && mask_port->hasData())
               ? std::dynamic_pointer_cast<Architecture::BoolDataPacket>(
                     mask_port->read())
-                    ->getValue()
+                    ->value
               : false;
 
-      writes.push_back({addr_packet->getAddress(), data_packet->getData()});
+      writes.push_back({addr_packet->addr, data_packet->data});
     }
 
     // Detect conflicts (multiple writes to same register)

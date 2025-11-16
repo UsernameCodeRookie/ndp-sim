@@ -47,36 +47,17 @@ class DvuComponent : public PipelineComponent {
     DivOp op;
     int32_t dividend;
     int32_t divisor;
-
-    // State machine fields
     bool div_by_zero;
     bool dividend_neg;
     bool divisor_neg;
-
-    // Division computation state
     uint32_t quotient;
     uint32_t remainder;
-    uint32_t iteration;  // Current iteration (0-3, each does 8 bits)
+    uint32_t iteration;
     bool computation_done;
-
-    // Final result
     uint32_t result;
 
-    DvuData()
-        : rd_addr(0),
-          op(DivOp::DIV),
-          dividend(0),
-          divisor(0),
-          div_by_zero(false),
-          dividend_neg(false),
-          divisor_neg(false),
-          quotient(0),
-          remainder(0),
-          iteration(0),
-          computation_done(false),
-          result(0) {}
-
-    DvuData(uint32_t addr, DivOp op_code, int32_t div, int32_t divisor_val)
+    DvuData(uint32_t addr = 0, DivOp op_code = DivOp::DIV, int32_t div = 0,
+            int32_t divisor_val = 0)
         : rd_addr(addr),
           op(op_code),
           dividend(div),

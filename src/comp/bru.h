@@ -44,42 +44,25 @@ enum class BruOp {
  */
 class BruCommandPacket : public Architecture::DataPacket {
  public:
-  BruCommandPacket(uint32_t pc, uint32_t target, BruOp op,
+  BruCommandPacket(uint32_t pc = 0, uint32_t target = 0, BruOp op = BruOp::BEQ,
                    uint32_t rs1_data = 0, uint32_t rs2_data = 0, int rd = 0)
-      : pc_(pc),
-        target_(target),
-        op_(op),
-        rs1_data_(rs1_data),
-        rs2_data_(rs2_data),
-        rd_(rd) {}
-
-  uint32_t getPC() const { return pc_; }
-  uint32_t getPC4() const { return pc_ + 4; }
-  uint32_t getTarget() const { return target_; }
-  BruOp getOperation() const { return op_; }
-  uint32_t getRS1Data() const { return rs1_data_; }
-  uint32_t getRS2Data() const { return rs2_data_; }
-  int getRegisterDestination() const { return rd_; }
-
-  void setPC(uint32_t pc) { pc_ = pc; }
-  void setTarget(uint32_t target) { target_ = target; }
-  void setOperation(BruOp op) { op_ = op; }
-  void setRS1Data(uint32_t data) { rs1_data_ = data; }
-  void setRS2Data(uint32_t data) { rs2_data_ = data; }
-  void setRegisterDestination(int rd) { rd_ = rd; }
+      : pc(pc),
+        target(target),
+        op(op),
+        rs1_data(rs1_data),
+        rs2_data(rs2_data),
+        rd(rd) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return cloneImpl<BruCommandPacket>(pc_, target_, op_, rs1_data_, rs2_data_,
-                                       rd_);
+    return cloneImpl<BruCommandPacket>(pc, target, op, rs1_data, rs2_data, rd);
   }
 
- private:
-  uint32_t pc_;        // Program counter
-  uint32_t target_;    // Branch target address
-  BruOp op_;           // Operation
-  uint32_t rs1_data_;  // Register source 1 data
-  uint32_t rs2_data_;  // Register source 2 data
-  int rd_;             // Register destination
+  uint32_t pc;        // Program counter
+  uint32_t target;    // Branch target address
+  BruOp op;           // Operation
+  uint32_t rs1_data;  // Register source 1 data
+  uint32_t rs2_data;  // Register source 2 data
+  int rd;             // Register destination
 };
 
 /**
@@ -89,32 +72,21 @@ class BruCommandPacket : public Architecture::DataPacket {
  */
 class BruResultPacket : public Architecture::DataPacket {
  public:
-  BruResultPacket(uint32_t target, bool taken, bool link_valid = false,
-                  uint32_t link_data = 0)
-      : target_(target),
-        taken_(taken),
-        link_valid_(link_valid),
-        link_data_(link_data) {}
-
-  uint32_t getTarget() const { return target_; }
-  bool isTaken() const { return taken_; }
-  bool isLinkValid() const { return link_valid_; }
-  uint32_t getLinkData() const { return link_data_; }
-
-  void setTarget(uint32_t target) { target_ = target; }
-  void setTaken(bool taken) { taken_ = taken; }
-  void setLinkValid(bool valid) { link_valid_ = valid; }
-  void setLinkData(uint32_t data) { link_data_ = data; }
+  BruResultPacket(uint32_t target = 0, bool taken = false,
+                  bool link_valid = false, uint32_t link_data = 0)
+      : target(target),
+        taken(taken),
+        link_valid(link_valid),
+        link_data(link_data) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return cloneImpl<BruResultPacket>(target_, taken_, link_valid_, link_data_);
+    return cloneImpl<BruResultPacket>(target, taken, link_valid, link_data);
   }
 
- private:
-  uint32_t target_;     // Branch target address
-  bool taken_;          // Whether branch is taken
-  bool link_valid_;     // Whether link register is valid
-  uint32_t link_data_;  // Link register data (return address)
+  uint32_t target;     // Branch target address
+  bool taken;          // Whether branch is taken
+  bool link_valid;     // Whether link register is valid
+  uint32_t link_data;  // Link register data (return address)
 };
 
 /**
@@ -213,10 +185,10 @@ class BruComponent : public PipelineComponent {
       auto cmd = std::dynamic_pointer_cast<BruCommandPacket>(data);
       if (!cmd) return data;
 
-      uint32_t rs1 = cmd->getRS1Data();
-      uint32_t rs2 = cmd->getRS2Data();
-      uint32_t pc = cmd->getPC();
-      uint32_t target = cmd->getTarget();
+      uint32_t rs1 = cmd->rs1_data;
+      uint32_t rs2 = cmd->rs2_data;
+      uint32_t pc = cmd->pc;
+      uint32_t target = cmd->target;
 
       // Perform comparisons
       bool eq = (rs1 == rs2);
@@ -224,23 +196,20 @@ class BruComponent : public PipelineComponent {
       bool lt_unsigned = (rs1 < rs2);
 
       // Determine if branch is taken based on operation
-      bool taken =
-          evaluateBranch(cmd->getOperation(), eq, lt_signed, lt_unsigned);
+      bool taken = evaluateBranch(cmd->op, eq, lt_signed, lt_unsigned);
 
       // Calculate actual target
-      uint32_t branch_target =
-          calculateTarget(cmd->getOperation(), pc, target, rs1);
+      uint32_t branch_target = calculateTarget(cmd->op, pc, target, rs1);
 
       // Create result packet
-      int rd = cmd->getRegisterDestination();
-      bool link_valid = (cmd->getOperation() == BruOp::JAL ||
-                         cmd->getOperation() == BruOp::JALR) &&
-                        (rd != 0);
-      uint32_t link_data = cmd->getPC4();
+      int rd = cmd->rd;
+      bool link_valid =
+          (cmd->op == BruOp::JAL || cmd->op == BruOp::JALR) && (rd != 0);
+      uint32_t link_data = pc + 4;
 
       auto result = std::make_shared<BruResultPacket>(branch_target, taken,
                                                       link_valid, link_data);
-      result->setTimestamp(data->getTimestamp());
+      result->timestamp = data->timestamp;
 
       return std::static_pointer_cast<Architecture::DataPacket>(result);
     });
@@ -252,7 +221,7 @@ class BruComponent : public PipelineComponent {
 
       // Update statistics
       branches_resolved_++;
-      if (result->isTaken()) {
+      if (result->taken) {
         branches_taken_++;
       }
 

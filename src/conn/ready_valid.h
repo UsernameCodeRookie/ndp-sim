@@ -120,7 +120,7 @@ class ReadyValidConnection : public TickingConnection {
   /** @brief Read boolean signal from port (for ready/valid signals) */
   bool readSignal(std::shared_ptr<Port> port) const {
     auto data = std::dynamic_pointer_cast<BoolDataPacket>(port->getData());
-    return data && data->getValue();
+    return data && data->value;
   }
 
   /** @brief Phase 2: Transfer buffered data to destination if ready */
@@ -155,7 +155,7 @@ class ReadyValidConnection : public TickingConnection {
 
     if (is_valid && canAcceptData()) {
       auto data = src_ports_[0]->read();
-      if (data && data->isValid()) {
+      if (data && data->valid) {
         data_buffer_.push(data);
         TRACE_EVENT(scheduler_.getCurrentTime(), name_, "CONN_ENQUEUE",
                     "valid=1 ready=1, buffer=" << data_buffer_.size() << "/"

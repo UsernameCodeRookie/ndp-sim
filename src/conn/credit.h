@@ -90,8 +90,8 @@ class CreditConnection : public TickingConnection {
   int64_t readCredits(std::shared_ptr<Port> port) const {
     if (!port) return -1;
     auto data = std::dynamic_pointer_cast<IntDataPacket>(port->getData());
-    if (data && data->isValid()) {
-      return static_cast<int64_t>(data->getValue());
+    if (data && data->valid) {
+      return static_cast<int64_t>(data->value);
     }
     return -1;
   }
@@ -139,7 +139,7 @@ class CreditConnection : public TickingConnection {
     // If there is already data in the src port, try to read and enqueue
     if (src_ports_[0]->hasData() && canAcceptData() && credits_ > 0) {
       auto data = src_ports_[0]->read();
-      if (data && data->isValid()) {
+      if (data && data->valid) {
         data_buffer_.push(data);
         // Decrement local credit counter (avoid overcommit between updates)
         credits_--;

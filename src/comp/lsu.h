@@ -32,39 +32,27 @@ enum class LSUOp {
  */
 class MemoryRequestPacket : public Architecture::DataPacket {
  public:
-  MemoryRequestPacket(LSUOp op, uint32_t address, int32_t data = 0,
-                      uint32_t stride = 1, uint32_t length = 1,
-                      bool mask = true)
-      : op_(op),
-        address_(address),
-        data_(data),
-        stride_(stride),
-        length_(length),
-        mask_(mask) {}
-
-  LSUOp getOperation() const { return op_; }
-  uint32_t getAddress() const { return address_; }
-  int32_t getData() const { return data_; }
-  uint32_t getStride() const { return stride_; }
-  uint32_t getLength() const { return length_; }
-  bool getMask() const { return mask_; }
-
-  void setOperation(LSUOp op) { op_ = op; }
-  void setAddress(uint32_t addr) { address_ = addr; }
-  void setData(int32_t data) { data_ = data; }
+  MemoryRequestPacket(LSUOp op = LSUOp::LOAD, uint32_t address = 0,
+                      int32_t data = 0, uint32_t stride = 1,
+                      uint32_t length = 1, bool mask = true)
+      : op(op),
+        address(address),
+        data(data),
+        stride(stride),
+        length(length),
+        mask(mask) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return cloneImpl<MemoryRequestPacket>(op_, address_, data_, stride_,
-                                          length_, mask_);
+    return cloneImpl<MemoryRequestPacket>(op, address, data, stride, length,
+                                          mask);
   }
 
- private:
-  LSUOp op_;
-  uint32_t address_;
-  int32_t data_;
-  uint32_t stride_;
-  uint32_t length_;
-  bool mask_;
+  LSUOp op;
+  uint32_t address;
+  int32_t data;
+  uint32_t stride;
+  uint32_t length;
+  bool mask;
 };
 
 /**
@@ -72,19 +60,15 @@ class MemoryRequestPacket : public Architecture::DataPacket {
  */
 class MemoryResponsePacket : public Architecture::DataPacket {
  public:
-  MemoryResponsePacket(int32_t data, uint32_t address)
-      : data_(data), address_(address) {}
-
-  int32_t getData() const { return data_; }
-  uint32_t getAddress() const { return address_; }
+  MemoryResponsePacket(int32_t data = 0, uint32_t address = 0)
+      : data(data), address(address) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return cloneImpl<MemoryResponsePacket>(data_, address_);
+    return cloneImpl<MemoryResponsePacket>(data, address);
   }
 
- private:
-  int32_t data_;
-  uint32_t address_;
+  int32_t data;
+  uint32_t address;
 };
 
 /**
@@ -163,14 +147,14 @@ class MemoryBank : public Architecture::TickingComponent {
   void handleProcessing() {
     cycle_count_++;
     if (cycle_count_ >= latency_) {
-      if (current_request_->getOperation() == LSUOp::LOAD) {
-        int32_t data = read(current_request_->getAddress());
+      if (current_request_->op == LSUOp::LOAD) {
+        int32_t data = read(current_request_->address);
         current_response_ = std::make_shared<MemoryResponsePacket>(
-            data, current_request_->getAddress());
+            data, current_request_->address);
       } else {
-        write(current_request_->getAddress(), current_request_->getData());
+        write(current_request_->address, current_request_->data);
         current_response_ = std::make_shared<MemoryResponsePacket>(
-            0, current_request_->getAddress());
+            0, current_request_->address);
       }
       current_state_ = State::DONE;
     }
@@ -314,14 +298,14 @@ class LoadStoreUnit : public Architecture::TickingComponent {
 
         TRACE_EVENT(
             scheduler_.getCurrentTime(), getName(), "MEM_REQ",
-            (mem_req->getOperation() == LSUOp::LOAD ? "LOAD" : "STORE")
-                << " addr=0x" << std::hex << mem_req->getAddress() << std::dec
-                << " bank=" << (mem_req->getAddress() % num_banks_)
+            (mem_req->op == LSUOp::LOAD ? "LOAD" : "STORE")
+                << " addr=0x" << std::hex << mem_req->address << std::dec
+                << " bank=" << (mem_req->address % num_banks_)
                 << " queue=" << request_queue_.size() << "/" << queue_depth_
                 << " cycle=" << scheduler_.getCurrentTime()
                 << " period=" << getPeriod()
-                << (mem_req->getOperation() == LSUOp::STORE
-                        ? " data=" + std::to_string(mem_req->getData())
+                << (mem_req->op == LSUOp::STORE
+                        ? " data=" + std::to_string(mem_req->data)
                         : ""));
       }
     }
@@ -358,7 +342,7 @@ class LoadStoreUnit : public Architecture::TickingComponent {
       request_queue_.pop();
 
       element_index_ = 0;
-      vector_length_ = current_request_->getLength();
+      vector_length_ = current_request_->length;
 
       current_state_ = State::PROCESSING;
     }
@@ -381,10 +365,9 @@ class LoadStoreUnit : public Architecture::TickingComponent {
 
       TRACE_EVENT(
           scheduler_.getCurrentTime(), getName(), "MEM_DONE",
-          (current_request_->getOperation() == LSUOp::LOAD ? "LOAD_DONE"
-                                                           : "STORE_DONE")
-              << " addr=0x" << std::hex << current_request_->getAddress()
-              << std::dec << " length=" << vector_length_ << " ops="
+          (current_request_->op == LSUOp::LOAD ? "LOAD_DONE" : "STORE_DONE")
+              << " addr=0x" << std::hex << current_request_->address << std::dec
+              << " length=" << vector_length_ << " ops="
               << operations_completed_ << " stalls=" << cycles_stalled_
               << " cycle=" << scheduler_.getCurrentTime()
               << " period=" << getPeriod());
@@ -392,8 +375,8 @@ class LoadStoreUnit : public Architecture::TickingComponent {
       return;
     }
 
-    uint32_t address = current_request_->getAddress() +
-                       element_index_ * current_request_->getStride();
+    uint32_t address =
+        current_request_->address + element_index_ * current_request_->stride;
     size_t bank_id = address % num_banks_;
     uint32_t bank_addr = address / num_banks_;
 
@@ -402,22 +385,21 @@ class LoadStoreUnit : public Architecture::TickingComponent {
     if (bank->isReady()) {
       // Create a new request with bank-local address
       auto bank_request = std::make_shared<MemoryRequestPacket>(
-          current_request_->getOperation(), bank_addr,
-          current_request_->getData(), 1, 1, current_request_->getMask());
+          current_request_->op, bank_addr, current_request_->data, 1, 1,
+          current_request_->mask);
       bank->processRequest(bank_request);
       current_state_ = State::WAITING_BANK;
 
-      if (current_request_->getOperation() == LSUOp::LOAD) {
+      if (current_request_->op == LSUOp::LOAD) {
         TRACE_MEM_READ(scheduler_.getCurrentTime(), getName(), address,
                        bank_id);
       } else {
         TRACE_MEM_WRITE(scheduler_.getCurrentTime(), getName(), address,
-                        current_request_->getData());
+                        current_request_->data);
       }
       TRACE_EVENT(
           scheduler_.getCurrentTime(), getName(), "BANK_ACCESS",
-          (current_request_->getOperation() == LSUOp::LOAD ? "BANK_READ"
-                                                           : "BANK_WRITE")
+          (current_request_->op == LSUOp::LOAD ? "BANK_READ" : "BANK_WRITE")
               << " bank=" << bank_id << " addr=0x" << std::hex << address
               << std::dec << " elem=" << element_index_ << "/" << vector_length_
               << " cycle=" << scheduler_.getCurrentTime()
@@ -443,15 +425,15 @@ class LoadStoreUnit : public Architecture::TickingComponent {
       return;
     }
 
-    uint32_t address = current_request_->getAddress() +
-                       element_index_ * current_request_->getStride();
+    uint32_t address =
+        current_request_->address + element_index_ * current_request_->stride;
 
-    if (current_request_->getOperation() == LSUOp::LOAD ||
-        current_request_->getOperation() == LSUOp::LOAD_VECTOR) {
+    if (current_request_->op == LSUOp::LOAD ||
+        current_request_->op == LSUOp::LOAD_VECTOR) {
       int32_t data = dram_->read(address);
       current_response_ = std::make_shared<MemoryResponsePacket>(data, address);
     } else {
-      dram_->write(address, current_request_->getData());
+      dram_->write(address, current_request_->data);
       current_response_ = std::make_shared<MemoryResponsePacket>(0, address);
     }
 
@@ -460,8 +442,8 @@ class LoadStoreUnit : public Architecture::TickingComponent {
 #endif
 
   void handleWaitingBank() {
-    uint32_t address = current_request_->getAddress() +
-                       element_index_ * current_request_->getStride();
+    uint32_t address =
+        current_request_->address + element_index_ * current_request_->stride;
     size_t bank_id = address % num_banks_;
     auto& bank = memory_banks_[bank_id];
 
@@ -470,7 +452,7 @@ class LoadStoreUnit : public Architecture::TickingComponent {
       if (bank_response) {
         // Create response with original global address, not bank address
         current_response_ = std::make_shared<MemoryResponsePacket>(
-            bank_response->getData(), address);
+            bank_response->data, address);
       }
       bank->acknowledgeResponse();
       element_index_++;

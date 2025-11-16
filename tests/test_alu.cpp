@@ -148,7 +148,7 @@ TEST_F(ALUTest, PipelineOperation) {
   auto result_packet = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
       output_port->read());
   ASSERT_NE(result_packet, nullptr);
-  EXPECT_EQ(result_packet->getValue(), 15);
+  EXPECT_EQ(result_packet->value, 15);
 }
 
 TEST_F(ALUTest, AccumulatorMACOperation) {
@@ -211,7 +211,7 @@ TEST_F(ALUTest, EventDrivenExecution) {
   auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
       output_port->read());
   ASSERT_NE(result, nullptr);
-  EXPECT_EQ(result->getValue(), 13);
+  EXPECT_EQ(result->value, 13);
 
   // Print trace summary
   std::cout << "\n=== Event-Driven ALU Test Trace ===" << std::endl;
@@ -267,7 +267,7 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
     if (output_port->hasData()) {
       auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
           output_port->read());
-      if (result) results.push_back(result->getValue());
+      if (result) results.push_back(result->value);
     }
   });
 
@@ -275,7 +275,7 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
     if (output_port->hasData()) {
       auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
           output_port->read());
-      if (result) results.push_back(result->getValue());
+      if (result) results.push_back(result->value);
     }
   });
 
@@ -283,7 +283,7 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
     if (output_port->hasData()) {
       auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
           output_port->read());
-      if (result) results.push_back(result->getValue());
+      if (result) results.push_back(result->value);
     }
   });
 
@@ -298,8 +298,8 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
     auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
         output_port->read());
     if (result) {
-      std::cout << "Got result: " << result->getValue() << std::endl;
-      results.push_back(result->getValue());
+      std::cout << "Got result: " << result->value << std::endl;
+      results.push_back(result->value);
     }
   }
   std::cout << "Total results collected: " << results.size() << std::endl;
