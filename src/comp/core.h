@@ -12,6 +12,7 @@
 #include "comp/bru.h"
 #include "comp/core/decode.h"
 #include "comp/core/dispatch.h"
+#include "comp/core/fetch.h"
 #include "comp/dvu.h"
 #include "comp/fpu.h"
 #include "comp/lsu.h"
@@ -125,6 +126,7 @@ class SCore : public Pipeline {
         const Config& config = Config())
       : Pipeline(name, scheduler, 1, 3),  // 3-stage pipeline with period 1
         config_(config),
+        fetch_stage_(name + "_FetchStage", 8),
         dispatch_ctrl_(name + "_DispatchCtrl", config.num_registers,
                        config.num_instruction_lanes),
         instructions_dispatched_(0),
@@ -361,9 +363,18 @@ class SCore : public Pipeline {
    */
   void setupPipelineStages() {
     // Stage 0: Fetch/Decode
-    // Read from fetch buffer and decode the instruction
+    // Fetch instruction from FetchStage and decode it
     setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
       uint64_t current_time = scheduler_.getCurrentTime();
+
+      // Try to fetch a new instruction
+      auto fetched = fetch_stage_.fetchCycle();
+      if (!fetched.empty()) {
+        // Add fetched instructions to fetch buffer
+        for (const auto& inst_word : fetched) {
+          fetch_buffer_.push_back(inst_word);
+        }
+      }
 
       // If we have instructions in fetch buffer, create a packet to drive the
       // pipeline
@@ -377,9 +388,11 @@ class SCore : public Pipeline {
             std::make_shared<Architecture::IntDataPacket>(inst.word);
         decoded_packet->timestamp = current_time;
 
-        TRACE_COMPUTE(current_time, getName(), "STAGE0_DECODE",
-                      "PC=0x" << std::hex << inst_word.first << " word=0x"
-                              << inst_word.second << std::dec);
+        TRACE_COMPUTE(current_time, getName(), "STAGE0_FETCH_DECODE",
+                      "Fetch PC=0x" << std::hex << fetch_stage_.getPC()
+                                    << " Decode PC=0x" << inst_word.first
+                                    << " word=0x" << inst_word.second
+                                    << std::dec);
 
         return std::static_pointer_cast<Architecture::DataPacket>(
             decoded_packet);
@@ -872,7 +885,32 @@ class SCore : public Pipeline {
   /**
    * @brief Set program counter
    */
-  void setProgramCounter(uint32_t pc) { pc_ = pc; }
+  void setProgramCounter(uint32_t pc) {
+    pc_ = pc;
+    fetch_stage_.setPC(pc);
+  }
+
+  /**
+   * @brief Get fetch stage PC
+   */
+  uint32_t getFetchPC() const { return fetch_stage_.getPC(); }
+
+  /**
+   * @brief Set fetch stage PC (used for branch redirects)
+   */
+  void setFetchPC(uint32_t pc) { fetch_stage_.setPC(pc); }
+
+  /**
+   * @brief Handle branch redirect in fetch stage
+   */
+  void fetchBranchRedirect(uint32_t target_pc) {
+    fetch_stage_.branchRedirect(target_pc);
+  }
+
+  /**
+   * @brief Handle flush in fetch stage
+   */
+  void fetchFlush(uint32_t flush_pc) { fetch_stage_.flushAndReset(flush_pc); }
 
   /**
    * @brief Get statistics
@@ -941,6 +979,9 @@ class SCore : public Pipeline {
  private:
   // Configuration
   Config config_;
+
+  // Pipeline stages
+  FetchStage fetch_stage_;
 
   // Dispatch controller
   DispatchStage dispatch_ctrl_;
