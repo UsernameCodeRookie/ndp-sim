@@ -266,7 +266,8 @@ class BruComponent : public PipelineComponent {
       // Send to output port
       auto output_port = getPort("out");
       if (output_port) {
-        output_port->write(result);
+        output_port->write(
+            std::static_pointer_cast<Architecture::DataPacket>(result));
       }
 
       return data;  // Return the original data packet type
