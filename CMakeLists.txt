@@ -88,6 +88,18 @@ target_include_directories(test_core PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_core gtest gtest_main pthread)
 add_test(NAME test_core COMMAND test_core)
 
+# --- SCore Dispatch tests ---
+add_executable(test_core_dispatch tests/test_core_dispatch.cpp)
+target_include_directories(test_core_dispatch PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_core_dispatch gtest gtest_main pthread)
+add_test(NAME test_core_dispatch COMMAND test_core_dispatch)
+
+# --- SCore Event-Driven tests ---
+add_executable(test_core_eventdriven tests/test_core_eventdriven.cpp)
+target_include_directories(test_core_eventdriven PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_core_eventdriven gtest gtest_main pthread)
+add_test(NAME test_core_eventdriven COMMAND test_core_eventdriven)
+
 enable_testing()
 
 # -----------------------------
@@ -105,3 +117,12 @@ enable_testing()
 
 #     message(STATUS "Python module ndp_sim_py enabled")
 # endif()
+
+# Debug trace utility
+add_executable(debug_trace debug_trace.cpp)
+target_link_libraries(debug_trace PRIVATE 
+  alu bru mlu dvu lsu fpu regfile 
+  credit_conn ready_valid_conn wire_conn
+  gtest gtest_main pthread m
+)
+target_include_directories(debug_trace PRIVATE ${CMAKE_SOURCE_DIR}/src)

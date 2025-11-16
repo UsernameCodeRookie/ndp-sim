@@ -51,8 +51,9 @@ TEST_F(SCoreTest, ALUExecution) {
 
   EXPECT_EQ(core->getInstructionsDispatched(), 1);
 
-  // Execute simulator for a few cycles (manually advance time)
-  for (int i = 0; i < 10; i++) {
+  // Execute simulator for enough cycles for data to propagate through pipeline
+  // Pipeline has 3 stages, so need at least 3-4 cycles plus overhead
+  for (int i = 0; i < 50; i++) {
     scheduler->runFor(1);
   }
 
@@ -120,8 +121,9 @@ TEST_F(SCoreTest, BRUExecution) {
 
   EXPECT_EQ(core->getInstructionsDispatched(), 1);
 
-  // Execute
-  for (int i = 0; i < 10; i++) {
+  // Execute for enough cycles for BRU pipeline (3 stages)
+  // Increase to allow more time for scheduler events to propagate
+  for (int i = 0; i < 200; i++) {
     scheduler->runFor(1);
   }
 
@@ -149,8 +151,9 @@ TEST_F(SCoreTest, MLUExecution) {
 
   EXPECT_EQ(core->getInstructionsDispatched(), 1);
 
-  // MLU takes more cycles
-  for (int i = 0; i < 20; i++) {
+  // MLU takes more cycles (period=3 configured, plus pipeline overhead)
+  // Need significantly more time for data to propagate
+  for (int i = 0; i < 200; i++) {
     scheduler->runFor(1);
   }
 

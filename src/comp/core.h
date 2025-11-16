@@ -1,7 +1,10 @@
 #ifndef CORE_H
 #define CORE_H
 
+#include <algorithm>
+#include <cstring>
 #include <memory>
+#include <queue>
 #include <string>
 #include <vector>
 
@@ -19,11 +22,145 @@
 #include "packet.h"
 #include "port.h"
 #include "scheduler.h"
+#include "trace.h"
 
 namespace Architecture {
 
 /**
+ * @brief Simplified instruction representation for dispatch
+ *
+ * Contains decoded instruction fields needed for dispatch decisions
+ */
+struct DecodedInstruction {
+  uint32_t addr;  // Program counter
+  uint32_t word;  // Instruction word
+
+  // Operation classification (simplified)
+  enum class OpType {
+    ALU,     // Arithmetic/Logic
+    BRU,     // Branch
+    MLU,     // Multiply
+    DVU,     // Divide
+    LSU,     // Load/Store
+    CSR,     // Control/Status Register
+    FENCE,   // Fence/barrier
+    INVALID  // Invalid instruction
+  };
+
+  OpType op_type;
+  uint32_t rd;   // Destination register
+  uint32_t rs1;  // Source register 1
+  uint32_t rs2;  // Source register 2
+  uint32_t imm;  // Immediate value
+
+  // Operation-specific code
+  uint32_t opcode;
+
+  DecodedInstruction()
+      : addr(0),
+        word(0),
+        op_type(OpType::INVALID),
+        rd(0),
+        rs1(0),
+        rs2(0),
+        imm(0),
+        opcode(0) {}
+};
+
+/**
+ * @brief Simple decoder for instruction words
+ *
+ * Simplified version - only recognizes basic RV32I patterns
+ */
+class InstructionDecoder {
+ public:
+  static DecodedInstruction decode(uint32_t pc, uint32_t word) {
+    DecodedInstruction inst;
+    inst.addr = pc;
+    inst.word = word;
+
+    // Extract fields (RV32I format)
+    uint32_t opcode_bits = word & 0x7F;
+    inst.rd = (word >> 7) & 0x1F;
+    inst.rs1 = (word >> 15) & 0x1F;
+    inst.rs2 = (word >> 20) & 0x1F;
+    inst.opcode = (word >> 25) & 0x7F;
+
+    // Decode immediate fields
+    inst.imm = (word >> 20) & 0xFFF;  // I-type immediate
+
+    // Classify instruction type based on opcode
+    switch (opcode_bits) {
+      // ALU immediate instructions
+      case 0x13:  // ADDI, SLTI, XORI, ORI, ANDI, SLLI, SRLI, SRAI
+        inst.op_type = DecodedInstruction::OpType::ALU;
+        inst.opcode = static_cast<uint32_t>(ALUOp::ADD);
+        break;
+
+      // ALU register instructions
+      case 0x33:  // ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND
+        inst.op_type = DecodedInstruction::OpType::ALU;
+        inst.opcode = static_cast<uint32_t>(ALUOp::ADD);
+        break;
+
+      // Branch instructions
+      case 0x63:  // BEQ, BNE, BLT, BGE, BLTU, BGEU
+        inst.op_type = DecodedInstruction::OpType::BRU;
+        inst.opcode = static_cast<uint32_t>(BruOp::BEQ);
+        break;
+
+      // JAL
+      case 0x6F:
+        inst.op_type = DecodedInstruction::OpType::BRU;
+        inst.opcode = static_cast<uint32_t>(BruOp::JAL);
+        break;
+
+      // JALR
+      case 0x67:
+        inst.op_type = DecodedInstruction::OpType::BRU;
+        inst.opcode = static_cast<uint32_t>(BruOp::JALR);
+        break;
+
+      // Load instructions
+      case 0x03:  // LB, LH, LW, LBU, LHU
+        inst.op_type = DecodedInstruction::OpType::LSU;
+        inst.opcode = static_cast<uint32_t>(LSUOp::LOAD);
+        break;
+
+      // Store instructions
+      case 0x23:  // SB, SH, SW
+        inst.op_type = DecodedInstruction::OpType::LSU;
+        inst.opcode = static_cast<uint32_t>(LSUOp::STORE);
+        break;
+
+      // CSR instructions
+      case 0x73:  // CSRRW, CSRRS, CSRRC, EBREAK, ECALL
+        inst.op_type = DecodedInstruction::OpType::CSR;
+        break;
+
+      // FENCE
+      case 0x0F:
+        inst.op_type = DecodedInstruction::OpType::FENCE;
+        break;
+
+      default:
+        inst.op_type = DecodedInstruction::OpType::INVALID;
+        break;
+    }
+
+    return inst;
+  }
+};
+
+/**
  * @brief Coral NPU Scalar Core (SCore)
+ *
+ * Enhanced scalar core implementation for Coral NPU with integrated Decode &
+ * Dispatch. Now inherits from PipelineComponent to model the 3-stage
+ * instruction pipeline:
+ * - Stage 0: Fetch/Decode - Pull instruction from buffer, decode fields
+ * - Stage 1: Dispatch - Check hazards, issue to execution units
+ * - Stage 2: Execute/Writeback - Monitor execution units, writeback results
  *
  * Simplified scalar core implementation for Coral NPU based on event-driven
  * architecture. This version omits:
@@ -48,13 +185,19 @@ namespace Architecture {
  * - Register File: Dual-ported register storage
  *
  * Instruction Flow:
- * 1. Dispatch receives instruction word and operands
- * 2. Dispatch issues command packets to functional units
- * 3. Functional units execute in parallel
- * 4. Results write back to register file
- * 5. Ready-Valid connections provide flow control
+ * 1. Fetch stage pulls instructions from fetch buffer
+ * 2. Decode stage decodes instruction words
+ * 3. Dispatch stage issues commands with Coral NPU rules:
+ *    - In-order: don't skip instructions
+ *    - Scoreboarding: RAW/WAW hazard detection
+ *    - Resource constraints: MLU/DVU/LSU = 1 per cycle
+ *    - Control flow: don't dispatch past branches
+ *    - Special instructions: CSR/FENCE in slot 0 only
+ * 4. Execution units execute in parallel
+ * 5. Results write back to register file
+ * 6. Ready-Valid connections provide flow control
  */
-class SCore : public Component {
+class SCore : public Pipeline {
  public:
   /**
    * @brief SCore configuration parameters
@@ -104,10 +247,17 @@ class SCore : public Component {
    */
   SCore(const std::string& name, EventDriven::EventScheduler& scheduler,
         const Config& config = Config())
-      : Component(name, scheduler),
+      : Pipeline(name, scheduler, 1, 3),  // 3-stage pipeline with period 1
         config_(config),
         instructions_dispatched_(0),
-        instructions_retired_(0) {
+        instructions_retired_(0),
+        branch_taken_(false),
+        pc_(0),
+        dispatch_ready_(true),
+        scoreboard_(config.num_registers, false),
+        mlu_busy_(false),
+        dvu_busy_(false),
+        lsu_busy_(false) {
     // Initialize all functional units
     initializeFunctionalUnits();
 
@@ -125,8 +275,10 @@ class SCore : public Component {
     // Create connections
     createConnections();
 
-    // Create dispatch module
-    // Note: Dispatch implementation deferred - acts as command distributor
+    // Setup pipeline stage functions for the 3-stage instruction pipeline
+    setupPipelineStages();
+
+    // Initialize dispatch ready
     dispatch_ready_ = true;
   }
 
@@ -290,6 +442,12 @@ class SCore : public Component {
    * Brings all functional units, register file, and connections online
    */
   void initialize() override {
+    // Call Pipeline's initialize to start the pipeline ticking
+    Pipeline::initialize();
+
+    TRACE_EVENT(scheduler_.getCurrentTime(), getName(), "INITIALIZE",
+                "Starting SCore initialization");
+
     // Start all functional units
     for (auto& alu : alusv_) {
       alu->start(config_.start_time);
@@ -310,6 +468,32 @@ class SCore : public Component {
     if (mlu_wb_connection_) mlu_wb_connection_->start(config_.start_time);
     if (dvu_wb_connection_) dvu_wb_connection_->start(config_.start_time);
     if (lsu_wb_connection_) lsu_wb_connection_->start(config_.start_time);
+
+    TRACE_EVENT(scheduler_.getCurrentTime(), getName(), "INITIALIZE_COMPLETE",
+                "FUs and connections started");
+  }
+
+  /**
+   * @brief Override tick to ensure dispatch happens every cycle
+   */
+  void tick() override {
+    uint64_t current_time = scheduler_.getCurrentTime();
+
+    TRACE_COMPUTE(current_time, getName(), "TICK_START",
+                  "fetch_buffer_size=" << fetch_buffer_.size());
+
+    // Call parent Pipeline::tick()
+    Pipeline::tick();
+
+    // Additionally, try to dispatch every cycle if we have instructions in
+    // fetch buffer
+    if (!fetch_buffer_.empty()) {
+      uint32_t dispatched = dispatchCycle();
+      if (dispatched > 0) {
+        TRACE_COMPUTE(current_time, getName(), "TICK_DISPATCH",
+                      "Dispatched " << dispatched << " instructions");
+      }
+    }
   }
 
   /**
@@ -332,6 +516,34 @@ class SCore : public Component {
   }
 
   /**
+   * @brief Setup pipeline stage functions
+   *
+   * Configures the 3-stage instruction pipeline:
+   * - Stage 0: Fetch/Decode - Extract instruction from buffer
+   * - Stage 1: Dispatch - Issue instruction to execution unit
+   * - Stage 2: Execute/Writeback - Monitor completion
+   */
+  void setupPipelineStages() {
+    // Stage 0: Fetch/Decode
+    setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
+      // Empty for now - fetch buffer is handled in tick()
+      return data;
+    });
+
+    // Stage 1: Dispatch
+    setStageFunction(1, [this](std::shared_ptr<Architecture::DataPacket> data) {
+      // Empty for now - dispatch is handled in tick()
+      return data;
+    });
+
+    // Stage 2: Execute/Writeback
+    setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
+      // Empty for now
+      return data;
+    });
+  }
+
+  /**
    * @brief Dispatch instruction command
    *
    * @param op Operation type (ALU, BRU, MLU, DVU, LSU)
@@ -348,8 +560,12 @@ class SCore : public Component {
 
   void dispatchInstruction(OpType op_type, uint32_t lane, uint32_t operand1,
                            uint32_t operand2, uint32_t opcode, uint32_t rd) {
+    uint64_t current_time = scheduler_.getCurrentTime();
+
     if (!dispatch_ready_) {
       // Dispatch backpressure - implement flow control logic
+      TRACE_COMPUTE(current_time, getName(), "DISPATCH_BACKPRESSURE",
+                    "Dispatch blocked");
       return;
     }
 
@@ -365,8 +581,11 @@ class SCore : public Component {
             auto cmd = std::make_shared<ALUDataPacket>(
                 static_cast<int32_t>(operand1), static_cast<int32_t>(operand2),
                 static_cast<ALUOp>(opcode));
-            cmd->timestamp = scheduler_.getCurrentTime();
+            cmd->timestamp = current_time;
             in_port->write(cmd);
+            TRACE_COMPUTE(current_time, getName(), "DISPATCH_ALU",
+                          "lane=" << lane << " rd=" << rd << " op1=" << operand1
+                                  << " op2=" << operand2);
           }
         }
         break;
@@ -378,8 +597,10 @@ class SCore : public Component {
           if (in_port && !in_port->hasData()) {
             auto cmd = std::make_shared<BruCommandPacket>(
                 operand1, operand2, static_cast<BruOp>(opcode), 0, 0, rd);
-            cmd->timestamp = scheduler_.getCurrentTime();
+            cmd->timestamp = current_time;
             in_port->write(cmd);
+            TRACE_COMPUTE(current_time, getName(), "DISPATCH_BRU",
+                          "rd=" << rd << " operand=" << operand1);
           }
         }
         break;
@@ -393,8 +614,11 @@ class SCore : public Component {
                 rd, static_cast<MultiplyUnit::MulOp>(opcode),
                 static_cast<int64_t>(operand1) *
                     static_cast<int64_t>(operand2));
-            cmd->timestamp = scheduler_.getCurrentTime();
+            cmd->timestamp = current_time;
             in_port->write(cmd);
+            TRACE_COMPUTE(
+                current_time, getName(), "DISPATCH_MLU",
+                "rd=" << rd << " op1=" << operand1 << " op2=" << operand2);
           }
         }
         break;
@@ -407,8 +631,11 @@ class SCore : public Component {
             auto cmd = std::make_shared<DivideUnit::DvuData>(
                 rd, static_cast<DivideUnit::DivOp>(opcode),
                 static_cast<int32_t>(operand1), static_cast<int32_t>(operand2));
-            cmd->timestamp = scheduler_.getCurrentTime();
+            cmd->timestamp = current_time;
             in_port->write(cmd);
+            TRACE_COMPUTE(
+                current_time, getName(), "DISPATCH_DVU",
+                "rd=" << rd << " op1=" << operand1 << " op2=" << operand2);
           }
         }
         break;
@@ -421,11 +648,310 @@ class SCore : public Component {
             auto cmd = std::make_shared<MemoryRequestPacket>(
                 static_cast<LSUOp>(opcode), operand1,
                 static_cast<int32_t>(operand2), 1, 1, false);
-            cmd->timestamp = scheduler_.getCurrentTime();
+            cmd->timestamp = current_time;
             in_port->write(cmd);
+            TRACE_COMPUTE(current_time, getName(), "DISPATCH_LSU",
+                          "addr=" << operand1 << " data=" << operand2);
           }
         }
         break;
+    }
+  }
+
+  /**
+   * @brief Inject instruction word into fetch buffer (for testing/simulation)
+   *
+   * Allows test code to pre-populate the instruction stream
+   */
+  void injectInstruction(uint32_t pc, uint32_t word) {
+    fetch_buffer_.push_back({pc, word});
+    TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "INJECT_INSTRUCTION",
+                  "PC=0x" << std::hex << pc << " word=0x" << word
+                          << " buffer_size=" << std::dec
+                          << fetch_buffer_.size());
+  }
+
+  /**
+   * @brief Dispatch cycle - main decode/dispatch logic
+   *
+   * Implements Coral NPU dispatch rules:
+   * 1. In-order dispatch (don't skip instructions)
+   * 2. Scoreboard hazard detection (RAW, WAW)
+   * 3. Resource constraints (MLU/DVU/LSU = 1 per cycle)
+   * 4. Control flow (don't dispatch past branches)
+   * 5. Special instruction constraints (CSR/FENCE in slot 0 only)
+   *
+   * Returns number of instructions dispatched this cycle
+   */
+  uint32_t dispatchCycle() {
+    uint64_t current_time = scheduler_.getCurrentTime();
+
+    // Clear resource usage trackers for this cycle
+    mlu_busy_ = false;
+    dvu_busy_ = false;
+    lsu_busy_ = false;
+
+    size_t fetch_index = 0;
+    uint32_t dispatched_count = 0;
+
+    TRACE_COMPUTE(current_time, getName(), "DISPATCH_CYCLE_START",
+                  "fetch_buffer size=" << fetch_buffer_.size());
+
+    // Try to dispatch up to num_instruction_lanes instructions
+    for (uint32_t lane = 0; lane < config_.num_instruction_lanes &&
+                            fetch_index < fetch_buffer_.size();
+         lane++) {
+      const auto& inst_word = fetch_buffer_[fetch_index];
+      DecodedInstruction inst =
+          InstructionDecoder::decode(inst_word.first, inst_word.second);
+
+      // Check if instruction is valid
+      if (inst.op_type == DecodedInstruction::OpType::INVALID) {
+        TRACE_COMPUTE(current_time, getName(), "DISPATCH_INVALID",
+                      "Invalid instruction at index=" << fetch_index);
+        break;
+      }
+
+      // In-order rule: if this instruction couldn't dispatch, stop
+      if (!canDispatch(inst, lane)) {
+        TRACE_COMPUTE(current_time, getName(), "DISPATCH_BLOCKED",
+                      "Cannot dispatch at lane=" << lane << ", rd=" << inst.rd);
+        break;
+      }
+
+      // Dispatch the instruction to appropriate unit
+      dispatchToUnit(inst, lane);
+
+      TRACE_COMPUTE(current_time, getName(), "DISPATCH_SUCCESS",
+                    "Dispatched to lane=" << lane << ", rd=" << inst.rd);
+
+      // Update scoreboard with destination register
+      if (inst.rd != 0) {  // Register 0 is hardwired to 0
+        scoreboard_[inst.rd] = true;
+      }
+
+      // Check if this is a control flow instruction
+      if (isControlFlowInstruction(inst)) {
+        branch_taken_ = true;
+        fetch_index++;
+        dispatched_count++;
+        TRACE_COMPUTE(current_time, getName(), "DISPATCH_CONTROL_FLOW",
+                      "Control flow instruction, stopping dispatch");
+        break;  // Don't dispatch past branches
+      }
+
+      fetch_index++;
+      dispatched_count++;
+      instructions_dispatched_++;
+    }
+
+    // Remove dispatched instructions from fetch buffer
+    if (fetch_index > 0) {
+      fetch_buffer_.erase(fetch_buffer_.begin(),
+                          fetch_buffer_.begin() + fetch_index);
+      TRACE_COMPUTE(current_time, getName(), "DISPATCH_CYCLE_END",
+                    "Dispatched " << dispatched_count
+                                  << " instructions, fetch_buffer remaining="
+                                  << fetch_buffer_.size());
+    }
+
+    return dispatched_count;
+  }
+
+  /**
+   * @brief Check if instruction can be dispatched
+   *
+   * Implements hazard detection and resource constraints
+   */
+  bool canDispatch(const DecodedInstruction& inst, uint32_t lane) {
+    // Special instructions (CSR, FENCE) only in slot 0
+    if (lane > 0 && isSpecialInstruction(inst)) {
+      return false;
+    }
+
+    // Check RAW hazard (instruction reads operand written by pending
+    // instruction)
+    if (inst.rs1 != 0 && scoreboard_[inst.rs1]) {
+      return false;
+    }
+    if (inst.rs2 != 0 && scoreboard_[inst.rs2]) {
+      return false;
+    }
+
+    // Check resource constraints
+    switch (inst.op_type) {
+      case DecodedInstruction::OpType::MLU:
+        if (mlu_busy_) return false;
+        break;
+      case DecodedInstruction::OpType::DVU:
+        if (dvu_busy_) return false;
+        break;
+      case DecodedInstruction::OpType::LSU:
+        if (lsu_busy_) return false;
+        break;
+      default:
+        break;
+    }
+
+    return true;
+  }
+
+  /**
+   * @brief Dispatch instruction to appropriate execution unit
+   */
+  void dispatchToUnit(const DecodedInstruction& inst, uint32_t lane) {
+    switch (inst.op_type) {
+      case DecodedInstruction::OpType::ALU:
+        dispatchToALU(inst, lane);
+        break;
+      case DecodedInstruction::OpType::BRU:
+        dispatchToBRU(inst);
+        break;
+      case DecodedInstruction::OpType::MLU:
+        dispatchToMLU(inst);
+        mlu_busy_ = true;
+        break;
+      case DecodedInstruction::OpType::DVU:
+        dispatchToDVU(inst);
+        dvu_busy_ = true;
+        break;
+      case DecodedInstruction::OpType::LSU:
+        dispatchToLSU(inst);
+        lsu_busy_ = true;
+        break;
+      case DecodedInstruction::OpType::CSR:
+      case DecodedInstruction::OpType::FENCE:
+        // For simplified implementation, just track as executed
+        break;
+      default:
+        break;
+    }
+  }
+
+  /**
+   * @brief Dispatch to ALU
+   */
+  void dispatchToALU(const DecodedInstruction& inst, uint32_t lane) {
+    if (lane >= alusv_.size()) return;
+
+    auto alu = alusv_[lane];
+    auto in_port = alu->getPort("in");
+    if (in_port && !in_port->hasData()) {
+      // Get operands from register file
+      uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+      uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+
+      auto cmd = std::make_shared<ALUDataPacket>(
+          static_cast<int32_t>(rs1_val), static_cast<int32_t>(rs2_val),
+          static_cast<ALUOp>(inst.opcode));
+      cmd->timestamp = scheduler_.getCurrentTime();
+      in_port->write(cmd);
+    }
+  }
+
+  /**
+   * @brief Dispatch to BRU
+   */
+  void dispatchToBRU(const DecodedInstruction& inst) {
+    if (bru_) {
+      auto in_port = bru_->getPort("in");
+      if (in_port && !in_port->hasData()) {
+        // Get operands from register file
+        uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+        uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+
+        auto cmd = std::make_shared<BruCommandPacket>(
+            pc_, pc_ + 4,  // target address (simplified)
+            static_cast<BruOp>(inst.opcode), rs1_val, rs2_val,
+            static_cast<int>(inst.rd));
+        cmd->timestamp = scheduler_.getCurrentTime();
+        in_port->write(cmd);
+      }
+    }
+  }
+
+  /**
+   * @brief Dispatch to MLU
+   */
+  void dispatchToMLU(const DecodedInstruction& inst) {
+    if (mlu_) {
+      auto in_port = mlu_->getPort("in");
+      if (in_port && !in_port->hasData()) {
+        uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+        uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+
+        auto cmd = std::make_shared<MultiplyUnit::MluData>(
+            inst.rd, static_cast<MultiplyUnit::MulOp>(inst.opcode),
+            static_cast<int64_t>(rs1_val) * static_cast<int64_t>(rs2_val));
+        cmd->timestamp = scheduler_.getCurrentTime();
+        in_port->write(cmd);
+      }
+    }
+  }
+
+  /**
+   * @brief Dispatch to DVU
+   */
+  void dispatchToDVU(const DecodedInstruction& inst) {
+    if (dvu_) {
+      auto in_port = dvu_->getPort("in");
+      if (in_port && !in_port->hasData()) {
+        uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+        uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+
+        auto cmd = std::make_shared<DivideUnit::DvuData>(
+            inst.rd, static_cast<DivideUnit::DivOp>(inst.opcode),
+            static_cast<int32_t>(rs1_val), static_cast<int32_t>(rs2_val));
+        cmd->timestamp = scheduler_.getCurrentTime();
+        in_port->write(cmd);
+      }
+    }
+  }
+
+  /**
+   * @brief Dispatch to LSU
+   */
+  void dispatchToLSU(const DecodedInstruction& inst) {
+    if (lsu_) {
+      auto in_port = lsu_->getPort("in");
+      if (in_port && !in_port->hasData()) {
+        uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+        uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+
+        auto cmd = std::make_shared<MemoryRequestPacket>(
+            static_cast<LSUOp>(inst.opcode), rs1_val,
+            static_cast<int32_t>(rs2_val), 1, 1, false);
+        cmd->timestamp = scheduler_.getCurrentTime();
+        in_port->write(cmd);
+      }
+    }
+  }
+
+  /**
+   * @brief Check if instruction is a control flow instruction
+   */
+  bool isControlFlowInstruction(const DecodedInstruction& inst) const {
+    return inst.op_type == DecodedInstruction::OpType::BRU ||
+           (inst.op_type == DecodedInstruction::OpType::CSR &&
+            inst.opcode == static_cast<uint32_t>(BruOp::ECALL)) ||
+           (inst.op_type == DecodedInstruction::OpType::CSR &&
+            inst.opcode == static_cast<uint32_t>(BruOp::MRET));
+  }
+
+  /**
+   * @brief Check if instruction is special (CSR, FENCE, etc)
+   */
+  bool isSpecialInstruction(const DecodedInstruction& inst) const {
+    return inst.op_type == DecodedInstruction::OpType::CSR ||
+           inst.op_type == DecodedInstruction::OpType::FENCE;
+  }
+
+  /**
+   * @brief Clear scoreboard after instruction retirement
+   */
+  void retireInstruction(uint32_t rd) {
+    if (rd != 0 && rd < scoreboard_.size()) {
+      scoreboard_[rd] = false;
     }
   }
 
@@ -447,6 +973,16 @@ class SCore : public Component {
       regfile_->writeRegister(addr, data);
     }
   }
+
+  /**
+   * @brief Get program counter
+   */
+  uint32_t getProgramCounter() const { return pc_; }
+
+  /**
+   * @brief Set program counter
+   */
+  void setProgramCounter(uint32_t pc) { pc_ = pc; }
 
   /**
    * @brief Get statistics
@@ -534,6 +1070,17 @@ class SCore : public Component {
 
   // Dispatch control
   bool dispatch_ready_;
+
+  // Dispatch state
+  std::vector<std::pair<uint32_t, uint32_t>> fetch_buffer_;  // (PC, word)
+  std::vector<bool> scoreboard_;  // Register dependency tracking
+  bool mlu_busy_;
+  bool dvu_busy_;
+  bool lsu_busy_;
+
+  // Control state
+  uint32_t pc_;        // Program counter
+  bool branch_taken_;  // Branch taken in this cycle
 
   // Statistics
   uint64_t instructions_dispatched_;
