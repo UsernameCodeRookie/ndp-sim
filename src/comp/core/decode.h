@@ -30,6 +30,7 @@ struct DecodedInstruction {
     LSU,     // Load/Store
     CSR,     // Control/Status Register
     FENCE,   // Fence/barrier
+    VECTOR,  // Vector extension (RVV)
     INVALID  // Invalid instruction
   };
 
@@ -148,6 +149,17 @@ class DecodeStage {
       case 0x0F:
         inst.op_type = DecodedInstruction::OpType::FENCE;
         // rs2 stays 0
+        break;
+
+      // Vector instructions (RVV extension)
+      // VADD, VSUB, VMUL, VAND, VOR, VXOR, etc.
+      case 0x57:  // VV format (vector-vector operations)
+      case 0x77:  // VI format (vector-immediate operations)
+      case 0x37:  // VL format (vector load operations)
+      case 0x27:  // VS format (vector store operations)
+        inst.op_type = DecodedInstruction::OpType::VECTOR;
+        inst.rs2 = (word >> 20) & 0x1F;  // Extract vs2
+        // opcode stays as extracted from bits [31:25]
         break;
 
       default:

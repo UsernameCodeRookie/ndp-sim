@@ -372,6 +372,9 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
 
   /**
    * @brief Setup Execute Stage
+   *
+   * Uses the Pipeline's latency mechanism to hold instructions in the execute
+   * stage for the appropriate number of cycles before advancing to retire.
    */
   void setupExecuteStage() {
     setStageFunction(
@@ -382,31 +385,37 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
             return nullptr;
           }
 
-          if (rvv_pkt->execution_complete) {
-            return rvv_pkt;
+          // Mark execution complete - the pipeline latency mechanism will
+          // hold this data in the stage for the required cycles
+          if (!rvv_pkt->execution_complete) {
+            rvv_pkt->result_data = std::vector<uint8_t>(vlen_ / 8, 0xAA);
+            rvv_pkt->byte_enable = std::vector<bool>(vlen_ / 8, true);
+            rvv_pkt->execution_complete = true;
+
+            rob_->markComplete(rvv_pkt->rob_index, rvv_pkt->result_data,
+                               rvv_pkt->byte_enable);
+
+            // Trace: Execute stage completes instruction
+            std::stringstream ss;
+            ss << "inst_id=" << rvv_pkt->uop.inst_id
+               << " rob_idx=" << rvv_pkt->rob_index << " latency="
+               << RVVVectorALU::getOpcodeLatency(rvv_pkt->uop.opcode)
+               << " cycles";
+            EventDriven::Tracer::getInstance().traceCompute(
+                scheduler_.getCurrentTime(), name_, "EXECUTE", ss.str());
+
+            execute_count_++;
           }
 
-          rvv_pkt->result_data = std::vector<uint8_t>(vlen_ / 8, 0xAA);
-          rvv_pkt->byte_enable = std::vector<bool>(vlen_ / 8, true);
-          rvv_pkt->execution_complete = true;
-
-          rob_->markComplete(rvv_pkt->rob_index, rvv_pkt->result_data,
-                             rvv_pkt->byte_enable);
-
-          // Trace: Execute stage completes instruction
-          std::stringstream ss;
-          ss << "inst_id=" << rvv_pkt->uop.inst_id
-             << " rob_idx=" << rvv_pkt->rob_index
-             << " result_size=" << rvv_pkt->result_data.size();
-          EventDriven::Tracer::getInstance().traceCompute(
-              scheduler_.getCurrentTime(), name_, "EXECUTE", ss.str());
-
-          execute_count_++;
-          return rvv_pkt;
+          return std::dynamic_pointer_cast<DataPacket>(rvv_pkt);
         });
 
     setStageStallPredicate(
         2, [](std::shared_ptr<DataPacket> pkt) { return !pkt; });
+
+    // Set default execute stage latency to 2 cycles
+    // The Pipeline's latency mechanism will hold instructions for this duration
+    setStageLatency(2, 2);
   }
 
   /**

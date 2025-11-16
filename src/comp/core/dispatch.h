@@ -49,6 +49,12 @@ class DispatchStage {
       return false;
     }
 
+    // Vector instructions use separate vector register file, skip scoreboard
+    // checks for scalar registers
+    if (inst.op_type == DecodedInstruction::OpType::VECTOR) {
+      return true;  // Vector instructions can always proceed to dispatch
+    }
+
     // Check RAW hazard (instruction reads operand written by pending
     // instruction)
     if (inst.rs1 != 0 && scoreboard_[inst.rs1]) {

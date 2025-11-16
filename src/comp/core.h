@@ -21,6 +21,7 @@
 #include "comp/mlu.h"
 #include "comp/pipeline.h"
 #include "comp/regfile.h"
+#include "comp/rvv_interface.h"
 #include "conn/credit.h"
 #include "conn/ready_valid.h"
 #include "conn/wire.h"
@@ -861,6 +862,8 @@ class SCore : public Pipeline {
         return dispatchToDVU(inst);
       case DecodedInstruction::OpType::LSU:
         return dispatchToLSU(inst);
+      case DecodedInstruction::OpType::VECTOR:
+        return dispatchToVector(inst, lane);
       case DecodedInstruction::OpType::CSR:
       case DecodedInstruction::OpType::FENCE:
         // For simplified implementation, these always succeed
@@ -953,6 +956,57 @@ class SCore : public Pipeline {
     TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
                   "Dispatch: x" << inst.rs2 << " = " << rs2_val);
     return issueLSU(inst.opcode, rs1_val, static_cast<int32_t>(rs2_val));
+  }
+
+  /**
+   * @brief Dispatch vector instruction to RVV backend
+   * @return true if RVV interface accepted the instruction
+   */
+  bool dispatchToVector(const DecodedInstruction& inst, uint32_t /* lane */) {
+    // Check if RVV interface is connected
+    if (!rvv_interface_) {
+      TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(),
+                    "DISPATCH_VECTOR_FAIL", "RVV interface not connected");
+      return false;
+    }
+
+    uint64_t current_time = scheduler_.getCurrentTime();
+
+    // Create instruction request for RVV backend
+    // Extract vector register indices from instruction word
+    uint32_t vd = inst.rd;    // Destination vector register (bits 7-11)
+    uint32_t vs1 = inst.rs1;  // Source vector register 1 (bits 15-19)
+    uint32_t vs2 = inst.rs2;  // Source vector register 2 (bits 20-24)
+
+    RVVCoreInterface::InstructionRequest vec_req;
+    vec_req.opcode = inst.opcode;
+    vec_req.vd_idx = vd;
+    vec_req.vs1_idx = vs1;
+    vec_req.vs2_idx = vs2;
+    vec_req.bits = inst.word & 0x1FFFFFF;  // 25-bit payload
+    vec_req.vm = 1;                        // Assume mask enabled
+    vec_req.sew = 0;                       // 8-bit
+    vec_req.lmul = 0;                      // LMUL=1
+    vec_req.vl = 8;                        // Vector length
+    vec_req.pc = inst.addr;
+
+    // Issue the vector instruction to RVV backend
+    bool accepted = rvv_interface_->issueInstruction(vec_req);
+
+    if (accepted) {
+      TRACE_COMPUTE(current_time, getName(), "DISPATCH_VECTOR_SUCCESS",
+                    "Issued vector instruction to RVV backend, "
+                    "opcode=0x"
+                        << std::hex << inst.opcode << std::dec << " vd=" << vd
+                        << " vs1=" << vs1 << " vs2=" << vs2);
+    } else {
+      TRACE_COMPUTE(
+          current_time, getName(), "DISPATCH_VECTOR_BUSY",
+          "RVV backend busy, cannot issue vector instruction opcode=0x"
+              << std::hex << inst.opcode << std::dec);
+    }
+
+    return accepted;
   }
 
  private:
@@ -1183,6 +1237,22 @@ class SCore : public Pipeline {
   uint32_t getInstruction(uint32_t pc) const { return ibuffer_->load(pc); }
 
   /**
+   * @brief Set RVV core interface for vector extension support
+   * @param rvv_interface Pointer to RVVCoreInterface implementation
+   */
+  void setRVVInterface(std::shared_ptr<RVVCoreInterface> rvv_interface) {
+    rvv_interface_ = rvv_interface;
+  }
+
+  /**
+   * @brief Get RVV core interface
+   * @return RVVCoreInterface pointer or nullptr if not set
+   */
+  std::shared_ptr<RVVCoreInterface> getRVVInterface() const {
+    return rvv_interface_;
+  }
+
+  /**
    * @brief Get statistics
    */
   uint64_t getInstructionsDispatched() const {
@@ -1263,6 +1333,9 @@ class SCore : public Pipeline {
   std::shared_ptr<DivideUnit> dvu_;                          // Divide unit
   std::shared_ptr<LoadStoreUnit> lsu_;                       // Load-Store unit
   std::shared_ptr<RegisterFile> regfile_;                    // Register file
+
+  // Vector extension (RVV)
+  std::shared_ptr<RVVCoreInterface> rvv_interface_;  // RVV backend interface
 
   // Memory components
   std::shared_ptr<Buffer> ibuffer_;  // Instruction buffer (i-cache predecessor)

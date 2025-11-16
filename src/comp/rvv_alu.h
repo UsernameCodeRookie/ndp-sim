@@ -181,8 +181,86 @@ class RVVVectorALU : public Pipeline {
   }
 
   /**
-   * @brief Get the number of available ALU units
+   * @brief Map RVV instruction opcode to operation category
+   *
+   * Decodes RISC-V Vector Extension opcodes to determine the operation
+   * category, which is used to determine execution latency.
+   *
+   * Handles both full RISC-V encodings and simplified internal opcodes:
+   * - Internal: 0x1=VADD, 0x5=VSUB, 0x13=VAND, 0x15=VOR, etc.
+   * - Full RISC-V: opcode[6:0]=0x57/0x77 with funct6 fields
+   *
+   * @param opcode RVV instruction opcode
+   * @return RVVCategory for the instruction
    */
+  static RVVCategory getOpcodeCategory(uint32_t opcode) {
+    // Check for simplified internal opcodes first
+    switch (opcode) {
+      // Arithmetic operations
+      case 0x1:  // VADD
+      case 0x5:  // VSUB
+      case 0x9:  // VMUL
+        return RVVCategory::ARITHMETIC;
+
+      // Logical operations
+      case 0x13:  // VAND
+      case 0x15:  // VOR
+      case 0x17:  // VXOR
+        return RVVCategory::LOGICAL;
+
+      // Shift operations
+      case 0x21:  // VSLL
+      case 0x25:  // VSRL
+      case 0x27:  // VSRA
+        return RVVCategory::SHIFT;
+
+      default:
+        break;  // Fall through to full RISC-V decoding
+    }
+
+    // RISC-V Vector Extension opcodes
+    // Reference: https://riscv.org/technical/specifications/
+    uint32_t base_opcode = opcode & 0x7F;
+
+    // Vector opcode space (0x57, 0x77, 0x37, 0x27, etc.)
+    if (base_opcode == 0x57 || base_opcode == 0x77 || base_opcode == 0x37 ||
+        base_opcode == 0x27) {
+      uint32_t funct6 = (opcode >> 26) & 0x3F;
+
+      // Arithmetic operations (funct6 = 0, 2, 9)
+      if (funct6 == 0x00 || funct6 == 0x02 || funct6 == 0x09) {
+        return RVVCategory::ARITHMETIC;
+      }
+
+      // Logical operations (funct6 = 9, 10, 11, etc.)
+      if (funct6 == 0x0A || funct6 == 0x0B) {
+        return RVVCategory::LOGICAL;
+      }
+
+      // Shift operations (funct6 = 4, 5, 6)
+      if (funct6 == 0x04 || funct6 == 0x05 || funct6 == 0x06) {
+        return RVVCategory::SHIFT;
+      }
+
+      // Compare operations (funct6 = 24-31 range)
+      if (funct6 >= 0x18 && funct6 <= 0x1F) {
+        return RVVCategory::COMPARE;
+      }
+    }
+
+    // Default: UNKNOWN
+    return RVVCategory::UNKNOWN;
+  }
+
+  /**
+   * @brief Get execution latency in cycles for a specific opcode
+   *
+   * @param opcode RVV instruction opcode
+   * @return Latency in cycles
+   */
+  static uint64_t getOpcodeLatency(uint32_t opcode) {
+    return getLatency(getOpcodeCategory(opcode));
+  }
   size_t getAvailableUnits() const {
     size_t available = 0;
     for (size_t i = 0; i < num_units_; ++i) {

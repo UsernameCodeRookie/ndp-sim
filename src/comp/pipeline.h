@@ -72,6 +72,9 @@ class Pipeline : public Architecture::TickingComponent {
           [](std::shared_ptr<Architecture::DataPacket>) { return false; };
     }
 
+    // Initialize stage latencies (default: 1 cycle per stage)
+    stage_latencies_.resize(num_stages_, 1);
+
     // Create ports
     addPort("in", Architecture::PortDirection::INPUT);
     addPort("out", Architecture::PortDirection::OUTPUT);
@@ -103,6 +106,31 @@ class Pipeline : public Architecture::TickingComponent {
     if (stage_index < num_stages_) {
       stage_stall_predicates_[stage_index] = predicate;
     }
+  }
+
+  /**
+   * @brief Set execution latency for a specific stage
+   * Data will remain in the stage for the specified number of cycles
+   * before advancing to the next stage
+   * @param stage_index Stage index (0-based)
+   * @param latency Number of cycles to hold data in this stage
+   */
+  void setStageLatency(size_t stage_index, uint64_t latency) {
+    if (stage_index < num_stages_) {
+      stage_latencies_[stage_index] = latency;
+    }
+  }
+
+  /**
+   * @brief Get execution latency for a specific stage
+   * @param stage_index Stage index (0-based)
+   * @return Latency in cycles (default: 1)
+   */
+  uint64_t getStageLatency(size_t stage_index) const {
+    if (stage_index < num_stages_) {
+      return stage_latencies_[stage_index];
+    }
+    return 1;  // Default: 1 cycle
   }
 
   /**
@@ -157,6 +185,24 @@ class Pipeline : public Architecture::TickingComponent {
     // Middle stages: propagate data backwards
     for (int i = num_stages_ - 1; i > 0; --i) {
       if (stages_[i - 1].valid) {
+        // Check if stage latency requirement has been met
+        uint64_t elapsed =
+            scheduler_.getCurrentTime() - stages_[i - 1].stage_entry_time;
+        uint64_t required_latency = stage_latencies_[i - 1];
+
+        if (elapsed < required_latency) {
+          // Not enough time has passed, stage must remain in this stage
+          // But still apply the stage function to update data in place
+          auto processed_data = stage_functions_[i](stages_[i - 1].data);
+          stages_[i - 1].data = processed_data;
+          TRACE_COMPUTE(
+              scheduler_.getCurrentTime(), getName(), "PIPELINE_LATENCY_HOLD",
+              "Stage[" << (i - 1) << "] latency hold: elapsed=" << elapsed
+                       << " required=" << required_latency);
+          total_stalls_++;
+          continue;
+        }
+
         // Check if target stage is already occupied
         if (stages_[i].valid) {
           // Target stage is full, stall this stage
@@ -179,6 +225,7 @@ class Pipeline : public Architecture::TickingComponent {
           continue;                              // Skip advancing to next stage
         }
 
+        // Latency requirement met, target stage empty, and no user stalls
         // Apply stage function
         auto processed_data = stage_functions_[i](stages_[i - 1].data);
         stages_[i] =
@@ -295,11 +342,12 @@ class Pipeline : public Architecture::TickingComponent {
   std::vector<StageFunction>
       stage_functions_;  // Processing function for each stage
   std::vector<std::function<bool(std::shared_ptr<Architecture::DataPacket>)>>
-      stage_stall_predicates_;  // Stall predicates for each stage
-  bool stall_;                  // Pipeline stall flag
-  bool flush_;                  // Pipeline flush flag
-  uint64_t total_processed_;    // Total items processed
-  uint64_t total_stalls_;       // Total stall cycles
+      stage_stall_predicates_;             // Stall predicates for each stage
+  std::vector<uint64_t> stage_latencies_;  // Latency (in cycles) for each stage
+  bool stall_;                             // Pipeline stall flag
+  bool flush_;                             // Pipeline flush flag
+  uint64_t total_processed_;               // Total items processed
+  uint64_t total_stalls_;                  // Total stall cycles
 };
 
 /**
