@@ -106,6 +106,12 @@ target_include_directories(test_rvv_alu PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_rvv_alu gtest gtest_main pthread)
 add_test(NAME test_rvv_alu COMMAND test_rvv_alu)
 
+# --- RVV Vector DVU tests ---
+add_executable(test_rvv_dvu tests/test_rvv_dvu.cpp)
+target_include_directories(test_rvv_dvu PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_rvv_dvu gtest gtest_main pthread)
+add_test(NAME test_rvv_dvu COMMAND test_rvv_dvu)
+
 # --- MAC Example ---
 add_executable(mac_example example/mac_example.cpp)
 target_include_directories(mac_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
