@@ -76,6 +76,12 @@ target_include_directories(test_bru PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_bru gtest gtest_main pthread)
 add_test(NAME test_bru COMMAND test_bru)
 
+# --- Regfile tests ---
+add_executable(test_regfile tests/test_regfile.cpp)
+target_include_directories(test_regfile PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_regfile gtest gtest_main pthread)
+add_test(NAME test_regfile COMMAND test_regfile)
+
 enable_testing()
 
 # -----------------------------
