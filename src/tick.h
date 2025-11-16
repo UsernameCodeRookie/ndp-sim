@@ -107,51 +107,7 @@ class TickingConnection : public Connection {
   bool isEnabled() const { return enabled_; }
 
   // Propagate data from source ports to destination ports
-  void propagate() override {
-    // Collect data from all source ports (consume the data)
-    std::vector<std::shared_ptr<DataPacket>> data_to_send;
-
-    for (auto& src_port : src_ports_) {
-      if (src_port->hasData()) {
-        // Use read() to consume the data from source port
-        auto data = src_port->read();
-        if (data) {
-          data_to_send.push_back(data);
-        }
-      }
-    }
-
-    // If there is data to send, propagate to destination ports
-    if (!data_to_send.empty()) {
-      // Handle latency
-      if (latency_ > 0) {
-        // Schedule delayed propagation
-        // Explicitly capture copies to avoid lifetime issues
-        auto dst_ports_copy = dst_ports_;
-        auto propagate_event = std::make_shared<EventDriven::LambdaEvent>(
-            scheduler_.getCurrentTime() + latency_,
-            [dst_ports_copy, data_to_send](EventDriven::EventScheduler&) {
-              for (auto& dst_port : dst_ports_copy) {
-                // For simplicity, broadcast first available data
-                // More complex routing logic can be implemented in derived
-                // classes
-                if (!data_to_send.empty()) {
-                  dst_port->setData(data_to_send[0]->clone());
-                }
-              }
-            },
-            0, name_ + "_PropagateDelayed");
-        scheduler_.schedule(propagate_event);
-      } else {
-        // Immediate propagation
-        for (auto& dst_port : dst_ports_) {
-          if (!data_to_send.empty()) {
-            dst_port->setData(data_to_send[0]->clone());
-          }
-        }
-      }
-    }
-  }
+  virtual void propagate() {};
 
  protected:
   void schedulePropagate(uint64_t time) {
