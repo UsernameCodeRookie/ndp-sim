@@ -462,7 +462,8 @@ class RegisterFile : public Architecture::Component {
       if (data_port) {
         auto data_packet =
             std::make_shared<RegfileReadDataPacket>(data, read_port_valid_[i]);
-        data_port->write(data_packet);
+        data_port->write(
+            std::static_pointer_cast<Architecture::DataPacket>(data_packet));
       }
     }
   }

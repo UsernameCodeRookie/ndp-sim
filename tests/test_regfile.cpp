@@ -153,7 +153,7 @@ TEST_F(RegisterFileTest, WriteForwarding) {
   regfile->setScoreboard(5);
 
   // Read from the register (should be forwarded)
-  uint32_t data = regfile->readRegister(5);
+  regfile->readRegister(5);
 
   // Note: In a real system, forwarding would provide the pending write data
   // This test just verifies the tracking
