@@ -322,11 +322,26 @@ class SCore : public Pipeline {
    * Brings all functional units, register file, and connections online
    */
   void initialize() override {
+    // Connect fetch stage to instruction memory
+    fetch_stage_.setInstructionMemory(&instruction_memory_);
+
     // Call Pipeline's initialize to start the pipeline ticking
     Pipeline::initialize();
 
+    // Start the pipeline - this schedules the tick events
+    Pipeline::start(config_.start_time);
+
     TRACE_EVENT(scheduler_.getCurrentTime(), getName(), "INITIALIZE",
                 "Starting SCore initialization");
+
+    // Inject initial data packet to start the pipeline
+    // This primes the fetch stage to begin fetching instructions
+    auto initial_packet = std::make_shared<Architecture::IntDataPacket>(0);
+    initial_packet->timestamp = scheduler_.getCurrentTime();
+    auto in_port = getPort("in");
+    if (in_port) {
+      in_port->write(initial_packet);
+    }
 
     // Start all functional units
     for (auto& alu : alusv_) {
@@ -363,16 +378,25 @@ class SCore : public Pipeline {
    */
   void setupPipelineStages() {
     // Stage 0: Fetch/Decode
-    // Fetch instruction from FetchStage and decode it
+    // Fetch instruction from instruction memory and decode it
     setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
       uint64_t current_time = scheduler_.getCurrentTime();
 
-      // Try to fetch a new instruction
-      auto fetched = fetch_stage_.fetchCycle();
-      if (!fetched.empty()) {
-        // Add fetched instructions to fetch buffer
-        for (const auto& inst_word : fetched) {
-          fetch_buffer_.push_back(inst_word);
+      // Try to fetch a new instruction from instruction memory
+      // Check if fetch buffer is not full before fetching more
+      if (fetch_buffer_.empty()) {
+        uint32_t inst_word = getInstruction(pc_);
+
+        // Only fetch valid instructions (not all zeros or out of bounds)
+        if (inst_word != 0) {
+          fetch_buffer_.push_back({pc_, inst_word});
+
+          TRACE_COMPUTE(current_time, getName(), "STAGE0_FETCH",
+                        "Fetch from PC=0x" << std::hex << pc_ << " word=0x"
+                                           << inst_word << std::dec);
+
+          // Increment PC for next instruction
+          pc_ += 4;
         }
       }
 
@@ -388,11 +412,10 @@ class SCore : public Pipeline {
             std::make_shared<Architecture::IntDataPacket>(inst.word);
         decoded_packet->timestamp = current_time;
 
-        TRACE_COMPUTE(current_time, getName(), "STAGE0_FETCH_DECODE",
-                      "Fetch PC=0x" << std::hex << fetch_stage_.getPC()
-                                    << " Decode PC=0x" << inst_word.first
-                                    << " word=0x" << inst_word.second
-                                    << std::dec);
+        TRACE_COMPUTE(current_time, getName(), "STAGE0_DECODE",
+                      "Decode PC=0x" << std::hex << inst_word.first
+                                     << " word=0x" << inst_word.second
+                                     << std::dec);
 
         return std::static_pointer_cast<Architecture::DataPacket>(
             decoded_packet);
@@ -489,89 +512,42 @@ class SCore : public Pipeline {
 
     instructions_dispatched_++;
 
+    // Delegate to helper methods to reduce duplication
     switch (op_type) {
       case OpType::ALU:
-        // Create ALU command and inject into ALU input
-        if (lane < alusv_.size()) {
-          auto alu = alusv_[lane];
-          auto in_port = alu->getPort("in");
-          if (in_port && !in_port->hasData()) {
-            auto cmd = std::make_shared<ALUDataPacket>(
-                static_cast<int32_t>(operand1), static_cast<int32_t>(operand2),
-                static_cast<ALUOp>(opcode));
-            cmd->timestamp = current_time;
-            in_port->write(cmd);
-            TRACE_COMPUTE(current_time, getName(), "DISPATCH_ALU",
-                          "lane=" << lane << " rd=" << rd << " op1=" << operand1
-                                  << " op2=" << operand2);
-          }
-        }
+        issueALU(lane, operand1, operand2, opcode, rd);
+        TRACE_COMPUTE(current_time, getName(), "DISPATCH_ALU",
+                      "lane=" << lane << " rd=" << rd << " op1=" << operand1
+                              << " op2=" << operand2);
         break;
 
       case OpType::BRU:
-        // Create BRU command and inject
-        if (bru_) {
-          auto in_port = bru_->getPort("in");
-          if (in_port && !in_port->hasData()) {
-            auto cmd = std::make_shared<BruCommandPacket>(
-                operand1, operand2, static_cast<BruOp>(opcode), 0, 0, rd);
-            cmd->timestamp = current_time;
-            in_port->write(cmd);
-            TRACE_COMPUTE(current_time, getName(), "DISPATCH_BRU",
-                          "rd=" << rd << " operand=" << operand1);
-          }
-        }
+        issueBRU(operand1, opcode, 0, 0, rd);
+        TRACE_COMPUTE(current_time, getName(), "DISPATCH_BRU",
+                      "rd=" << rd << " operand=" << operand1);
         break;
 
       case OpType::MLU:
-        // Create MLU command and inject
-        if (mlu_) {
-          auto in_port = mlu_->getPort("in");
-          if (in_port && !in_port->hasData()) {
-            auto cmd = std::make_shared<MultiplyUnit::MluData>(
-                rd, static_cast<MultiplyUnit::MulOp>(opcode),
-                static_cast<int64_t>(operand1) *
-                    static_cast<int64_t>(operand2));
-            cmd->timestamp = current_time;
-            in_port->write(cmd);
-            TRACE_COMPUTE(
-                current_time, getName(), "DISPATCH_MLU",
-                "rd=" << rd << " op1=" << operand1 << " op2=" << operand2);
-          }
-        }
+        issueMLU(
+            rd, opcode,
+            static_cast<int64_t>(operand1) * static_cast<int64_t>(operand2));
+        TRACE_COMPUTE(
+            current_time, getName(), "DISPATCH_MLU",
+            "rd=" << rd << " op1=" << operand1 << " op2=" << operand2);
         break;
 
       case OpType::DVU:
-        // Create DVU command and inject
-        if (dvu_) {
-          auto in_port = dvu_->getPort("in");
-          if (in_port && !in_port->hasData()) {
-            auto cmd = std::make_shared<DivideUnit::DvuData>(
-                rd, static_cast<DivideUnit::DivOp>(opcode),
-                static_cast<int32_t>(operand1), static_cast<int32_t>(operand2));
-            cmd->timestamp = current_time;
-            in_port->write(cmd);
-            TRACE_COMPUTE(
-                current_time, getName(), "DISPATCH_DVU",
-                "rd=" << rd << " op1=" << operand1 << " op2=" << operand2);
-          }
-        }
+        issueDVU(rd, opcode, static_cast<int32_t>(operand1),
+                 static_cast<int32_t>(operand2));
+        TRACE_COMPUTE(
+            current_time, getName(), "DISPATCH_DVU",
+            "rd=" << rd << " op1=" << operand1 << " op2=" << operand2);
         break;
 
       case OpType::LSU:
-        // Create LSU command and inject
-        if (lsu_) {
-          auto in_port = lsu_->getPort("in");
-          if (in_port && !in_port->hasData()) {
-            auto cmd = std::make_shared<MemoryRequestPacket>(
-                static_cast<LSUOp>(opcode), operand1,
-                static_cast<int32_t>(operand2), 1, 1, false);
-            cmd->timestamp = current_time;
-            in_port->write(cmd);
-            TRACE_COMPUTE(current_time, getName(), "DISPATCH_LSU",
-                          "addr=" << operand1 << " data=" << operand2);
-          }
-        }
+        issueLSU(opcode, operand1, static_cast<int32_t>(operand2));
+        TRACE_COMPUTE(current_time, getName(), "DISPATCH_LSU",
+                      "addr=" << operand1 << " data=" << operand2);
         break;
     }
   }
@@ -739,76 +715,70 @@ class SCore : public Pipeline {
    * @brief Dispatch to ALU
    */
   void dispatchToALU(const DecodedInstruction& inst, uint32_t lane) {
-    if (lane >= alusv_.size()) return;
-
-    auto alu = alusv_[lane];
-    auto in_port = alu->getPort("in");
-    if (in_port && !in_port->hasData()) {
-      // Get operands from register file
-      uint32_t rs1_val = regfile_->readRegister(inst.rs1);
-      uint32_t rs2_val = regfile_->readRegister(inst.rs2);
-
-      auto cmd = std::make_shared<ALUDataPacket>(
-          static_cast<int32_t>(rs1_val), static_cast<int32_t>(rs2_val),
-          static_cast<ALUOp>(inst.opcode));
-      cmd->timestamp = scheduler_.getCurrentTime();
-      in_port->write(cmd);
-    }
+    // Read operands and dispatch using helper
+    uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+    uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+    issueALU(lane, rs1_val, rs2_val, inst.opcode, inst.rd);
   }
 
   /**
    * @brief Dispatch to BRU
    */
   void dispatchToBRU(const DecodedInstruction& inst) {
-    if (bru_) {
-      auto in_port = bru_->getPort("in");
-      if (in_port && !in_port->hasData()) {
-        // Get operands from register file
-        uint32_t rs1_val = regfile_->readRegister(inst.rs1);
-        uint32_t rs2_val = regfile_->readRegister(inst.rs2);
-
-        auto cmd = std::make_shared<BruCommandPacket>(
-            pc_, pc_ + 4,  // target address (simplified)
-            static_cast<BruOp>(inst.opcode), rs1_val, rs2_val,
-            static_cast<int>(inst.rd));
-        cmd->timestamp = scheduler_.getCurrentTime();
-        in_port->write(cmd);
-      }
-    }
+    // Read operands and dispatch using helper
+    uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+    uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+    issueBRU(pc_ + 4, inst.opcode, rs1_val, rs2_val, inst.rd);
   }
 
   /**
    * @brief Dispatch to MLU
    */
   void dispatchToMLU(const DecodedInstruction& inst) {
-    if (mlu_) {
-      auto in_port = mlu_->getPort("in");
-      if (in_port && !in_port->hasData()) {
-        uint32_t rs1_val = regfile_->readRegister(inst.rs1);
-        uint32_t rs2_val = regfile_->readRegister(inst.rs2);
-
-        auto cmd = std::make_shared<MultiplyUnit::MluData>(
-            inst.rd, static_cast<MultiplyUnit::MulOp>(inst.opcode),
-            static_cast<int64_t>(rs1_val) * static_cast<int64_t>(rs2_val));
-        cmd->timestamp = scheduler_.getCurrentTime();
-        in_port->write(cmd);
-      }
-    }
+    // Read operands and dispatch using helper
+    uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+    uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+    issueMLU(inst.rd, inst.opcode,
+             static_cast<int64_t>(rs1_val) * static_cast<int64_t>(rs2_val));
   }
 
   /**
    * @brief Dispatch to DVU
    */
   void dispatchToDVU(const DecodedInstruction& inst) {
-    if (dvu_) {
-      auto in_port = dvu_->getPort("in");
-      if (in_port && !in_port->hasData()) {
-        uint32_t rs1_val = regfile_->readRegister(inst.rs1);
-        uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+    // Read operands and dispatch using helper
+    uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+    uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+    issueDVU(inst.rd, inst.opcode, static_cast<int32_t>(rs1_val),
+             static_cast<int32_t>(rs2_val));
+  }
 
-        auto cmd = std::make_shared<DivideUnit::DvuData>(
-            inst.rd, static_cast<DivideUnit::DivOp>(inst.opcode),
-            static_cast<int32_t>(rs1_val), static_cast<int32_t>(rs2_val));
+  /**
+   * @brief Dispatch to LSU
+   */
+  void dispatchToLSU(const DecodedInstruction& inst) {
+    // Read operands and dispatch using helper
+    uint32_t rs1_val = regfile_->readRegister(inst.rs1);
+    uint32_t rs2_val = regfile_->readRegister(inst.rs2);
+    issueLSU(inst.opcode, rs1_val, static_cast<int32_t>(rs2_val));
+  }
+
+ private:
+  // ============ Private Helper Method Implementations ============
+
+  /**
+   * @brief Helper: Write ALU command to functional unit
+   * @private
+   */
+  void issueALU(uint32_t lane, uint32_t op1, uint32_t op2, uint32_t opcode,
+                uint32_t rd) {
+    if (lane < alusv_.size()) {
+      auto alu = alusv_[lane];
+      auto in_port = alu->getPort("in");
+      if (in_port && !in_port->hasData()) {
+        auto cmd = std::make_shared<ALUDataPacket>(static_cast<int32_t>(op1),
+                                                   static_cast<int32_t>(op2),
+                                                   static_cast<ALUOp>(opcode));
         cmd->timestamp = scheduler_.getCurrentTime();
         in_port->write(cmd);
       }
@@ -816,24 +786,72 @@ class SCore : public Pipeline {
   }
 
   /**
-   * @brief Dispatch to LSU
+   * @brief Helper: Write BRU command to functional unit
+   * @private
    */
-  void dispatchToLSU(const DecodedInstruction& inst) {
-    if (lsu_) {
-      auto in_port = lsu_->getPort("in");
+  void issueBRU(uint32_t pc_next, uint32_t opcode, uint32_t op1, uint32_t op2,
+                uint32_t rd) {
+    if (bru_) {
+      auto in_port = bru_->getPort("in");
       if (in_port && !in_port->hasData()) {
-        uint32_t rs1_val = regfile_->readRegister(inst.rs1);
-        uint32_t rs2_val = regfile_->readRegister(inst.rs2);
-
-        auto cmd = std::make_shared<MemoryRequestPacket>(
-            static_cast<LSUOp>(inst.opcode), rs1_val,
-            static_cast<int32_t>(rs2_val), 1, 1, false);
+        auto cmd = std::make_shared<BruCommandPacket>(
+            pc_, pc_next, static_cast<BruOp>(opcode), op1, op2,
+            static_cast<int>(rd));
         cmd->timestamp = scheduler_.getCurrentTime();
         in_port->write(cmd);
       }
     }
   }
 
+  /**
+   * @brief Helper: Write MLU command to functional unit
+   * @private
+   */
+  void issueMLU(uint32_t rd, uint32_t opcode, int64_t product) {
+    if (mlu_) {
+      auto in_port = mlu_->getPort("in");
+      if (in_port && !in_port->hasData()) {
+        auto cmd = std::make_shared<MultiplyUnit::MluData>(
+            rd, static_cast<MultiplyUnit::MulOp>(opcode), product);
+        cmd->timestamp = scheduler_.getCurrentTime();
+        in_port->write(cmd);
+      }
+    }
+  }
+
+  /**
+   * @brief Helper: Write DVU command to functional unit
+   * @private
+   */
+  void issueDVU(uint32_t rd, uint32_t opcode, int32_t op1, int32_t op2) {
+    if (dvu_) {
+      auto in_port = dvu_->getPort("in");
+      if (in_port && !in_port->hasData()) {
+        auto cmd = std::make_shared<DivideUnit::DvuData>(
+            rd, static_cast<DivideUnit::DivOp>(opcode), op1, op2);
+        cmd->timestamp = scheduler_.getCurrentTime();
+        in_port->write(cmd);
+      }
+    }
+  }
+
+  /**
+   * @brief Helper: Write LSU command to functional unit
+   * @private
+   */
+  void issueLSU(uint32_t opcode, uint32_t addr, int32_t data) {
+    if (lsu_) {
+      auto in_port = lsu_->getPort("in");
+      if (in_port && !in_port->hasData()) {
+        auto cmd = std::make_shared<MemoryRequestPacket>(
+            static_cast<LSUOp>(opcode), addr, data, 1, 1, false);
+        cmd->timestamp = scheduler_.getCurrentTime();
+        in_port->write(cmd);
+      }
+    }
+  }
+
+ public:
   /**
    * @brief Check if instruction is a control flow instruction
    */
@@ -911,6 +929,57 @@ class SCore : public Pipeline {
    * @brief Handle flush in fetch stage
    */
   void fetchFlush(uint32_t flush_pc) { fetch_stage_.flushAndReset(flush_pc); }
+
+ public:
+  /**
+   * @brief Load instruction into instruction memory
+   * @param pc Program counter / address
+   * @param instruction Encoded instruction word
+   */
+  void loadInstruction(uint32_t pc, uint32_t instruction) {
+    // Expand instruction memory if needed
+    if (pc / 4 >= instruction_memory_.size()) {
+      instruction_memory_.resize(pc / 4 + 1, 0);
+    }
+    instruction_memory_[pc / 4] = instruction;
+  }
+
+  /**
+   * @brief Load data into data memory
+   * @param addr Memory address
+   * @param data Data value to write
+   */
+  void loadData(uint32_t addr, uint32_t data) {
+    // Expand data memory if needed
+    if (addr / 4 >= data_memory_.size()) {
+      data_memory_.resize(addr / 4 + 1, 0);
+    }
+    data_memory_[addr / 4] = data;
+  }
+
+  /**
+   * @brief Read data from data memory
+   * @param addr Memory address
+   * @return Data value at address
+   */
+  uint32_t readData(uint32_t addr) const {
+    if (addr / 4 < data_memory_.size()) {
+      return data_memory_[addr / 4];
+    }
+    return 0;
+  }
+
+  /**
+   * @brief Get instruction from instruction memory
+   * @param pc Program counter
+   * @return Instruction word
+   */
+  uint32_t getInstruction(uint32_t pc) const {
+    if (pc / 4 < instruction_memory_.size()) {
+      return instruction_memory_[pc / 4];
+    }
+    return 0;  // NOP if out of bounds
+  }
 
   /**
    * @brief Get statistics
@@ -1011,6 +1080,12 @@ class SCore : public Pipeline {
   bool mlu_busy_;
   bool dvu_busy_;
   bool lsu_busy_;
+
+  // Instruction memory - stores encoded instructions
+  std::vector<uint32_t> instruction_memory_;  // Instruction words indexed by PC
+
+  // Data memory - for LSU operations (separate address space)
+  std::vector<uint32_t> data_memory_;
 
   // Control state
   uint32_t pc_;        // Program counter

@@ -100,6 +100,11 @@ target_include_directories(test_core_eventdriven PRIVATE ${CMAKE_SOURCE_DIR}/src
 target_link_libraries(test_core_eventdriven gtest gtest_main pthread)
 add_test(NAME test_core_eventdriven COMMAND test_core_eventdriven)
 
+# --- MAC Example ---
+add_executable(mac_example example/mac_example.cpp)
+target_include_directories(mac_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(mac_example pthread)
+
 enable_testing()
 
 # -----------------------------

@@ -34,7 +34,8 @@ class FetchStage {
         fetch_buffer_size_(fetch_buffer_size),
         pc_(0),
         next_pc_(4),
-        fault_(false) {}
+        fault_(false),
+        instruction_memory_(nullptr) {}
 
   /**
    * @brief Fetch next instruction from memory
@@ -46,8 +47,17 @@ class FetchStage {
    * @return Decoded instruction at given PC
    */
   DecodedInstruction fetchInstruction(uint32_t pc) {
-    // In a real system, this would read from instruction memory via ibus
-    // For simulation, we generate a simple ALU instruction
+    // If instruction memory is provided, read from it
+    if (instruction_memory_) {
+      uint32_t addr = pc / 4;
+      if (addr < instruction_memory_->size()) {
+        uint32_t inst_word = (*instruction_memory_)[addr];
+        DecodedInstruction inst = DecodeStage::decode(pc, inst_word);
+        return inst;
+      }
+    }
+
+    // Default: Generate a NOP if no instruction memory
     DecodedInstruction inst;
     inst.addr = pc;
     inst.word = 0x00000013;  // ADDI x0, x0, 0 (NOP)
@@ -67,7 +77,7 @@ class FetchStage {
    *
    * @return Vector of (PC, word) pairs for instructions fetched this cycle
    */
-  std::vector<std::pair<uint32_t, uint32_t>> fetchCycle() {
+  std::vector<std::pair<uint32_t, uint32_t>> fetch() {
     std::vector<std::pair<uint32_t, uint32_t>> fetched;
 
     if (fault_) {
@@ -149,12 +159,22 @@ class FetchStage {
     fault_ = false;
   }
 
+  /**
+   * @brief Set external instruction memory
+   * @param imem Pointer to instruction memory vector
+   */
+  void setInstructionMemory(const std::vector<uint32_t>* imem) {
+    instruction_memory_ = imem;
+  }
+
  private:
   std::string name_;
   uint32_t fetch_buffer_size_;
   uint32_t pc_;       // Current program counter
   uint32_t next_pc_;  // Next PC (for simple sequential fetch)
   bool fault_;        // Fetch fault flag
+  const std::vector<uint32_t>*
+      instruction_memory_;  // External instruction memory
 };
 
 }  // namespace Architecture
