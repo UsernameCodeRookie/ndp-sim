@@ -51,6 +51,12 @@ target_include_directories(test_alu PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_alu gtest gtest_main pthread)
 add_test(NAME test_alu COMMAND test_alu)
 
+# --- FPU tests ---
+add_executable(test_fpu tests/test_fpu.cpp)
+target_include_directories(test_fpu PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_fpu gtest gtest_main pthread)
+add_test(NAME test_fpu COMMAND test_fpu)
+
 # --- PE tests ---
 add_executable(test_pe tests/test_pe.cpp)
 target_include_directories(test_pe PRIVATE ${CMAKE_SOURCE_DIR}/src)

@@ -97,17 +97,34 @@ TEST_F(ALUTest, ComparisonOperations) {
   EXPECT_EQ(INTUComponent::executeOperation(5, 3, ALUOp::MIN), 3);
 }
 
-TEST_F(ALUTest, UnaryOperations) {
-  auto alu = std::make_shared<INTUComponent>("test_alu", *scheduler, 1);
-  alu->start();
+TEST_F(ALUTest, ExtendedBitOps) {
+  // Test bit manipulation operations from ZBB extension
+  // Test CLZ: count leading zeros
+  EXPECT_EQ(INTUComponent::executeOperation(0x00000001, 0, ALUOp::CLZ), 31);
+  EXPECT_EQ(INTUComponent::executeOperation(0x80000000, 0, ALUOp::CLZ), 0);
 
-  // Test ABS: abs(-5) = 5
-  EXPECT_EQ(INTUComponent::executeOperation(-5, 0, ALUOp::ABS), 5);
-  EXPECT_EQ(INTUComponent::executeOperation(5, 0, ALUOp::ABS), 5);
+  // Test CTZ: count trailing zeros
+  EXPECT_EQ(INTUComponent::executeOperation(0x80000000, 0, ALUOp::CTZ), 31);
+  EXPECT_EQ(INTUComponent::executeOperation(0x00000001, 0, ALUOp::CTZ), 0);
 
-  // Test NEG: -5 = -5
-  EXPECT_EQ(INTUComponent::executeOperation(5, 0, ALUOp::NEG), -5);
-  EXPECT_EQ(INTUComponent::executeOperation(-5, 0, ALUOp::NEG), 5);
+  // Test CPOP: count population (number of 1 bits)
+  EXPECT_EQ(INTUComponent::executeOperation(0xFF, 0, ALUOp::CPOP), 8);
+  EXPECT_EQ(INTUComponent::executeOperation(0x0, 0, ALUOp::CPOP), 0);
+
+  // Test MAXU/MINU: unsigned comparisons
+  EXPECT_EQ(INTUComponent::executeOperation(-1, 1, ALUOp::MAXU),
+            -1);  // -1 as unsigned is large
+  EXPECT_EQ(INTUComponent::executeOperation(-1, 1, ALUOp::MINU), 1);
+
+  // Test SEXTB: sign extend byte
+  EXPECT_EQ(INTUComponent::executeOperation(0x000000FF, 0, ALUOp::SEXTB),
+            -1);  // 0xFF -> -1
+  EXPECT_EQ(INTUComponent::executeOperation(0x0000007F, 0, ALUOp::SEXTB), 127);
+
+  // Test ZEXTH: zero extend half-word
+  EXPECT_EQ(INTUComponent::executeOperation(0xFFFF0000, 0, ALUOp::ZEXTH), 0);
+  EXPECT_EQ(INTUComponent::executeOperation(0x0000FFFF, 0, ALUOp::ZEXTH),
+            0xFFFF);
 }
 
 TEST_F(ALUTest, PipelineOperation) {
@@ -129,8 +146,8 @@ TEST_F(ALUTest, PipelineOperation) {
 
   // Check output
   ASSERT_TRUE(output_port->hasData());
-  auto result_packet =
-      std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
+  auto result_packet = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+      output_port->read());
   ASSERT_NE(result_packet, nullptr);
   EXPECT_EQ(result_packet->getValue(), 15);
 }
@@ -195,7 +212,8 @@ TEST_F(ALUTest, EventDrivenExecution) {
 
   // Check output appeared after 4 ticks (8 time units with period=2)
   EXPECT_TRUE(output_port->hasData());
-  auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
+  auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+      output_port->read());
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(result->getValue(), 13);
 
@@ -254,24 +272,24 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
   // So results at t=7, t=17, t=27
   scheduler->scheduleAt(9, [&](EventDriven::EventScheduler& sched) {
     if (output_port->hasData()) {
-      auto result =
-          std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
+      auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+          output_port->read());
       if (result) results.push_back(result->getValue());
     }
   });
 
   scheduler->scheduleAt(19, [&](EventDriven::EventScheduler& sched) {
     if (output_port->hasData()) {
-      auto result =
-          std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
+      auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+          output_port->read());
       if (result) results.push_back(result->getValue());
     }
   });
 
   scheduler->scheduleAt(29, [&](EventDriven::EventScheduler& sched) {
     if (output_port->hasData()) {
-      auto result =
-          std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
+      auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+          output_port->read());
       if (result) results.push_back(result->getValue());
     }
   });
@@ -284,7 +302,8 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
   std::cout << "Has data: " << (output_port->hasData() ? "yes" : "no")
             << std::endl;
   while (output_port->hasData()) {
-    auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
+    auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+        output_port->read());
     if (result) {
       std::cout << "Got result: " << result->getValue() << std::endl;
       results.push_back(result->getValue());
@@ -304,72 +323,6 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
 
   EventDriven::Tracer::getInstance().dump();
   EventDriven::Tracer::getInstance().setEnabled(false);
-}
-
-// FPU tests
-TEST_F(ALUTest, FPUBasicOperations) {
-  auto fpu = std::make_shared<FPUComponent>("test_fpu", *scheduler, 1);
-  fpu->start();
-
-  // Test: 5.5 + 3.2 = 8.7
-  float result = FPUComponent::executeOperation(5.5f, 3.2f, ALUOp::ADD);
-  EXPECT_FLOAT_EQ(result, 8.7f);
-
-  // Test: 10.0 - 4.5 = 5.5
-  result = FPUComponent::executeOperation(10.0f, 4.5f, ALUOp::SUB);
-  EXPECT_FLOAT_EQ(result, 5.5f);
-
-  // Test: 2.5 * 4.0 = 10.0
-  result = FPUComponent::executeOperation(2.5f, 4.0f, ALUOp::MUL);
-  EXPECT_FLOAT_EQ(result, 10.0f);
-
-  // Test: 20.0 / 4.0 = 5.0
-  result = FPUComponent::executeOperation(20.0f, 4.0f, ALUOp::DIV);
-  EXPECT_FLOAT_EQ(result, 5.0f);
-}
-
-TEST_F(ALUTest, FPUPipelineDepth) {
-  auto intu = std::make_shared<INTUComponent>("test_intu", *scheduler, 1);
-  auto fpu = std::make_shared<FPUComponent>("test_fpu", *scheduler, 1);
-
-  // Verify different pipeline depths
-  EXPECT_EQ(PrecisionTraits<Int32Precision>::pipeline_stages, 3);
-  EXPECT_EQ(PrecisionTraits<Float32Precision>::pipeline_stages, 5);
-
-  std::cout << "\n=== Pipeline Depth Test ===" << std::endl;
-  std::cout << "INTU (INT32) pipeline stages: "
-            << PrecisionTraits<Int32Precision>::pipeline_stages << std::endl;
-  std::cout << "FPU (FP32) pipeline stages: "
-            << PrecisionTraits<Float32Precision>::pipeline_stages << std::endl;
-}
-
-TEST_F(ALUTest, FPUPipelineOperation) {
-  auto fpu = std::make_shared<FPUComponent>("test_fpu", *scheduler, 1);
-  fpu->start();
-
-  auto input_port = fpu->getPort("in");
-  auto output_port = fpu->getPort("out");
-
-  // Send operation through pipeline
-  auto packet = std::make_shared<ALUDataPacket<Float32Precision>>(10.5f, 5.2f,
-                                                                  ALUOp::ADD);
-  input_port->write(packet);
-
-  // Execute pipeline stages (5 stages + 1 to output = 6 ticks for FP32)
-  for (int i = 0; i < 6; i++) {
-    fpu->tick();
-  }
-
-  // Check output
-  ASSERT_TRUE(output_port->hasData());
-  auto result_packet =
-      std::dynamic_pointer_cast<Architecture::IntDataPacket>(output_port->read());
-  ASSERT_NE(result_packet, nullptr);
-
-  // Convert int back to float
-  int int_val = result_packet->getValue();
-  float result = *reinterpret_cast<float*>(&int_val);
-  EXPECT_FLOAT_EQ(result, 15.7f);
 }
 
 int main(int argc, char** argv) {

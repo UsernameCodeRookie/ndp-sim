@@ -17,12 +17,11 @@
  * @brief Precision type tags
  */
 struct Int32Precision {};
-struct Float32Precision {};
 
 /**
  * @brief Precision traits for different data types
  *
- * Defines the data type, pipeline stages, and type name for each precision
+ * Defines the data type, pipeline stages, and type name for precision
  */
 template <typename PrecisionType>
 struct PrecisionTraits;
@@ -35,38 +34,73 @@ struct PrecisionTraits<Int32Precision> {
   static constexpr const char* name = "INT32";
 };
 
-// Specialization for Float32
-template <>
-struct PrecisionTraits<Float32Precision> {
-  using DataType = float;
-  static constexpr size_t pipeline_stages =
-      5;  // Decode, Execute1, Execute2, Execute3, Writeback
-  static constexpr const char* name = "FP32";
+/**
+ * @brief ALU operation types
+ *
+ * Supports RV32I base instruction set and ZBB bit manipulation extension
+ */
+enum class ALUOp {
+  // RV32I Base Integer Instruction Set
+  ADD,   // Addition: rd = rs1 + rs2
+  SUB,   // Subtraction: rd = rs1 - rs2
+  SLT,   // Set less than (signed): rd = (rs1 < rs2) ? 1 : 0
+  SLTU,  // Set less than unsigned: rd = (rs1 <u rs2) ? 1 : 0
+  XOR,   // Bitwise XOR: rd = rs1 ^ rs2
+  OR,    // Bitwise OR: rd = rs1 | rs2
+  AND,   // Bitwise AND: rd = rs1 & rs2
+  SLL,   // Shift left logical: rd = rs1 << rs2[4:0]
+  SRL,   // Shift right logical: rd = rs1 >> rs2[4:0]
+  SRA,   // Shift right arithmetic: rd = rs1 >> rs2[4:0] (sign-ext)
+  LUI,   // Load upper immediate: rd = rs2 (rs1 is ignored)
+
+  // RV32M Multiply Extension
+  MUL,  // Multiplication: rd = (rs1 * rs2)[31:0]
+  DIV,  // Division (signed): rd = rs1 / rs2
+
+  // ZBB Bit Manipulation Extension
+  ANDN,   // AND with NOT: rd = rs1 & ~rs2
+  ORN,    // OR with NOT: rd = rs1 | ~rs2
+  XNOR,   // XNOR: rd = ~(rs1 ^ rs2)
+  CLZ,    // Count leading zeros: rd = clz(rs1)
+  CTZ,    // Count trailing zeros: rd = ctz(rs1)
+  CPOP,   // Count population: rd = popcount(rs1)
+  MAX,    // Maximum (signed): rd = (rs1 > rs2) ? rs1 : rs2
+  MAXU,   // Maximum unsigned: rd = (rs1 >u rs2) ? rs1 : rs2
+  MIN,    // Minimum (signed): rd = (rs1 < rs2) ? rs1 : rs2
+  MINU,   // Minimum unsigned: rd = (rs1 <u rs2) ? rs1 : rs2
+  SEXTB,  // Sign extend byte: rd = sign_ext(rs1[7:0])
+  SEXTH,  // Sign extend half-word: rd = sign_ext(rs1[15:0])
+  ROL,    // Rotate left: rd = rs1 rotl rs2[4:0]
+  ROR,    // Rotate right: rd = rs1 rotr rs2[4:0]
+  ORCB,   // OR combine bytes: rd = orcb(rs1)
+  REV8,   // Reverse bytes: rd = reverse_bytes(rs1)
+  ZEXTH,  // Zero extend half-word: rd = rs1[15:0]
+
+  // Extra operations for compatibility
+  MAC,     // Multiply-Accumulate: accumulator = accumulator + (rs1 * rs2)
+  PASS_A,  // Pass operand A (for pipeline testing)
+  PASS_B   // Pass operand B (for pipeline testing)
 };
 
 /**
- * @brief ALU operation types
+ * @brief ALU Command
+ *
+ * Contains the ALU operation and destination register address
+ * Similar to Coral NPU's AluCmd structure
  */
-enum class ALUOp {
-  ADD,     // Addition
-  SUB,     // Subtraction
-  MUL,     // Multiplication
-  DIV,     // Division
-  MAC,     // Multiply-Accumulate (a = a + b * c, uses accumulator)
-  AND,     // Bitwise AND
-  OR,      // Bitwise OR
-  XOR,     // Bitwise XOR
-  SLL,     // Shift left logical
-  SRL,     // Shift right logical
-  SRA,     // Shift right arithmetic
-  SLT,     // Set less than
-  SLTU,    // Set less than unsigned
-  MAX,     // Maximum
-  MIN,     // Minimum
-  ABS,     // Absolute value
-  NEG,     // Negation
-  PASS_A,  // Pass operand A
-  PASS_B   // Pass operand B
+class ALUCmd {
+ public:
+  ALUCmd(uint32_t addr = 0, ALUOp op = ALUOp::ADD) : addr_(addr), op_(op) {}
+
+  uint32_t getAddr() const { return addr_; }
+  ALUOp getOp() const { return op_; }
+
+  void setAddr(uint32_t addr) { addr_ = addr; }
+  void setOp(ALUOp op) { op_ = op; }
+
+ private:
+  uint32_t addr_;  // Destination register address (5 bits in RISC-V)
+  ALUOp op_;       // Operation code
 };
 
 /**
@@ -131,8 +165,6 @@ class ALUComponent : public PipelineComponent {
   void setupPipelineStages() {
     if constexpr (std::is_same_v<PrecisionType, Int32Precision>) {
       setupInt32Pipeline();
-    } else if constexpr (std::is_same_v<PrecisionType, Float32Precision>) {
-      setupFloat32Pipeline();
     }
   }
 
@@ -149,32 +181,6 @@ class ALUComponent : public PipelineComponent {
 
     // Stage 2: Write back - just pass through
     setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      return data;
-    });
-  }
-
-  void setupFloat32Pipeline() {
-    // Stage 0: Decode - just pass through
-    setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      return data;
-    });
-
-    // Stage 1-3: Execute stages (floating point operations take multiple
-    // cycles)
-    setStageFunction(1, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      return data;  // Pipeline stage 1
-    });
-
-    setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      return data;  // Pipeline stage 2
-    });
-
-    setStageFunction(3, [this](std::shared_ptr<Architecture::DataPacket> data) {
-      return executeStage(data);  // Actual execution in stage 3
-    });
-
-    // Stage 4: Write back
-    setStageFunction(4, [this](std::shared_ptr<Architecture::DataPacket> data) {
       return data;
     });
   }
@@ -201,14 +207,15 @@ class ALUComponent : public PipelineComponent {
       // Create result packet based on precision type
       std::shared_ptr<Architecture::DataPacket> result_packet;
       if constexpr (std::is_same_v<PrecisionType, Int32Precision>) {
-        result_packet =
-            std::make_shared<Architecture::IntDataPacket>(static_cast<int>(result));
+        result_packet = std::make_shared<Architecture::IntDataPacket>(
+            static_cast<int>(result));
       } else {
         // For Float32, we still use IntDataPacket but with float bits
         // In a real implementation, you'd want a FloatDataPacket
         int float_as_int;
         std::memcpy(&float_as_int, &result, sizeof(float));
-        result_packet = std::make_shared<Architecture::IntDataPacket>(float_as_int);
+        result_packet =
+            std::make_shared<Architecture::IntDataPacket>(float_as_int);
       }
       result_packet->setTimestamp(scheduler_.getCurrentTime());
       return result_packet;
@@ -237,8 +244,6 @@ class ALUComponent : public PipelineComponent {
   static DataType executeOperation(DataType a, DataType b, ALUOp op) {
     if constexpr (std::is_same_v<PrecisionType, Int32Precision>) {
       return executeInt32Operation(a, b, op);
-    } else if constexpr (std::is_same_v<PrecisionType, Float32Precision>) {
-      return executeFloat32Operation(a, b, op);
     }
     return DataType{};
   }
@@ -246,41 +251,99 @@ class ALUComponent : public PipelineComponent {
  private:
   static DataType executeInt32Operation(DataType a, DataType b, ALUOp op) {
     switch (op) {
+      // RV32I Base Instructions
       case ALUOp::ADD:
         return a + b;
       case ALUOp::SUB:
         return a - b;
-      case ALUOp::MUL:
-        return a * b;
-      case ALUOp::DIV:
-        return (b != 0) ? a / b : 0;  // Avoid division by zero
-      case ALUOp::MAC:
-        // MAC without accumulator context, just multiply
-        return a * b;
-      case ALUOp::AND:
-        return a & b;
-      case ALUOp::OR:
-        return a | b;
-      case ALUOp::XOR:
-        return a ^ b;
-      case ALUOp::SLL:
-        return a << (b & 0x1F);  // Mask to 5 bits
-      case ALUOp::SRL:
-        return static_cast<uint32_t>(a) >> (b & 0x1F);
-      case ALUOp::SRA:
-        return a >> (b & 0x1F);
       case ALUOp::SLT:
         return (a < b) ? 1 : 0;
       case ALUOp::SLTU:
         return (static_cast<uint32_t>(a) < static_cast<uint32_t>(b)) ? 1 : 0;
+      case ALUOp::XOR:
+        return a ^ b;
+      case ALUOp::OR:
+        return a | b;
+      case ALUOp::AND:
+        return a & b;
+      case ALUOp::SLL:
+        return a << (b & 0x1F);  // Mask to 5 bits (shift amount)
+      case ALUOp::SRL:
+        return static_cast<uint32_t>(a) >> (b & 0x1F);  // Logical shift
+      case ALUOp::SRA:
+        return a >> (b & 0x1F);  // Arithmetic shift (sign-extended)
+      case ALUOp::LUI:
+        return b;  // Load upper immediate: just use rs2
+
+      // RV32M Multiply Extension
+      case ALUOp::MUL:
+        return a * b;
+      case ALUOp::DIV:
+        return (b != 0) ? a / b : 0;  // Avoid division by zero
+
+      // ZBB Bit Manipulation Extension
+      case ALUOp::ANDN:
+        return a & ~b;  // AND with NOT
+      case ALUOp::ORN:
+        return a | ~b;  // OR with NOT
+      case ALUOp::XNOR:
+        return ~(a ^ b);  // XNOR
+      case ALUOp::CLZ:
+        return __builtin_clz(static_cast<uint32_t>(a));  // Count leading zeros
+      case ALUOp::CTZ:
+        return __builtin_ctz(static_cast<uint32_t>(a));  // Count trailing zeros
+      case ALUOp::CPOP:
+        return __builtin_popcount(
+            static_cast<uint32_t>(a));  // Population count
       case ALUOp::MAX:
         return (a > b) ? a : b;
+      case ALUOp::MAXU:
+        return (static_cast<uint32_t>(a) > static_cast<uint32_t>(b)) ? a : b;
       case ALUOp::MIN:
         return (a < b) ? a : b;
-      case ALUOp::ABS:
-        return (a < 0) ? -a : a;
-      case ALUOp::NEG:
-        return -a;
+      case ALUOp::MINU:
+        return (static_cast<uint32_t>(a) < static_cast<uint32_t>(b)) ? a : b;
+      case ALUOp::SEXTB:
+        // Sign extend byte (8-bit to 32-bit)
+        return static_cast<int8_t>(a & 0xFF);
+      case ALUOp::SEXTH:
+        // Sign extend half-word (16-bit to 32-bit)
+        return static_cast<int16_t>(a & 0xFFFF);
+      case ALUOp::ROL:
+        // Rotate left
+        return (a << (b & 0x1F)) |
+               (static_cast<uint32_t>(a) >> ((32 - (b & 0x1F)) & 0x1F));
+      case ALUOp::ROR:
+        // Rotate right
+        return (static_cast<uint32_t>(a) >> (b & 0x1F)) |
+               (a << ((32 - (b & 0x1F)) & 0x1F));
+      case ALUOp::ORCB:
+        // OR combine bytes: each byte becomes 0x00 or 0xFF
+        {
+          uint32_t ua = static_cast<uint32_t>(a);
+          uint32_t result = 0;
+          for (int i = 0; i < 4; i++) {
+            uint8_t byte = (ua >> (i * 8)) & 0xFF;
+            if (byte != 0) result |= (0xFF << (i * 8));
+          }
+          return static_cast<int32_t>(result);
+        }
+      case ALUOp::REV8:
+        // Reverse bytes in 32-bit word
+        {
+          uint32_t ua = static_cast<uint32_t>(a);
+          return static_cast<int32_t>(
+              ((ua & 0xFF000000) >> 24) | ((ua & 0x00FF0000) >> 8) |
+              ((ua & 0x0000FF00) << 8) | ((ua & 0x000000FF) << 24));
+        }
+      case ALUOp::ZEXTH:
+        // Zero extend half-word (keep only lower 16 bits)
+        return a & 0xFFFF;
+
+      // Extra operations
+      case ALUOp::MAC:
+        // MAC without accumulator context, just multiply
+        return a * b;
       case ALUOp::PASS_A:
         return a;
       case ALUOp::PASS_B:
@@ -290,85 +353,81 @@ class ALUComponent : public PipelineComponent {
     }
   }
 
-  static DataType executeFloat32Operation(DataType a, DataType b, ALUOp op) {
-    switch (op) {
-      case ALUOp::ADD:
-        return a + b;
-      case ALUOp::SUB:
-        return a - b;
-      case ALUOp::MUL:
-        return a * b;
-      case ALUOp::DIV:
-        return (b != 0.0f) ? a / b : 0.0f;  // Avoid division by zero
-      case ALUOp::MAC:
-        // MAC without accumulator context, just multiply
-        return a * b;
-      case ALUOp::MAX:
-        return (a > b) ? a : b;
-      case ALUOp::MIN:
-        return (a < b) ? a : b;
-      case ALUOp::ABS:
-        return std::fabs(a);
-      case ALUOp::NEG:
-        return -a;
-      case ALUOp::PASS_A:
-        return a;
-      case ALUOp::PASS_B:
-        return b;
-      // Unsupported operations for floating point
-      case ALUOp::AND:
-      case ALUOp::OR:
-      case ALUOp::XOR:
-      case ALUOp::SLL:
-      case ALUOp::SRL:
-      case ALUOp::SRA:
-      case ALUOp::SLT:
-      case ALUOp::SLTU:
-      default:
-        return 0.0f;
-    }
-  }
-
  public:
   /**
    * @brief Get operation name as string
    */
   static std::string getOpName(ALUOp op) {
     switch (op) {
+      // RV32I Base Instructions
       case ALUOp::ADD:
         return "ADD";
       case ALUOp::SUB:
         return "SUB";
-      case ALUOp::MUL:
-        return "MUL";
-      case ALUOp::DIV:
-        return "DIV";
-      case ALUOp::MAC:
-        return "MAC";
-      case ALUOp::AND:
-        return "AND";
-      case ALUOp::OR:
-        return "OR";
+      case ALUOp::SLT:
+        return "SLT";
+      case ALUOp::SLTU:
+        return "SLTU";
       case ALUOp::XOR:
         return "XOR";
+      case ALUOp::OR:
+        return "OR";
+      case ALUOp::AND:
+        return "AND";
       case ALUOp::SLL:
         return "SLL";
       case ALUOp::SRL:
         return "SRL";
       case ALUOp::SRA:
         return "SRA";
-      case ALUOp::SLT:
-        return "SLT";
-      case ALUOp::SLTU:
-        return "SLTU";
+      case ALUOp::LUI:
+        return "LUI";
+
+      // RV32M Multiply
+      case ALUOp::MUL:
+        return "MUL";
+      case ALUOp::DIV:
+        return "DIV";
+
+      // ZBB Bit Manipulation
+      case ALUOp::ANDN:
+        return "ANDN";
+      case ALUOp::ORN:
+        return "ORN";
+      case ALUOp::XNOR:
+        return "XNOR";
+      case ALUOp::CLZ:
+        return "CLZ";
+      case ALUOp::CTZ:
+        return "CTZ";
+      case ALUOp::CPOP:
+        return "CPOP";
       case ALUOp::MAX:
         return "MAX";
+      case ALUOp::MAXU:
+        return "MAXU";
       case ALUOp::MIN:
         return "MIN";
-      case ALUOp::ABS:
-        return "ABS";
-      case ALUOp::NEG:
-        return "NEG";
+      case ALUOp::MINU:
+        return "MINU";
+      case ALUOp::SEXTB:
+        return "SEXTB";
+      case ALUOp::SEXTH:
+        return "SEXTH";
+      case ALUOp::ROL:
+        return "ROL";
+      case ALUOp::ROR:
+        return "ROR";
+      case ALUOp::ORCB:
+        return "ORCB";
+      case ALUOp::REV8:
+        return "REV8";
+      case ALUOp::ZEXTH:
+        return "ZEXTH";
+
+      // Extra
+      case ALUOp::MAC:
+        return "MAC";
       case ALUOp::PASS_A:
         return "PASS_A";
       case ALUOp::PASS_B:
@@ -399,18 +458,50 @@ class ALUComponent : public PipelineComponent {
         return "|";
       case ALUOp::XOR:
         return "^";
+      case ALUOp::ANDN:
+        return "&~";
+      case ALUOp::ORN:
+        return "|~";
+      case ALUOp::XNOR:
+        return "~^";
       case ALUOp::SLL:
         return "<<";
       case ALUOp::SRL:
         return ">>>";
       case ALUOp::SRA:
         return ">>";
+      case ALUOp::ROL:
+        return "<<<";
+      case ALUOp::ROR:
+        return ">>>";
       case ALUOp::SLT:
         return "<";
+      case ALUOp::SLTU:
+        return "<u";
       case ALUOp::MAX:
         return "max";
+      case ALUOp::MAXU:
+        return "maxu";
       case ALUOp::MIN:
         return "min";
+      case ALUOp::MINU:
+        return "minu";
+      case ALUOp::CLZ:
+        return "clz";
+      case ALUOp::CTZ:
+        return "ctz";
+      case ALUOp::CPOP:
+        return "popcount";
+      case ALUOp::SEXTB:
+        return "sext.b";
+      case ALUOp::SEXTH:
+        return "sext.h";
+      case ALUOp::ZEXTH:
+        return "zext.h";
+      case ALUOp::REV8:
+        return "rev8";
+      case ALUOp::ORCB:
+        return "orcb";
       default:
         return "?";
     }
@@ -438,8 +529,7 @@ class ALUComponent : public PipelineComponent {
   DataType accumulator_;  // Internal accumulator for MAC operations
 };
 
-// Type aliases for specific ALU types
+// Type alias for integer ALU
 using INTUComponent = ALUComponent<Int32Precision>;
-using FPUComponent = ALUComponent<Float32Precision>;
 
 #endif  // ALU_H
