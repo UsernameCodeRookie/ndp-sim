@@ -643,7 +643,14 @@ class SCore : public Pipeline {
       }
 
       // Dispatch the instruction to appropriate unit
-      dispatchToUnit(inst, lane);
+      bool dispatch_ok = dispatchToUnit(inst, lane);
+
+      if (!dispatch_ok) {
+        // Dispatch failed (unit busy), mark as blocked and stop trying
+        TRACE_COMPUTE(current_time, getName(), "DISPATCH_UNIT_BUSY",
+                      "Unit busy at lane=" << lane << ", rd=" << inst.rd);
+        break;
+      }
 
       TRACE_COMPUTE(current_time, getName(), "DISPATCH_SUCCESS",
                     "Dispatched to lane=" << lane << ", rd=" << inst.rd);
@@ -704,45 +711,61 @@ class SCore : public Pipeline {
    * Implements hazard detection and resource constraints
    */
   bool canDispatch(const DecodedInstruction& inst, uint32_t lane) {
-    return dispatch_ctrl_.canDispatch(inst, lane);
+    bool result = dispatch_ctrl_.canDispatch(inst, lane);
+    uint64_t current_time = scheduler_.getCurrentTime();
+
+    // Debug: Print reason if dispatch is blocked
+    if (!result && current_time >= 7) {
+      bool is_special =
+          (lane > 0) && (inst.op_type == DecodedInstruction::OpType::CSR ||
+                         inst.op_type == DecodedInstruction::OpType::FENCE);
+      bool raw_rs1 =
+          (inst.rs1 != 0 && dispatch_ctrl_.getScoreboard()[inst.rs1]);
+      bool raw_rs2 =
+          (inst.rs2 != 0 && dispatch_ctrl_.getScoreboard()[inst.rs2]);
+      bool resource_conflict = false;
+
+      TRACE_COMPUTE(
+          current_time, getName(), "DISPATCH_FAIL_REASON",
+          "rd=" << inst.rd << " lane=" << lane << " special=" << is_special
+                << " raw_rs1[" << inst.rs1 << "]=" << raw_rs1 << " raw_rs2["
+                << inst.rs2 << "]=" << raw_rs2
+                << " rs1_val=" << dispatch_ctrl_.getScoreboard()[inst.rs1]
+                << " rs2_val=" << dispatch_ctrl_.getScoreboard()[inst.rs2]);
+    }
+
+    return result;
   }
 
   /**
    * @brief Dispatch instruction to appropriate execution unit
+   * @return true if dispatch succeeded, false if unit's port is busy
    */
-  void dispatchToUnit(const DecodedInstruction& inst, uint32_t lane) {
+  bool dispatchToUnit(const DecodedInstruction& inst, uint32_t lane) {
     switch (inst.op_type) {
       case DecodedInstruction::OpType::ALU:
-        dispatchToALU(inst, lane);
-        break;
+        return dispatchToALU(inst, lane);
       case DecodedInstruction::OpType::BRU:
-        dispatchToBRU(inst);
-        break;
+        return dispatchToBRU(inst);
       case DecodedInstruction::OpType::MLU:
-        dispatchToMLU(inst);
-        mlu_busy_ = true;
-        break;
+        return dispatchToMLU(inst);
       case DecodedInstruction::OpType::DVU:
-        dispatchToDVU(inst);
-        dvu_busy_ = true;
-        break;
+        return dispatchToDVU(inst);
       case DecodedInstruction::OpType::LSU:
-        dispatchToLSU(inst);
-        lsu_busy_ = true;
-        break;
+        return dispatchToLSU(inst);
       case DecodedInstruction::OpType::CSR:
       case DecodedInstruction::OpType::FENCE:
-        // For simplified implementation, just track as executed
-        break;
+        // For simplified implementation, these always succeed
+        return true;
       default:
-        break;
+        return false;
     }
   }
 
   /**
    * @brief Dispatch to ALU
    */
-  void dispatchToALU(const DecodedInstruction& inst, uint32_t lane) {
+  bool dispatchToALU(const DecodedInstruction& inst, uint32_t lane) {
     // Read operands and dispatch using helper
     uint32_t rs1_val = regfile_->readRegister(inst.rs1);
 
@@ -758,49 +781,50 @@ class SCore : public Pipeline {
       rs2_val = regfile_->readRegister(inst.rs2);
     }
 
-    issueALU(lane, rs1_val, rs2_val, inst.opcode, inst.rd);
+    return issueALU(lane, rs1_val, rs2_val, inst.opcode, inst.rd);
   }
 
   /**
    * @brief Dispatch to BRU
    */
-  void dispatchToBRU(const DecodedInstruction& inst) {
+  bool dispatchToBRU(const DecodedInstruction& inst) {
     // Read operands and dispatch using helper
     uint32_t rs1_val = regfile_->readRegister(inst.rs1);
     uint32_t rs2_val = regfile_->readRegister(inst.rs2);
-    issueBRU(pc_ + 4, inst.opcode, rs1_val, rs2_val, inst.rd);
+    return issueBRU(pc_ + 4, inst.opcode, rs1_val, rs2_val, inst.rd);
   }
 
   /**
    * @brief Dispatch to MLU
    */
-  void dispatchToMLU(const DecodedInstruction& inst) {
+  bool dispatchToMLU(const DecodedInstruction& inst) {
     // Read operands and dispatch using helper
     uint32_t rs1_val = regfile_->readRegister(inst.rs1);
     uint32_t rs2_val = regfile_->readRegister(inst.rs2);
-    issueMLU(inst.rd, inst.opcode,
-             static_cast<int64_t>(rs1_val) * static_cast<int64_t>(rs2_val));
+    return issueMLU(
+        inst.rd, inst.opcode,
+        static_cast<int64_t>(rs1_val) * static_cast<int64_t>(rs2_val));
   }
 
   /**
    * @brief Dispatch to DVU
    */
-  void dispatchToDVU(const DecodedInstruction& inst) {
+  bool dispatchToDVU(const DecodedInstruction& inst) {
     // Read operands and dispatch using helper
     uint32_t rs1_val = regfile_->readRegister(inst.rs1);
     uint32_t rs2_val = regfile_->readRegister(inst.rs2);
-    issueDVU(inst.rd, inst.opcode, static_cast<int32_t>(rs1_val),
-             static_cast<int32_t>(rs2_val));
+    return issueDVU(inst.rd, inst.opcode, static_cast<int32_t>(rs1_val),
+                    static_cast<int32_t>(rs2_val));
   }
 
   /**
    * @brief Dispatch to LSU
    */
-  void dispatchToLSU(const DecodedInstruction& inst) {
+  bool dispatchToLSU(const DecodedInstruction& inst) {
     // Read operands and dispatch using helper
     uint32_t rs1_val = regfile_->readRegister(inst.rs1);
     uint32_t rs2_val = regfile_->readRegister(inst.rs2);
-    issueLSU(inst.opcode, rs1_val, static_cast<int32_t>(rs2_val));
+    return issueLSU(inst.opcode, rs1_val, static_cast<int32_t>(rs2_val));
   }
 
  private:
@@ -810,7 +834,7 @@ class SCore : public Pipeline {
    * @brief Helper: Write ALU command to functional unit
    * @private
    */
-  void issueALU(uint32_t lane, uint32_t op1, uint32_t op2, uint32_t opcode,
+  bool issueALU(uint32_t lane, uint32_t op1, uint32_t op2, uint32_t opcode,
                 uint32_t rd) {
     if (lane < alusv_.size()) {
       auto alu = alusv_[lane];
@@ -821,15 +845,17 @@ class SCore : public Pipeline {
             static_cast<ALUOp>(opcode), rd);
         cmd->timestamp = scheduler_.getCurrentTime();
         in_port->write(cmd);
+        return true;
       }
     }
+    return false;
   }
 
   /**
    * @brief Helper: Write BRU command to functional unit
    * @private
    */
-  void issueBRU(uint32_t pc_next, uint32_t opcode, uint32_t op1, uint32_t op2,
+  bool issueBRU(uint32_t pc_next, uint32_t opcode, uint32_t op1, uint32_t op2,
                 uint32_t rd) {
     if (bru_) {
       auto in_port = bru_->getPort("in");
@@ -839,15 +865,17 @@ class SCore : public Pipeline {
             static_cast<int>(rd));
         cmd->timestamp = scheduler_.getCurrentTime();
         in_port->write(cmd);
+        return true;
       }
     }
+    return false;
   }
 
   /**
    * @brief Helper: Write MLU command to functional unit
    * @private
    */
-  void issueMLU(uint32_t rd, uint32_t opcode, int64_t product) {
+  bool issueMLU(uint32_t rd, uint32_t opcode, int64_t product) {
     if (mlu_) {
       auto in_port = mlu_->getPort("in");
       if (in_port && !in_port->hasData()) {
@@ -855,15 +883,17 @@ class SCore : public Pipeline {
             rd, static_cast<MultiplyUnit::MulOp>(opcode), product);
         cmd->timestamp = scheduler_.getCurrentTime();
         in_port->write(cmd);
+        return true;
       }
     }
+    return false;
   }
 
   /**
    * @brief Helper: Write DVU command to functional unit
    * @private
    */
-  void issueDVU(uint32_t rd, uint32_t opcode, int32_t op1, int32_t op2) {
+  bool issueDVU(uint32_t rd, uint32_t opcode, int32_t op1, int32_t op2) {
     if (dvu_) {
       auto in_port = dvu_->getPort("in");
       if (in_port && !in_port->hasData()) {
@@ -871,15 +901,17 @@ class SCore : public Pipeline {
             rd, static_cast<DivideUnit::DivOp>(opcode), op1, op2);
         cmd->timestamp = scheduler_.getCurrentTime();
         in_port->write(cmd);
+        return true;
       }
     }
+    return false;
   }
 
   /**
    * @brief Helper: Write LSU command to functional unit
    * @private
    */
-  void issueLSU(uint32_t opcode, uint32_t addr, int32_t data) {
+  bool issueLSU(uint32_t opcode, uint32_t addr, int32_t data) {
     if (lsu_) {
       auto in_port = lsu_->getPort("in");
       if (in_port && !in_port->hasData()) {
@@ -887,8 +919,10 @@ class SCore : public Pipeline {
             static_cast<LSUOp>(opcode), addr, data, 1, 1, false);
         cmd->timestamp = scheduler_.getCurrentTime();
         in_port->write(cmd);
+        return true;
       }
     }
+    return false;
   }
 
  public:

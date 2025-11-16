@@ -64,14 +64,16 @@ class DecodeStage {
     inst.addr = pc;
     inst.word = word;
 
-    // Extract fields (RV32I format)
+    // Extract common fields (RV32I format)
     uint32_t opcode_bits = word & 0x7F;
     inst.rd = (word >> 7) & 0x1F;
     inst.rs1 = (word >> 15) & 0x1F;
-    inst.rs2 = (word >> 20) & 0x1F;
     inst.opcode = (word >> 25) & 0x7F;
 
-    // Decode immediate fields
+    // For I-type instructions, bits [31:20] is the immediate
+    // For R-type instructions, bits [31:25] is funct7, bits [24:20] is rs2
+    // We'll set rs2 correctly based on instruction type
+    inst.rs2 = 0;                     // Default to 0, override for R-type below
     inst.imm = (word >> 20) & 0xFFF;  // I-type immediate
 
     // Classify instruction type based on opcode
@@ -80,52 +82,61 @@ class DecodeStage {
       case 0x13:  // ADDI, SLTI, XORI, ORI, ANDI, SLLI, SRLI, SRAI
         inst.op_type = DecodedInstruction::OpType::ALU;
         inst.opcode = static_cast<uint32_t>(ALUOp::ADD);
+        // rs2 stays 0 for I-type
         break;
 
       // ALU register instructions
       case 0x33:  // ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND
         inst.op_type = DecodedInstruction::OpType::ALU;
         inst.opcode = static_cast<uint32_t>(ALUOp::ADD);
+        inst.rs2 = (word >> 20) & 0x1F;  // R-type: extract rs2
         break;
 
       // Branch instructions
       case 0x63:  // BEQ, BNE, BLT, BGE, BLTU, BGEU
         inst.op_type = DecodedInstruction::OpType::BRU;
         inst.opcode = static_cast<uint32_t>(BruOp::BEQ);
+        inst.rs2 = (word >> 20) & 0x1F;  // B-type: extract rs2
         break;
 
       // JAL
       case 0x6F:
         inst.op_type = DecodedInstruction::OpType::BRU;
         inst.opcode = static_cast<uint32_t>(BruOp::JAL);
+        // rs2 stays 0 for J-type
         break;
 
       // JALR
       case 0x67:
         inst.op_type = DecodedInstruction::OpType::BRU;
         inst.opcode = static_cast<uint32_t>(BruOp::JALR);
+        // rs2 stays 0 for I-type
         break;
 
       // Load instructions
       case 0x03:  // LB, LH, LW, LBU, LHU
         inst.op_type = DecodedInstruction::OpType::LSU;
         inst.opcode = static_cast<uint32_t>(LSUOp::LOAD);
+        // rs2 stays 0 for I-type
         break;
 
       // Store instructions
       case 0x23:  // SB, SH, SW
         inst.op_type = DecodedInstruction::OpType::LSU;
         inst.opcode = static_cast<uint32_t>(LSUOp::STORE);
+        inst.rs2 = (word >> 20) & 0x1F;  // S-type: extract rs2
         break;
 
       // CSR instructions
       case 0x73:  // CSRRW, CSRRS, CSRRC, EBREAK, ECALL
         inst.op_type = DecodedInstruction::OpType::CSR;
+        // rs2 stays 0
         break;
 
       // FENCE
       case 0x0F:
         inst.op_type = DecodedInstruction::OpType::FENCE;
+        // rs2 stays 0
         break;
 
       default:
