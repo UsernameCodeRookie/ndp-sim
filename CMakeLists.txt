@@ -136,6 +136,12 @@ target_include_directories(test_rvv_retire PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_rvv_retire gtest gtest_main pthread)
 add_test(NAME test_rvv_retire COMMAND test_rvv_retire)
 
+# --- RVV Backend integration tests ---
+add_executable(test_rvv_backend tests/test_rvv_backend.cpp)
+target_include_directories(test_rvv_backend PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_rvv_backend gtest gtest_main pthread)
+add_test(NAME test_rvv_backend COMMAND test_rvv_backend)
+
 # --- MAC Example ---
 add_executable(mac_example example/mac_example.cpp)
 target_include_directories(mac_example PRIVATE ${CMAKE_SOURCE_DIR}/src)
