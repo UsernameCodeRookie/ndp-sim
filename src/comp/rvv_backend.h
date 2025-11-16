@@ -2,6 +2,7 @@
 #define RVV_BACKEND_H
 
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <queue>
 #include <sstream>
@@ -17,6 +18,7 @@
 #include "component.h"
 #include "pipeline.h"
 #include "rvv_alu.h"
+#include "rvv_decoder.h"
 #include "rvv_dispatch.h"
 #include "rvv_dvu.h"
 #include "rvv_interface.h"
@@ -82,10 +84,10 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
    * @param name Component name
    * @param scheduler Event scheduler
    * @param period Clock period
-   * @param vlen Vector length in bits (128/256/512)
+   * @param vlen Vector length in bits (128/256/512, default 256 for CoralNPU)
    */
   RVVBackend(const std::string& name, EventDriven::EventScheduler& scheduler,
-             uint64_t period = 1, uint32_t vlen = 128)
+             uint64_t period = 1, uint32_t vlen = 256)
       : Pipeline(name, scheduler, period, 4),  // 4 main stages
         vlen_(vlen),
         num_decode_ports_(6),
@@ -142,6 +144,16 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
   uint64_t getExecuteCount() const { return execute_count_; }
   uint64_t getRetireCount() const { return retire_count_; }
   uint64_t getStallCount() const { return stall_count_; }
+
+  /**
+   * @brief Get stripmining statistics
+   */
+  uint64_t getStripminingExpansions() const { return stripmining_expansions_; }
+  uint64_t getTotalUopsGenerated() const { return total_uops_generated_; }
+  size_t getCurrentUopQueueSize() const { return uop_queue_.size(); }
+  uint64_t getMaxUopsPerCycleAchieved() const {
+    return max_uops_per_cycle_achieved_;
+  }
 
   /**
    * @brief Check if backend is idle
@@ -265,6 +277,19 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
   std::queue<RVVInstruction> pending_instructions_;
   std::vector<RVVUop> in_flight_uops_;
 
+  // uop queue for stripmining support (max 6 uops per cycle)
+  static constexpr size_t MAX_UOPS_PER_CYCLE = 6;
+  std::deque<RVVMicroOp> uop_queue_;  // Intermediate uop queue
+
+  // Track uops issued this cycle for bandwidth limiting
+  uint64_t uops_issued_this_cycle_ = 0;
+  uint64_t last_decode_cycle_ = 0;
+
+  // Stripmining statistics
+  uint64_t stripmining_expansions_ = 0;
+  uint64_t total_uops_generated_ = 0;
+  uint64_t max_uops_per_cycle_achieved_ = 0;  // Peak decode bandwidth
+
   // Execution units
   std::unique_ptr<RVVVectorALU> alu_;
   std::unique_ptr<RVVVectorDVU> dvu_;
@@ -294,41 +319,178 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
 
   /**
    * @brief Setup Decode Stage
+   *
+   * Implements stripmining: expands LMUL > 1 instructions into multiple uops
+   * Also enforces 6 uop/cycle decode bandwidth limit
    */
   void setupDecodeStage() {
     setStageFunction(
         0,
         [this](std::shared_ptr<DataPacket> pkt) -> std::shared_ptr<DataPacket> {
+          uint64_t current_time = scheduler_.getCurrentTime();
+
+          // Reset cycle counter if we're in a new cycle
+          if (current_time != last_decode_cycle_) {
+            last_decode_cycle_ = current_time;
+            uops_issued_this_cycle_ = 0;
+          }
+
+          // Check if we've already issued 6 uops this cycle
+          if (uops_issued_this_cycle_ >= MAX_UOPS_PER_CYCLE) {
+            // Bandwidth limit reached, stall decode
+            TRACE_COMPUTE(current_time, name_, "DECODE_BANDWIDTH_LIMIT",
+                          "Max 6 uops/cycle reached, stalling decode");
+            return nullptr;  // Return null to stall
+          }
+
+          // If we have uops in queue, emit one
+          if (!uop_queue_.empty()) {
+            size_t remaining_bandwidth =
+                MAX_UOPS_PER_CYCLE - uops_issued_this_cycle_;
+
+            auto new_pkt = std::make_shared<RVVBackendPacket>();
+            const auto& uop = uop_queue_.front();
+
+            // Convert RVVMicroOp to RVVUop for pipeline
+            RVVInstruction inst_from_uop;
+            inst_from_uop.inst_id = uop.inst_id;
+            inst_from_uop.opcode = uop.opcode;
+            inst_from_uop.vd_idx = uop.vd;
+            inst_from_uop.vs1_idx = uop.vs1;
+            inst_from_uop.vs2_idx = uop.vs2;
+            inst_from_uop.vl = uop.vl;
+            inst_from_uop.sew = uop.sew;
+            inst_from_uop.lmul = uop.lmul;
+
+            new_pkt->uop =
+                RVVUop(inst_from_uop, uop.uop_id, uop.uop_count, decode_count_);
+
+            // Trace: Decode stage processes uop
+            std::stringstream ss;
+            ss << "uop_id=" << uop.uop_id << "/" << uop.uop_count
+               << " opcode=0x" << std::hex << uop.opcode << std::dec
+               << " vd=" << uop.vd << " vs1=" << uop.vs1 << " vs2=" << uop.vs2
+               << " uops_this_cycle=" << (uops_issued_this_cycle_ + 1) << "/"
+               << MAX_UOPS_PER_CYCLE
+               << " remaining_bw=" << (remaining_bandwidth - 1);
+            EventDriven::Tracer::getInstance().traceCompute(
+                current_time, name_, "DECODE_STRIPMINED_UOP", ss.str());
+
+            // Pop the uop we just emitted
+            uop_queue_.pop_front();
+            decode_count_++;
+            uops_issued_this_cycle_++;
+
+            // Track peak bandwidth
+            if (uops_issued_this_cycle_ > max_uops_per_cycle_achieved_) {
+              max_uops_per_cycle_achieved_ = uops_issued_this_cycle_;
+            }
+
+            return new_pkt;
+          }
+
           if (!pkt && pending_instructions_.empty()) {
             return nullptr;
           }
 
-          if (!pkt) {
-            // Create new packet from pending instruction
+          if (!pkt && !pending_instructions_.empty()) {
+            // Fetch next instruction and expand via stripmining
             const auto& inst = pending_instructions_.front();
-            auto new_pkt = std::make_shared<RVVBackendPacket>();
-            new_pkt->uop = RVVUop(inst, 0, 1, decode_count_);
             pending_instructions_.pop();
 
-            // Trace: Decode stage processes instruction
+            // Create instruction request for decoder
+            RVVCoreInterface::InstructionRequest inst_req;
+            inst_req.inst_id = inst.inst_id;
+            inst_req.opcode = inst.opcode;
+            inst_req.vd_idx = inst.vd_idx;
+            inst_req.vs1_idx = inst.vs1_idx;
+            inst_req.vs2_idx = inst.vs2_idx;
+            inst_req.vm = inst.vm;
+            inst_req.sew = inst.sew;
+            inst_req.lmul = inst.lmul;
+            inst_req.vl = inst.vl;
+            inst_req.pc = inst.pc;
+
+            // Decode to uops (handles stripmining)
+            auto uops = RVVDecoder::decodeToUops(inst_req);
+
+            // Track stripmining statistics
+            if (RVVDecoder::requiresStripmining(inst.lmul)) {
+              stripmining_expansions_++;
+              total_uops_generated_ += uops.size();
+            }
+
+            // Queue all uops
+            for (const auto& uop : uops) {
+              uop_queue_.push_back(uop);
+            }
+
+            // Trace: Instruction decoded
             std::stringstream ss;
-            ss << "inst_id=" << new_pkt->uop.inst_id << " opcode=0x" << std::hex
+            ss << "inst_id=" << inst.inst_id << " opcode=0x" << std::hex
                << inst.opcode << std::dec << " vd=" << inst.vd_idx
                << " vs1=" << inst.vs1_idx << " vs2=" << inst.vs2_idx
-               << " vl=" << inst.vl;
-            EventDriven::Tracer::getInstance().traceInstruction(
-                scheduler_.getCurrentTime(), name_, "DECODE", ss.str());
+               << " vl=" << inst.vl << " lmul=" << inst.lmul
+               << " uops_generated=" << uops.size();
 
-            decode_count_++;
-            return new_pkt;
+            if (RVVDecoder::requiresStripmining(inst.lmul)) {
+              ss << " (stripmined)";
+            }
+
+            EventDriven::Tracer::getInstance().traceInstruction(
+                current_time, name_, "DECODE", ss.str());
+
+            // Recursively call to emit first uop (will be limited by 6
+            // uop/cycle)
+            return setupDecodeStage_EmitUop_WithBandwidth();
           }
 
           return pkt;
         });
 
     setStageStallPredicate(0, [this](std::shared_ptr<DataPacket>) {
-      return pending_instructions_.empty();
+      return pending_instructions_.empty() && uop_queue_.empty();
     });
+  }
+
+  /**
+   * @brief Helper to emit a uop from queue with bandwidth limiting
+   */
+  std::shared_ptr<DataPacket> setupDecodeStage_EmitUop_WithBandwidth() {
+    // Check bandwidth limit
+    if (uops_issued_this_cycle_ >= MAX_UOPS_PER_CYCLE) {
+      return nullptr;  // Stall - bandwidth exceeded
+    }
+
+    if (!uop_queue_.empty()) {
+      auto new_pkt = std::make_shared<RVVBackendPacket>();
+      const auto& uop = uop_queue_.front();
+
+      RVVInstruction inst_from_uop;
+      inst_from_uop.inst_id = uop.inst_id;
+      inst_from_uop.opcode = uop.opcode;
+      inst_from_uop.vd_idx = uop.vd;
+      inst_from_uop.vs1_idx = uop.vs1;
+      inst_from_uop.vs2_idx = uop.vs2;
+      inst_from_uop.vl = uop.vl;
+      inst_from_uop.sew = uop.sew;
+      inst_from_uop.lmul = uop.lmul;
+
+      new_pkt->uop =
+          RVVUop(inst_from_uop, uop.uop_id, uop.uop_count, decode_count_);
+
+      uop_queue_.pop_front();
+      decode_count_++;
+      uops_issued_this_cycle_++;
+
+      // Track peak bandwidth
+      if (uops_issued_this_cycle_ > max_uops_per_cycle_achieved_) {
+        max_uops_per_cycle_achieved_ = uops_issued_this_cycle_;
+      }
+
+      return new_pkt;
+    }
+    return nullptr;
   }
 
   /**

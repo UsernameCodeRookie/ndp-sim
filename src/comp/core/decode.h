@@ -52,6 +52,35 @@ struct DecodedInstruction {
         rs2(0),
         imm(0),
         opcode(0) {}
+
+  /**
+   * @brief Check if this instruction is a control flow instruction
+   * @return true if instruction is BRU type (branch, jump, etc.)
+   */
+  bool isBranchInstruction() const { return op_type == OpType::BRU; }
+
+  /**
+   * @brief Check if this instruction is a conditional branch
+   * @return true if instruction is conditional branch (BEQ, BNE, BLT, BGE,
+   * BLTU, BGEU)
+   */
+  bool isConditionalBranch() const {
+    if (op_type != OpType::BRU) return false;
+    // BEQ, BNE, BLT, BGE, BLTU, BGEU are conditional (opcode 0x63)
+    // JAL and JALR are unconditional
+    uint32_t opcode_bits = word & 0x7F;
+    return opcode_bits == 0x63;  // Conditional branch instruction
+  }
+
+  /**
+   * @brief Check if this instruction is an unconditional jump
+   * @return true if instruction is JAL or JALR
+   */
+  bool isUnconditionalJump() const {
+    if (op_type != OpType::BRU) return false;
+    uint32_t opcode_bits = word & 0x7F;
+    return opcode_bits == 0x6F || opcode_bits == 0x67;  // JAL or JALR
+  }
 };
 
 /**

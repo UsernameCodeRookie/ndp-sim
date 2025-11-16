@@ -61,13 +61,16 @@ class RVVALUExample {
     // Create scheduler
     auto scheduler = std::make_unique<EventScheduler>();
 
-    // Create RVV Backend
+    // Create RVV Backend (256-bit VLEN for CoralNPU compliance)
     auto rvv_backend =
-        std::make_shared<RVVBackend>("RVV-Backend", *scheduler, 1, 128);
+        std::make_shared<RVVBackend>("RVV-Backend", *scheduler, 1, 256);
 
-    // Create Scalar Core
+    // Create Scalar Core (4-lane for CoralNPU compliance)
     SCore::Config core_config;
-    core_config.num_instruction_lanes = 1;
+    core_config.num_instruction_lanes = 4;  // CoralNPU: 4-lane scalar
+    core_config.num_bru_units = 4;          // 4 BRU units to match lanes
+    core_config.vector_issue_width = 4;     // 4 vector instructions per cycle
+    core_config.vlen = 256;                 // CoralNPU: 256-bit vectors
     auto core = std::make_shared<SCore>("SCore-0", *scheduler, core_config);
 
     // Set RVV backend as the vector execution interface

@@ -83,37 +83,50 @@ class SCore : public Pipeline {
    * @brief SCore configuration parameters
    */
   struct Config {
-    // Instruction dispatch parameters
+    // Scalar instruction dispatch parameters
     uint32_t num_instruction_lanes;  // Number of parallel decode/dispatch lanes
+                                     // (2 or 4)
+
     // Register file parameters
-    uint32_t num_registers;       // Number of general-purpose registers
-    uint32_t num_read_ports;      // Total read ports
-    uint32_t num_write_ports;     // Total write ports
+    uint32_t num_registers;    // Number of general-purpose registers (32)
+    uint32_t num_read_ports;   // Total read ports (8 for 4-lane, 6 for 2-lane)
+    uint32_t num_write_ports;  // Total write ports (6 for scalar)
     bool use_regfile_forwarding;  // Enable write-through forwarding
+
     // Functional unit parameters
     uint32_t alu_period;      // ALU tick period (cycles)
     uint32_t bru_period;      // BRU tick period
+    uint32_t num_bru_units;   // Number of BRU units (1-4, matched with lanes)
     uint32_t mlu_period;      // MLU tick period (3 cycles)
     uint32_t dvu_period;      // DVU tick period (8 cycles)
     uint32_t lsu_period;      // LSU tick period
     uint32_t regfile_period;  // Register file tick period
+
+    // Vector parameters
+    uint32_t
+        vector_issue_width;  // Vector instructions per cycle (1-4, typically 4)
+    uint32_t vlen;           // Vector length in bits (128, 256, or 512)
+
     // Connection parameters
     uint32_t connection_latency;  // Wire connection latency (cycles)
     uint32_t buffer_size;         // Ready-Valid buffer size
     uint64_t start_time;          // Start time (simulation cycles)
 
     Config()
-        : num_instruction_lanes(2),
+        : num_instruction_lanes(4),  // Default: 4-lane scalar issue
           num_registers(32),
-          num_read_ports(16),
-          num_write_ports(8),
+          num_read_ports(8),   // 4 lanes × 2 operands = 8 ports
+          num_write_ports(6),  // Scalar spec: 6 write ports
           use_regfile_forwarding(true),
           alu_period(1),
           bru_period(1),
+          num_bru_units(4),  // Match with lanes
           mlu_period(3),
           dvu_period(8),
           lsu_period(1),
           regfile_period(1),
+          vector_issue_width(4),  // 4 vector instructions per cycle
+          vlen(256),              // CoralNPU: 256-bit vectors
           connection_latency(0),
           buffer_size(2),
           start_time(0) {}
@@ -190,16 +203,24 @@ class SCore : public Pipeline {
    * parameters
    */
   void initializeFunctionalUnits() {
-    // Create ALU (2 instances for dual-lane issue)
+    // Create ALU (one per instruction lane)
     for (uint32_t i = 0; i < config_.num_instruction_lanes; i++) {
       std::string alu_name = name_ + "_ALU_" + std::to_string(i);
       alusv_.push_back(std::make_shared<ArithmeticLogicUnit>(
           alu_name, scheduler_, config_.alu_period));
     }
 
-    // Create BRU (1 instance, sequential branch execution)
-    bru_ = std::make_shared<BranchUnit>(name_ + "_BRU", scheduler_,
-                                        config_.bru_period);
+    // Create BRU units (one per lane for CoralNPU-style 4-way branch)
+    // Can be 1-4 units depending on config
+    for (uint32_t i = 0; i < config_.num_bru_units; i++) {
+      std::string bru_name = name_ + "_BRU_" + std::to_string(i);
+      brusv_.push_back(std::make_shared<BranchUnit>(bru_name, scheduler_,
+                                                    config_.bru_period));
+    }
+    // Keep bru_ pointing to first one for backward compatibility
+    if (!brusv_.empty()) {
+      bru_ = brusv_[0];
+    }
 
     // Create MLU (1 instance)
     mlu_ = std::make_shared<MultiplyUnit>(name_ + "_MLU", scheduler_,
@@ -245,13 +266,17 @@ class SCore : public Pipeline {
       alu_wb_connections_.push_back(conn);
     }
 
-    // BRU result write port -> Register file
-    {
-      std::string conn_name = name_ + "_BRU_WB";
+    // BRU result write ports -> Register file (one per BRU unit)
+    for (uint32_t i = 0; i < config_.num_bru_units; i++) {
+      std::string conn_name = name_ + "_BRU_WB_" + std::to_string(i);
       auto conn =
           std::make_shared<Wire>(conn_name, scheduler_, config_.regfile_period);
       conn->setLatency(config_.connection_latency);
-      bru_wb_connection_ = conn;
+      bru_wb_connections_.push_back(conn);
+    }
+    // Keep first one for backward compatibility
+    if (!bru_wb_connections_.empty()) {
+      bru_wb_connection_ = bru_wb_connections_[0];
     }
 
     // MLU result write port -> Register file
@@ -318,9 +343,26 @@ class SCore : public Pipeline {
   }
 
   /**
-   * @brief Get BRU instance
+   * @brief Get BRU instance (main one for backward compatibility)
    */
   std::shared_ptr<BranchUnit> getBRU() { return bru_; }
+
+  /**
+   * @brief Get BRU instance by index
+   */
+  std::shared_ptr<BranchUnit> getBRU(uint32_t index) {
+    if (index < brusv_.size()) {
+      return brusv_[index];
+    }
+    return nullptr;
+  }
+
+  /**
+   * @brief Get all BRU instances
+   */
+  const std::vector<std::shared_ptr<BranchUnit>>& getBRUs() const {
+    return brusv_;
+  }
 
   /**
    * @brief Get MLU instance
@@ -391,7 +433,9 @@ class SCore : public Pipeline {
     for (auto& alu : alusv_) {
       alu->start(config_.start_time);
     }
-    bru_->start(config_.start_time);
+    for (auto& bru : brusv_) {
+      bru->start(config_.start_time);
+    }
     mlu_->start(config_.start_time);
     dvu_->start(config_.start_time);
     lsu_->start(config_.start_time);
@@ -403,7 +447,9 @@ class SCore : public Pipeline {
     for (auto& conn : alu_wb_connections_) {
       conn->start(config_.start_time);
     }
-    if (bru_wb_connection_) bru_wb_connection_->start(config_.start_time);
+    for (auto& conn : bru_wb_connections_) {
+      conn->start(config_.start_time);
+    }
     if (mlu_wb_connection_) mlu_wb_connection_->start(config_.start_time);
     if (dvu_wb_connection_) dvu_wb_connection_->start(config_.start_time);
     if (lsu_wb_connection_) lsu_wb_connection_->start(config_.start_time);
@@ -611,7 +657,9 @@ class SCore : public Pipeline {
     for (auto& alu : alusv_) {
       alu->reset();
     }
-    bru_->reset();
+    for (auto& bru : brusv_) {
+      bru->reset();
+    }
     mlu_->reset();
     dvu_->reset();
     lsu_->reset();
@@ -729,7 +777,68 @@ class SCore : public Pipeline {
     TRACE_COMPUTE(current_time, getName(), "DISPATCH_CYCLE_START",
                   "fetch_buffer size=" << fetch_buffer_.size());
 
-    // Try to dispatch up to num_instruction_lanes instructions
+    // ========== 4-WAY VECTOR ISSUE SUPPORT ==========
+    // Check for consecutive vector instructions that can be batch-issued
+    // This implements CoralNPU's 4-way vector instruction dispatch
+    std::vector<size_t> vector_inst_indices;
+    for (size_t i = 0; i < fetch_buffer_.size() &&
+                       vector_inst_indices.size() < config_.vector_issue_width;
+         i++) {
+      const auto& inst_word = fetch_buffer_[i];
+      DecodedInstruction inst =
+          DecodeStage::decode(inst_word.first, inst_word.second);
+
+      // Stop at first non-vector instruction
+      if (inst.op_type != DecodedInstruction::OpType::VECTOR) {
+        break;
+      }
+
+      vector_inst_indices.push_back(i);
+    }
+
+    // If we have vector instructions, batch-issue them
+    if (!vector_inst_indices.empty()) {
+      uint32_t batch_dispatched = 0;
+      for (size_t idx : vector_inst_indices) {
+        const auto& inst_word = fetch_buffer_[idx];
+        DecodedInstruction inst =
+            DecodeStage::decode(inst_word.first, inst_word.second);
+
+        // Dispatch to RVV backend
+        bool dispatch_ok = dispatchToVector(inst, 0);  // All vectors use lane 0
+
+        if (dispatch_ok) {
+          batch_dispatched++;
+          TRACE_COMPUTE(current_time, getName(), "DISPATCH_VECTOR_BATCH",
+                        "Vector batch dispatch: issued "
+                            << batch_dispatched << "/"
+                            << vector_inst_indices.size()
+                            << " from fetch_buffer");
+        } else {
+          // If any in batch fails, we stop (RVV backend backpressure)
+          TRACE_COMPUTE(
+              current_time, getName(), "DISPATCH_VECTOR_BATCH_STALL",
+              "Vector batch dispatch stalled at position " << batch_dispatched);
+          break;
+        }
+      }
+
+      // Remove dispatched vector instructions from fetch buffer
+      if (batch_dispatched > 0) {
+        fetch_buffer_.erase(fetch_buffer_.begin(),
+                            fetch_buffer_.begin() + batch_dispatched);
+        instructions_dispatched_ += batch_dispatched;
+        TRACE_COMPUTE(current_time, getName(), "DISPATCH_VECTOR_BATCH_COMPLETE",
+                      "Completed 4-way vector batch: "
+                          << batch_dispatched
+                          << " vector instructions dispatched, remaining="
+                          << fetch_buffer_.size());
+        return batch_dispatched;
+      }
+    }
+    // ========== END 4-WAY VECTOR ISSUE SUPPORT ==========
+
+    // Try to dispatch up to num_instruction_lanes scalar instructions
     for (uint32_t lane = 0; lane < config_.num_instruction_lanes &&
                             fetch_index < fetch_buffer_.size();
          lane++) {
@@ -786,14 +895,30 @@ class SCore : public Pipeline {
           break;
       }
 
-      // Check if this is a control flow instruction
-      if (isControlFlowInstruction(inst)) {
+      // Check if this is a control flow instruction (BRANCH PROTECTION)
+      if (inst.isBranchInstruction()) {
+        // This is a BRU instruction - dispatch it and then stop
         branch_taken_ = true;
         fetch_index++;
         dispatched_count++;
-        TRACE_COMPUTE(current_time, getName(), "DISPATCH_CONTROL_FLOW",
-                      "Control flow instruction, stopping dispatch");
-        break;  // Don't dispatch past branches
+
+        // Log branch detection with detailed information
+        if (inst.isConditionalBranch()) {
+          TRACE_COMPUTE(current_time, getName(), "DISPATCH_CONDITIONAL_BRANCH",
+                        "Conditional branch instruction detected at PC=0x"
+                            << std::hex << inst.addr << std::dec
+                            << ", stopping dispatch");
+        } else if (inst.isUnconditionalJump()) {
+          TRACE_COMPUTE(current_time, getName(), "DISPATCH_UNCONDITIONAL_JUMP",
+                        "Unconditional jump instruction detected at PC=0x"
+                            << std::hex << inst.addr << std::dec
+                            << ", stopping dispatch");
+        } else {
+          TRACE_COMPUTE(current_time, getName(), "DISPATCH_CONTROL_FLOW",
+                        "Control flow instruction, stopping dispatch");
+        }
+
+        break;  // Don't dispatch past branches - CoralNPU rule #4
       }
 
       fetch_index++;
@@ -1328,11 +1453,13 @@ class SCore : public Pipeline {
 
   // Functional units
   std::vector<std::shared_ptr<ArithmeticLogicUnit>> alusv_;  // ALU instances
-  std::shared_ptr<BranchUnit> bru_;                          // Branch unit
-  std::shared_ptr<MultiplyUnit> mlu_;                        // Multiply unit
-  std::shared_ptr<DivideUnit> dvu_;                          // Divide unit
-  std::shared_ptr<LoadStoreUnit> lsu_;                       // Load-Store unit
-  std::shared_ptr<RegisterFile> regfile_;                    // Register file
+  std::shared_ptr<BranchUnit> bru_;  // Branch unit (main, backward compat)
+  std::vector<std::shared_ptr<BranchUnit>>
+      brusv_;                              // BRU instances (for multi-lane)
+  std::shared_ptr<MultiplyUnit> mlu_;      // Multiply unit
+  std::shared_ptr<DivideUnit> dvu_;        // Divide unit
+  std::shared_ptr<LoadStoreUnit> lsu_;     // Load-Store unit
+  std::shared_ptr<RegisterFile> regfile_;  // Register file
 
   // Vector extension (RVV)
   std::shared_ptr<RVVCoreInterface> rvv_interface_;  // RVV backend interface
@@ -1343,7 +1470,9 @@ class SCore : public Pipeline {
   // Connections
   std::vector<std::shared_ptr<Wire>> regfile_connections_;
   std::vector<std::shared_ptr<Wire>> alu_wb_connections_;
-  std::shared_ptr<Wire> bru_wb_connection_;
+  std::vector<std::shared_ptr<Wire>>
+      bru_wb_connections_;                   // BRU write connections
+  std::shared_ptr<Wire> bru_wb_connection_;  // First BRU (backward compat)
   std::shared_ptr<Wire> mlu_wb_connection_;
   std::shared_ptr<Wire> dvu_wb_connection_;
   std::shared_ptr<Wire> lsu_wb_connection_;
