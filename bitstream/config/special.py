@@ -22,7 +22,7 @@ class InportConfig(BaseConfigModule):
 
 class PEConfig(BaseConfigModule):
     FIELD_MAP = [
-        ("data_type", 2, lambda x: PEConfig.data_type_map().get(x, x) if x is not None else 0),  # sa_pe_data_type
+        ("data_type", 2, lambda x: PEConfig.data_type_map()[x] if x is not None else 0),  # sa_pe_data_type
         ("index_end", 3),  # sa_pe_transout_last_index in hardware
         ("bias_enable", 1),  # sa_pe_bias_enable (default 0)
     ]
@@ -31,9 +31,7 @@ class PEConfig(BaseConfigModule):
     def data_type_map(cls):
         return {
             "int8": 0,
-            0: 0,
             "fp16": 1,
-            1: 1,
         }
     
     def from_json(self, cfg: dict):

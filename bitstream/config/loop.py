@@ -113,11 +113,8 @@ class LCPEConfig(BaseConfigModule):
         """Map string opcode names to integers. Also accepts integers directly."""
         return {
             "add": 0,
-            0: 0,
             "mul": 1,
-            1: 1,
             "mac": 2,
-            2: 2,
         }
         
     @staticmethod
@@ -125,13 +122,9 @@ class LCPEConfig(BaseConfigModule):
         """Map string inport modes to integers. Also accepts integers directly."""
         return {
             None: 0,
-            0: 0,
             "buffer": 1,
-            1: 1,
             "keep": 2,
-            2: 2,
             "constant": 3,
-            3: 3,
         }
 
     @staticmethod

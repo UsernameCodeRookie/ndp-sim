@@ -136,6 +136,34 @@ class BaseConfigModule(ConfigModule):
 
         raise TypeError(f"Cannot convert value {val} of type {type(val)}")
 
+    def _encode_field_for_dump(self, val, mapper: Callable = None, width: int = None) -> List[tuple[int, int]]:
+        """Encode field value for display in dump, applying mapper to get the actual encoded value.
+        
+        This is different from _encode_field in that it always applies the mapper,
+        showing both the original value and the encoded result separately.
+        """
+        # Import Connect here to avoid circular import
+        from bitstream.index import Connect
+        
+        encoded_val = val
+        if mapper:
+            argc = mapper.__code__.co_argcount
+            # Always apply mapper for encoding display, unless it's already a Connect
+            if argc == 2 and not isinstance(val, Connect):
+                encoded_val = mapper(self, val)
+            elif argc == 1:
+                encoded_val = mapper(val)
+        
+        # Now encode the mapped value
+        if encoded_val is None:
+            return [(0, width if width is not None else 1)]
+        if isinstance(encoded_val, (int, bool)) or hasattr(encoded_val, "__int__"):
+            return [(int(encoded_val), width if width is not None else max(int(encoded_val).bit_length(), 1))]
+        if isinstance(encoded_val, list):
+            return self._encode_list(encoded_val, width)
+
+        raise TypeError(f"Cannot convert value {encoded_val} of type {type(encoded_val)}")
+
     def to_bits(self) -> List[Bit]:
         """Convert fields to a list of Bit objects."""
         bits: List[Bit] = []
@@ -174,11 +202,16 @@ class BaseConfigModule(ConfigModule):
                 name, width, *rest = entry
                 mapper = rest[0] if rest else None
                 val = self.values.get(name, None)
-                encoded_parts = self._encode_field(val, mapper, width)
+                
+                # Display original value (without mapper applied)
+                display_val = str(val)
+                
+                # Encode with mapper applied for the encoded result
+                encoded_parts = self._encode_field_for_dump(val, mapper, width)
 
                 encoded = [
                     bin(value)[2:].zfill(part_width) if part_width <= 64 else hex(value)
                     for value, part_width in encoded_parts
                 ]
-                print(f"{prefix}{name:<30} | value={str(val):<35} | encoded={encoded}")
+                print(f"{prefix}{name:<30} | value={display_val:<35} | encoded={encoded}")
             return True
