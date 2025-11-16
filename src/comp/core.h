@@ -397,7 +397,7 @@ class SCore : public Pipeline {
 
       // Dispatch cycle processes instructions from fetch buffer
       if (!fetch_buffer_.empty()) {
-        uint32_t dispatched = dispatchCycle();
+        uint32_t dispatched = dispatch();
         if (dispatched > 0) {
           TRACE_COMPUTE(current_time, getName(), "STAGE1_DISPATCH",
                         "Dispatched " << dispatched << " instructions, total="
@@ -463,8 +463,8 @@ class SCore : public Pipeline {
    */
   enum class OpType { ALU, BRU, MLU, DVU, LSU };
 
-  void dispatchInstruction(OpType op_type, uint32_t lane, uint32_t operand1,
-                           uint32_t operand2, uint32_t opcode, uint32_t rd) {
+  void issue(OpType op_type, uint32_t lane, uint32_t operand1,
+             uint32_t operand2, uint32_t opcode, uint32_t rd) {
     uint64_t current_time = scheduler_.getCurrentTime();
 
     if (!dispatch_ready_) {
@@ -568,7 +568,7 @@ class SCore : public Pipeline {
    *
    * Allows test code to pre-populate the instruction stream
    */
-  void injectInstruction(uint32_t pc, uint32_t word) {
+  void inject(uint32_t pc, uint32_t word) {
     fetch_buffer_.push_back({pc, word});
     TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "INJECT_INSTRUCTION",
                   "PC=0x" << std::hex << pc << " word=0x" << word
@@ -588,7 +588,7 @@ class SCore : public Pipeline {
    *
    * Returns number of instructions dispatched this cycle
    */
-  uint32_t dispatchCycle() {
+  uint32_t dispatch() {
     uint64_t current_time = scheduler_.getCurrentTime();
 
     // Clear resource usage trackers for this cycle

@@ -43,8 +43,8 @@ TEST_F(SCoreEventDrivenTest, PeriodicTickEvents) {
   core->initialize();
 
   // Dispatch an instruction to ensure something happens
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU, 0, 5, 3,
-                            static_cast<uint32_t>(ALUOp::ADD), 8);
+  core->issue(Architecture::SCore::OpType::ALU, 0, 5, 3,
+              static_cast<uint32_t>(ALUOp::ADD), 8);
 
   // Run for several cycles
   for (int i = 0; i < 10; i++) {
@@ -75,8 +75,8 @@ TEST_F(SCoreEventDrivenTest, PipelineStageAdvancement) {
             << core->getALU(0)->getOperationsExecuted() << "\n";
 
   // Dispatch instruction to ensure pipeline activity
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU, 0, 5, 3,
-                            static_cast<uint32_t>(ALUOp::ADD), 8);
+  core->issue(Architecture::SCore::OpType::ALU, 0, 5, 3,
+              static_cast<uint32_t>(ALUOp::ADD), 8);
 
   std::cout << "After dispatch, ALU executed: "
             << core->getALU(0)->getOperationsExecuted() << "\n";
@@ -120,8 +120,8 @@ TEST_F(SCoreEventDrivenTest, InstructionDispatchViaStages) {
             << "\n";
 
   // Inject instructions
-  core->injectInstruction(0x1000, 0x00310333);  // ALU ADD
-  core->injectInstruction(0x1004, 0x00220333);  // ALU SUB
+  core->inject(0x1000, 0x00310333);  // ALU ADD
+  core->inject(0x1004, 0x00220333);  // ALU SUB
 
   std::cout << "Injected 2 instructions\n";
 
@@ -131,7 +131,7 @@ TEST_F(SCoreEventDrivenTest, InstructionDispatchViaStages) {
             << "\n";
 
   // Try manually calling dispatchCycle to debug
-  uint32_t dispatched = core->dispatchCycle();
+  uint32_t dispatched = core->dispatch();
   std::cout << "Manual dispatchCycle returned: " << dispatched << "\n";
   std::cout << "After manual dispatch: dispatched="
             << core->getInstructionsDispatched() << "\n";
@@ -157,8 +157,8 @@ TEST_F(SCoreEventDrivenTest, MultiCycleALUExecution) {
   core->initialize();
 
   // Directly dispatch ALU instruction
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU, 0, 10, 5,
-                            static_cast<uint32_t>(ALUOp::ADD), 8);
+  core->issue(Architecture::SCore::OpType::ALU, 0, 10, 5,
+              static_cast<uint32_t>(ALUOp::ADD), 8);
 
   uint64_t start_time = scheduler->getCurrentTime();
 
@@ -193,8 +193,8 @@ TEST_F(SCoreEventDrivenTest, EventSchedulingOrder) {
 
   // Dispatch multiple instructions
   for (int i = 0; i < 3; i++) {
-    core->dispatchInstruction(Architecture::SCore::OpType::ALU, i % 2, i, i + 1,
-                              static_cast<uint32_t>(ALUOp::ADD), 10 + i);
+    core->issue(Architecture::SCore::OpType::ALU, i % 2, i, i + 1,
+                static_cast<uint32_t>(ALUOp::ADD), 10 + i);
   }
 
   // Run scheduler and collect timing info
@@ -227,10 +227,10 @@ TEST_F(SCoreEventDrivenTest, ConcurrentALULaneExecution) {
   core->initialize();
 
   // Dispatch to both ALU lanes
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU, 0, 5, 3,
-                            static_cast<uint32_t>(ALUOp::ADD), 8);
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU, 1, 10, 7,
-                            static_cast<uint32_t>(ALUOp::SUB), 9);
+  core->issue(Architecture::SCore::OpType::ALU, 0, 5, 3,
+              static_cast<uint32_t>(ALUOp::ADD), 8);
+  core->issue(Architecture::SCore::OpType::ALU, 1, 10, 7,
+              static_cast<uint32_t>(ALUOp::SUB), 9);
 
   // Run pipeline
   for (int i = 0; i < 50; i++) {
@@ -256,12 +256,12 @@ TEST_F(SCoreEventDrivenTest, HazardDetectionEventDriven) {
 
   // Inject instructions that create RAW hazard
   // Instruction 1: writes to register 5
-  core->injectInstruction(0x1000, 0x00310333);
+  core->inject(0x1000, 0x00310333);
   // Instruction 2: reads from register 5 (should be blocked initially)
-  core->injectInstruction(0x1004, 0x00500333);
+  core->inject(0x1004, 0x00500333);
 
   // Run dispatch cycle
-  uint32_t dispatched = core->dispatchCycle();
+  uint32_t dispatched = core->dispatch();
 
   // At least first instruction should dispatch
   EXPECT_GT(dispatched, 0);
@@ -283,11 +283,11 @@ TEST_F(SCoreEventDrivenTest, InOrderExecutionEnforcement) {
   // Inject multiple instructions
   // First instruction has a hazard condition, should block others
   for (int i = 0; i < 4; i++) {
-    core->injectInstruction(0x1000 + i * 4, 0x00310333);
+    core->inject(0x1000 + i * 4, 0x00310333);
   }
 
   // Single dispatch cycle should respect in-order constraint
-  uint32_t dispatched = core->dispatchCycle();
+  uint32_t dispatched = core->dispatch();
 
   // Should dispatch at least one
   EXPECT_GE(dispatched, 0);
@@ -317,8 +317,8 @@ TEST_F(SCoreEventDrivenTest, MLUResourceConstraint) {
             << core->getMLU()->getResultsOutput() << "\n";
 
   // Dispatch MLU operation
-  core->dispatchInstruction(Architecture::SCore::OpType::MLU, 0, 5, 3,
-                            static_cast<uint32_t>(MultiplyUnit::MulOp::MUL), 8);
+  core->issue(Architecture::SCore::OpType::MLU, 0, 5, 3,
+              static_cast<uint32_t>(MultiplyUnit::MulOp::MUL), 8);
 
   std::cout << "After dispatch: MLU results="
             << core->getMLU()->getResultsOutput() << "\n";
@@ -354,8 +354,8 @@ TEST_F(SCoreEventDrivenTest, PipelineReset) {
   core->initialize();
 
   // Dispatch some instructions
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU, 0, 5, 3,
-                            static_cast<uint32_t>(ALUOp::ADD), 8);
+  core->issue(Architecture::SCore::OpType::ALU, 0, 5, 3,
+              static_cast<uint32_t>(ALUOp::ADD), 8);
 
   uint64_t dispatched_before = core->getInstructionsDispatched();
   EXPECT_GT(dispatched_before, 0);
@@ -415,8 +415,8 @@ TEST_F(SCoreEventDrivenTest, RegisterFileIntegration) {
   EXPECT_EQ(value, 0x12345678);
 
   // Dispatch ALU that uses this register
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU, 0, 0, 0,
-                            static_cast<uint32_t>(ALUOp::ADD), 8);
+  core->issue(Architecture::SCore::OpType::ALU, 0, 0, 0,
+              static_cast<uint32_t>(ALUOp::ADD), 8);
 
   // Run pipeline
   for (int i = 0; i < 50; i++) {
@@ -468,8 +468,8 @@ TEST_F(SCoreEventDrivenTest, PipelineStallHandling) {
   core->initialize();
 
   // Dispatch instruction
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU, 0, 5, 3,
-                            static_cast<uint32_t>(ALUOp::ADD), 8);
+  core->issue(Architecture::SCore::OpType::ALU, 0, 5, 3,
+              static_cast<uint32_t>(ALUOp::ADD), 8);
 
   // Run pipeline for baseline
   for (int i = 0; i < 10; i++) {

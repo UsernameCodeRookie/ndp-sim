@@ -46,11 +46,11 @@ TEST_F(SCoreDispatchTest, FetchBufferInjection) {
   core->initialize();
 
   // Inject instructions into fetch buffer
-  core->injectInstruction(0x1000, 0x00310333);  // Some instruction
-  core->injectInstruction(0x1004, 0x00220333);  // Another instruction
+  core->inject(0x1000, 0x00310333);  // Some instruction
+  core->inject(0x1004, 0x00220333);  // Another instruction
 
   // Dispatch cycle should pull from fetch buffer
-  uint32_t dispatched = core->dispatchCycle();
+  uint32_t dispatched = core->dispatch();
   EXPECT_GT(dispatched, 0);
   // Both instructions should be decoded and potentially dispatched
 }
@@ -116,13 +116,13 @@ TEST_F(SCoreDispatchTest, InOrderDispatchRule) {
   // In a real test, we'd need to craft instructions that would
   // cause a hazard/stall in the middle of the sequence
 
-  core->injectInstruction(0x1000, 0x00000033);  // ALU
-  core->injectInstruction(0x1004, 0x00000033);  // ALU
-  core->injectInstruction(0x1008, 0x00000033);  // ALU
-  core->injectInstruction(0x100C, 0x00000033);  // ALU
+  core->inject(0x1000, 0x00000033);  // ALU
+  core->inject(0x1004, 0x00000033);  // ALU
+  core->inject(0x1008, 0x00000033);  // ALU
+  core->inject(0x100C, 0x00000033);  // ALU
 
   // Dispatch should handle all of them (if no hazards)
-  uint32_t dispatched = core->dispatchCycle();
+  uint32_t dispatched = core->dispatch();
 
   // Verify that dispatch happened
   EXPECT_GT(core->getInstructionsDispatched(), 0);
@@ -247,11 +247,11 @@ TEST_F(SCoreDispatchTest, MultiLaneDispatch) {
   EXPECT_EQ(core->getALUs().size(), 2);
 
   // Inject two ALU instructions
-  core->injectInstruction(0x1000, 0x00310333);
-  core->injectInstruction(0x1004, 0x00220333);
+  core->inject(0x1000, 0x00310333);
+  core->inject(0x1004, 0x00220333);
 
   // Dispatch cycle should attempt to dispatch to both lanes
-  uint32_t dispatched = core->dispatchCycle();
+  uint32_t dispatched = core->dispatch();
 
   // At least one should be attempted
   EXPECT_GT(core->getInstructionsDispatched(), 0);

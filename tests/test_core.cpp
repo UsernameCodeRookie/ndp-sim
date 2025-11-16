@@ -41,12 +41,12 @@ TEST_F(SCoreTest, ALUExecution) {
   core->initialize();
 
   // Dispatch ALU instruction: ADD 5 + 3
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU,
-                            0,  // lane
-                            5,  // operand1
-                            3,  // operand2
-                            static_cast<uint32_t>(ALUOp::ADD),
-                            8  // rd (destination register)
+  core->issue(Architecture::SCore::OpType::ALU,
+              0,  // lane
+              5,  // operand1
+              3,  // operand2
+              static_cast<uint32_t>(ALUOp::ADD),
+              8  // rd (destination register)
   );
 
   EXPECT_EQ(core->getInstructionsDispatched(), 1);
@@ -87,12 +87,12 @@ TEST_F(SCoreTest, DualLaneDispatch) {
   core->initialize();
 
   // Dispatch to lane 0: ADD 2 + 3
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU, 0, 2, 3,
-                            static_cast<uint32_t>(ALUOp::ADD), 1);
+  core->issue(Architecture::SCore::OpType::ALU, 0, 2, 3,
+              static_cast<uint32_t>(ALUOp::ADD), 1);
 
   // Dispatch to lane 1: SUB 10 - 5
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU, 1, 10, 5,
-                            static_cast<uint32_t>(ALUOp::SUB), 2);
+  core->issue(Architecture::SCore::OpType::ALU, 1, 10, 5,
+              static_cast<uint32_t>(ALUOp::SUB), 2);
 
   EXPECT_EQ(core->getInstructionsDispatched(), 2);
 
@@ -111,12 +111,12 @@ TEST_F(SCoreTest, BRUExecution) {
   core->initialize();
 
   // Dispatch BRU instruction: JAL to 0x1000
-  core->dispatchInstruction(Architecture::SCore::OpType::BRU,
-                            0,       // unused lane for BRU
-                            0x1000,  // target address
-                            0,       // unused
-                            static_cast<uint32_t>(BruOp::JAL),
-                            1  // rd (link register)
+  core->issue(Architecture::SCore::OpType::BRU,
+              0,       // unused lane for BRU
+              0x1000,  // target address
+              0,       // unused
+              static_cast<uint32_t>(BruOp::JAL),
+              1  // rd (link register)
   );
 
   EXPECT_EQ(core->getInstructionsDispatched(), 1);
@@ -141,12 +141,12 @@ TEST_F(SCoreTest, MLUExecution) {
   core->initialize();
 
   // Dispatch MLU instruction: MUL 7 * 8
-  core->dispatchInstruction(Architecture::SCore::OpType::MLU,
-                            0,  // unused
-                            7,  // operand1
-                            8,  // operand2
-                            static_cast<uint32_t>(MultiplyUnit::MulOp::MUL),
-                            10  // rd
+  core->issue(Architecture::SCore::OpType::MLU,
+              0,  // unused
+              7,  // operand1
+              8,  // operand2
+              static_cast<uint32_t>(MultiplyUnit::MulOp::MUL),
+              10  // rd
   );
 
   EXPECT_EQ(core->getInstructionsDispatched(), 1);
@@ -171,11 +171,11 @@ TEST_F(SCoreTest, StatisticsReporting) {
   core->initialize();
 
   // Dispatch a few instructions
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU, 0, 2, 3,
-                            static_cast<uint32_t>(ALUOp::ADD), 1);
+  core->issue(Architecture::SCore::OpType::ALU, 0, 2, 3,
+              static_cast<uint32_t>(ALUOp::ADD), 1);
 
-  core->dispatchInstruction(Architecture::SCore::OpType::BRU, 0, 0x2000, 0,
-                            static_cast<uint32_t>(BruOp::JAL), 2);
+  core->issue(Architecture::SCore::OpType::BRU, 0, 0x2000, 0,
+              static_cast<uint32_t>(BruOp::JAL), 2);
 
   // Test that statistics are accessible
   EXPECT_EQ(core->getInstructionsDispatched(), 2);
@@ -195,8 +195,8 @@ TEST_F(SCoreTest, CoreReset) {
   core->initialize();
 
   // Dispatch instruction
-  core->dispatchInstruction(Architecture::SCore::OpType::ALU, 0, 5, 3,
-                            static_cast<uint32_t>(ALUOp::ADD), 1);
+  core->issue(Architecture::SCore::OpType::ALU, 0, 5, 3,
+              static_cast<uint32_t>(ALUOp::ADD), 1);
 
   uint64_t dispatched_before = core->getInstructionsDispatched();
   EXPECT_GT(dispatched_before, 0);
