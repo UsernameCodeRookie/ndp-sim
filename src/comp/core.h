@@ -184,6 +184,22 @@ class SCore : public Pipeline {
     ibuffer_ =
         std::make_shared<Buffer>(name + "_IBuffer", scheduler, ibuf_params);
 
+    // Create data buffer (d-buffer) - predecessor to L1 d-cache
+    BufferParameters dbuf_params(
+        4096,  // depth: 4096 data elements (32KB for 32-bit words)
+        32,    // data_width: 32 bits per element
+        4,     // num_read_ports: 4 read ports for LSU
+        4,     // num_write_ports: 4 write ports for LSU
+        BufferMode::RANDOM_ACCESS,  // mode: random access for data
+        false,                      // enable_bypass
+        true,                       // enable_overflow_check
+        true,                       // enable_underflow_check
+        1,                          // read_latency: 1 cycle for data access
+        1                           // write_latency: 1 cycle for data write
+    );
+    dbuffer_ =
+        std::make_shared<Buffer>(name + "_DBuffer", scheduler, dbuf_params);
+
     // Create connections
     createConnections();
 
@@ -1334,25 +1350,14 @@ class SCore : public Pipeline {
    * @param addr Memory address
    * @param data Data value to write
    */
-  void loadData(uint32_t addr, uint32_t data) {
-    // Expand data memory if needed
-    if (addr / 4 >= data_memory_.size()) {
-      data_memory_.resize(addr / 4 + 1, 0);
-    }
-    data_memory_[addr / 4] = data;
-  }
+  void loadData(uint32_t addr, uint32_t data) { dbuffer_->store(addr, data); }
 
   /**
    * @brief Read data from data memory
    * @param addr Memory address
    * @return Data value at address
    */
-  uint32_t readData(uint32_t addr) const {
-    if (addr / 4 < data_memory_.size()) {
-      return data_memory_[addr / 4];
-    }
-    return 0;
-  }
+  uint32_t readData(uint32_t addr) const { return dbuffer_->load(addr); }
 
   /**
    * @brief Get instruction from instruction buffer
@@ -1466,6 +1471,7 @@ class SCore : public Pipeline {
 
   // Memory components
   std::shared_ptr<Buffer> ibuffer_;  // Instruction buffer (i-cache predecessor)
+  std::shared_ptr<Buffer> dbuffer_;  // Data buffer (d-cache predecessor)
 
   // Connections
   std::vector<std::shared_ptr<Wire>> regfile_connections_;
@@ -1486,9 +1492,6 @@ class SCore : public Pipeline {
   bool mlu_busy_;
   bool dvu_busy_;
   bool lsu_busy_;
-
-  // Data memory - for LSU operations (separate address space)
-  std::vector<uint32_t> data_memory_;
 
   // Control state
   uint32_t pc_;        // Program counter
