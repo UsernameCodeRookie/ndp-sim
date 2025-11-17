@@ -149,6 +149,10 @@ class MultiplyUnit : public Pipeline {
     }
 
     // Result output port is inherited from PipelineComponent as "out"
+
+    // Create ports for RegisterFileWire
+    addPort("rd_out", Architecture::PortDirection::OUTPUT);
+    addPort("data_out", Architecture::PortDirection::OUTPUT);
   }
 
   void setupPipelineStages() {
@@ -200,6 +204,18 @@ class MultiplyUnit : public Pipeline {
                                  << " op=" << static_cast<int>(mlu_data->op)
                                  << " result=0x" << std::hex << result
                                  << std::dec);
+
+        // Output rd and result to RegisterFileWire ports
+        if (mlu_data->rd_addr != 0) {
+          auto rd_port = getPort("rd_out");
+          auto data_port = getPort("data_out");
+          if (rd_port && data_port) {
+            rd_port->setData(std::make_shared<Architecture::IntDataPacket>(
+                mlu_data->rd_addr));
+            data_port->setData(
+                std::make_shared<Architecture::IntDataPacket>(result));
+          }
+        }
       }
       return data;
       // NOTE: Pipeline::tick() will automatically write this data to out port

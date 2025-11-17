@@ -12,6 +12,7 @@
 #include "../../buffer.h"
 #include "../../conn/credit.h"
 #include "../../conn/ready_valid.h"
+#include "../../conn/regf_wire.h"
 #include "../../conn/wire.h"
 #include "../../packet.h"
 #include "../../pipeline.h"
@@ -150,10 +151,11 @@ class SCore : public Pipeline {
         csr_(),
         branch_taken_(false),
         dispatch_ready_(true),
-        scoreboard_(config.num_registers, false),
         mlu_busy_(false),
         dvu_busy_(false),
-        lsu_busy_(false) {
+        lsu_busy_(false),
+        dispatch_count_(0),
+        cached_regfile_scoreboard_comb_(0) {
     // Initialize all functional units
     initializeFunctionalUnits();
 
@@ -165,8 +167,8 @@ class SCore : public Pipeline {
         config_.use_regfile_forwarding,
         false  // use_debug_module
     );
-    regfile_ =
-        std::make_shared<RegisterFile>("RegisterFile", scheduler, rf_params);
+    regfile_ = std::make_shared<RegisterFile>(name + "_RegisterFile", scheduler,
+                                              rf_params);
 
     // Create instruction buffer (i-buffer) based on Buffer class
     BufferParameters ibuf_params(
@@ -279,21 +281,22 @@ class SCore : public Pipeline {
       regfile_connections_.push_back(conn);
     }
 
-    // ALU result write ports -> Register file (wire connection)
+    // ALU result write ports -> Register file (RegisterFileWire connection)
+    // RegisterFileWire connects ALU rd/value ports to RF write ports
     for (uint32_t i = 0; i < config_.num_instruction_lanes; i++) {
       std::string conn_name = name_ + "_ALU_WB_" + std::to_string(i);
-      auto conn =
-          std::make_shared<Wire>(conn_name, scheduler_, config_.regfile_period);
+      auto conn = std::make_shared<RegisterFileWire>(conn_name, scheduler_,
+                                                     config_.regfile_period);
       conn->setLatency(config_.connection_latency);
       alu_wb_connections_.push_back(conn);
     }
 
-    // BRU result write ports -> Register file (one per BRU unit)
+    // BRU result write ports -> Register file (one per BRU unit, using
+    // RegisterFileWire)
     for (uint32_t i = 0; i < config_.num_bru_units; i++) {
       std::string conn_name = name_ + "_BRU_WB_" + std::to_string(i);
-      auto conn =
-          std::make_shared<Wire>(conn_name, scheduler_, config_.regfile_period);
-      conn->setLatency(config_.connection_latency);
+      auto conn = std::make_shared<RegisterFileWire>(conn_name, scheduler_,
+                                                     config_.regfile_period);
       bru_wb_connections_.push_back(conn);
     }
     // Keep first one for backward compatibility
@@ -301,64 +304,68 @@ class SCore : public Pipeline {
       bru_wb_connection_ = bru_wb_connections_[0];
     }
 
-    // MLU result write port -> Register file
+    // MLU result write port -> Register file (using RegisterFileWire)
     {
       std::string conn_name = name_ + "_MLU_WB";
-      auto conn =
-          std::make_shared<Wire>(conn_name, scheduler_, config_.regfile_period);
-      conn->setLatency(config_.connection_latency);
-      mlu_wb_connection_ = conn;
+      mlu_wb_connection_ = std::make_shared<RegisterFileWire>(
+          conn_name, scheduler_, config_.regfile_period);
     }
 
-    // DVU result write port -> Register file
+    // DVU result write port -> Register file (using RegisterFileWire)
     {
       std::string conn_name = name_ + "_DVU_WB";
-      auto conn =
-          std::make_shared<Wire>(conn_name, scheduler_, config_.regfile_period);
-      conn->setLatency(config_.connection_latency);
-      dvu_wb_connection_ = conn;
+      dvu_wb_connection_ = std::make_shared<RegisterFileWire>(
+          conn_name, scheduler_, config_.regfile_period);
     }
 
-    // LSU result write port -> Register file
+    // LSU result write port -> Register file (using RegisterFileWire)
     {
       std::string conn_name = name_ + "_LSU_WB";
-      auto conn =
-          std::make_shared<Wire>(conn_name, scheduler_, config_.regfile_period);
-      conn->setLatency(config_.connection_latency);
-      lsu_wb_connection_ = conn;
+      lsu_wb_connection_ = std::make_shared<RegisterFileWire>(
+          conn_name, scheduler_, config_.regfile_period);
     }
 
     // Connect functional unit outputs to wire connections
-    // This enables data buffering through wire instead of direct port access
+    // All functional units use the same port naming: rd_out and data_out
+    // Bind to register file write ports based on unit type and index
+
+    // ALU: Connect rd/value ports to RegisterFileWire (one per lane)
     for (uint32_t i = 0; i < alusv_.size() && i < alu_wb_connections_.size();
          i++) {
-      auto alu = alusv_[i];
-      auto out_port = alu->getPort("out");
-      if (out_port && alu_wb_connections_[i]) {
-        alu_wb_connections_[i]->addSourcePort(out_port);
-      }
+      auto regf_wire =
+          std::dynamic_pointer_cast<RegisterFileWire>(alu_wb_connections_[i]);
+      bindRegisterFileWire(regf_wire, alusv_[i], i);
     }
 
-    if (bru_) {
-      auto out_port = bru_->getPort("out");
-      if (out_port && bru_wb_connection_) {
-        bru_wb_connection_->addSourcePort(out_port);
-      }
+    // BRU: Connect rd/data ports to RegisterFileWire (one per BRU unit)
+    for (uint32_t i = 0; i < brusv_.size() && i < bru_wb_connections_.size();
+         i++) {
+      uint32_t port_idx = alusv_.size() + i;
+      bindRegisterFileWire(bru_wb_connections_[i], brusv_[i], port_idx);
     }
 
+    // MLU: Connect rd/data ports to RegisterFileWire
     if (mlu_) {
-      auto out_port = mlu_->getPort("out");
-      if (out_port && mlu_wb_connection_) {
-        mlu_wb_connection_->addSourcePort(out_port);
-      }
+      uint32_t port_idx = alusv_.size() + brusv_.size();
+      auto regf_wire =
+          std::dynamic_pointer_cast<RegisterFileWire>(mlu_wb_connection_);
+      bindRegisterFileWire(regf_wire, mlu_, port_idx);
     }
 
-    // Connect LSU response output to writeback wire
+    // DVU: Connect rd/data ports to RegisterFileWire
+    if (dvu_) {
+      uint32_t port_idx = alusv_.size() + brusv_.size() + 1;
+      auto regf_wire =
+          std::dynamic_pointer_cast<RegisterFileWire>(dvu_wb_connection_);
+      bindRegisterFileWire(regf_wire, dvu_, port_idx);
+    }
+
+    // LSU: Connect rd/data ports to RegisterFileWire
     if (lsu_) {
-      auto resp_port = lsu_->getPort("resp_out");
-      if (resp_port && lsu_wb_connection_) {
-        lsu_wb_connection_->addSourcePort(resp_port);
-      }
+      uint32_t port_idx = alusv_.size() + brusv_.size() + 2;
+      auto regf_wire =
+          std::dynamic_pointer_cast<RegisterFileWire>(lsu_wb_connection_);
+      bindRegisterFileWire(regf_wire, lsu_, port_idx);
     }
   }
 
@@ -428,7 +435,8 @@ class SCore : public Pipeline {
     return regfile_connections_;
   }
 
-  const std::vector<std::shared_ptr<Wire>>& getALUWBConnections() const {
+  const std::vector<std::shared_ptr<TickingConnection>>& getALUWBConnections()
+      const {
     return alu_wb_connections_;
   }
 
@@ -469,6 +477,9 @@ class SCore : public Pipeline {
     mlu_->start(config_.start_time);
     dvu_->start(config_.start_time);
     lsu_->start(config_.start_time);
+
+    // Start register file (event-driven)
+    regfile_->start(config_.start_time);
 
     // Start all connections
     for (auto& conn : regfile_connections_) {
@@ -587,164 +598,104 @@ class SCore : public Pipeline {
 
     // Stage 2: Execute/Writeback
     // Monitor execution unit completions and update statistics
-    // Poll results from wire connections (which buffer FU outputs)
+    // ALU writeback is now handled automatically by RegisterFileWire
+    // connections that directly write to the register file's input ports
     setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
       uint64_t current_time = scheduler_.getCurrentTime();
 
-      // Poll ALL ALU writeback wires every cycle
-      // NOTE: Read from Wire's buffer instead of source port directly
-      // This uses the Wire's internal buffering to prevent data loss
-      std::shared_ptr<Architecture::DataPacket> wb_result = nullptr;
-      for (uint32_t i = 0; i < alu_wb_connections_.size(); i++) {
-        auto conn = alu_wb_connections_[i];
-        if (conn) {
-          // Read from Wire's current buffer instead of source port
-          if (conn->hasCurrentData()) {
-            auto result = conn->getCurrentData();
+      // Instruction retirement is now fully delegated to RegisterFile's
+      // scoreboard mechanism. RegisterFileWire automatically handles writeback
+      // to RF and scoreboard updates.
+      //
+      // We monitor scoreboard_comb and scoreboard_regd ports to track:
+      // - Which registers have pending writes (combinational updates)
+      // - Which registers had writes retire (registered updates)
 
-            auto alu_result =
-                std::dynamic_pointer_cast<Architecture::ALUResultPacket>(
-                    result);
-            if (alu_result) {
-              // Check if we've already processed this rd value
-              uint64_t result_cycle = result->timestamp;
-              if (last_alu_rd_cycles_[i] != result_cycle) {
-                // New result, process it
-                if (alu_result->rd != 0) {
-                  regfile_->writeRegister(alu_result->rd, alu_result->value);
-                  TRACE_COMPUTE(current_time, getName(), "ALU_OUTPUT",
-                                "ALU" << i << " rd=" << alu_result->rd
-                                      << " value=" << alu_result->value);
-                  TRACE_COMPUTE(current_time, getName(), "REGFILE_WRITE",
-                                "ALU wrote x" << alu_result->rd << " = "
-                                              << alu_result->value);
-                  retireInstruction(alu_result->rd);
+      TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
+                    "Writeback stage executing");
 
-                  TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
-                                "Retired ALU result="
-                                    << alu_result->value << " to x"
-                                    << alu_result->rd << " from ALU" << i);
-                  last_alu_rd_cycles_[i] = result_cycle;
-
-                  // Clear the wire buffer after successful read
-                  conn->clearCurrentData();
-                }
-                // Track retired instruction (CSR minstret incremented in Stage
-                // 2)
-                wb_result = result;  // Keep last result
-              }
-            }
-          }
+      // Read combinational scoreboard (current pending writes)
+      auto scoreboard_comb_port = regfile_->getPort("scoreboard_comb");
+      uint32_t scoreboard_comb = 0;
+      bool has_comb_data = false;
+      if (scoreboard_comb_port && scoreboard_comb_port->hasData()) {
+        has_comb_data = true;
+        auto comb_packet =
+            std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+                scoreboard_comb_port->read());
+        if (comb_packet) {
+          scoreboard_comb = static_cast<uint32_t>(comb_packet->value);
         }
       }
 
-      // Poll BRU output from wire
-      if (bru_wb_connection_ && !bru_wb_connection_->getSourcePorts().empty()) {
-        auto src_port = bru_wb_connection_->getSourcePorts()[0];
-        if (src_port && src_port->hasData()) {
-          auto result = src_port->read();
-          auto bru_result =
-              std::dynamic_pointer_cast<Architecture::BruResultPacket>(result);
-          if (bru_result && bru_result->link_valid && bru_result->rd != 0) {
-            // For JAL/JALR, write back the link address
-            regfile_->writeRegister(bru_result->rd, bru_result->link_data);
-            TRACE_COMPUTE(current_time, getName(), "REGFILE_WRITE",
-                          "BRU wrote x" << bru_result->rd << " = "
-                                        << bru_result->link_data);
-            retireInstruction(bru_result->rd);
-            csr_.incrementInstret(1);
-            wb_result = result;
-          }
+      // Read registered scoreboard (previous cycle's pending writes)
+      auto scoreboard_regd_port = regfile_->getPort("scoreboard_regd");
+      uint32_t scoreboard_regd = 0;
+      bool has_regd_data = false;
+      if (scoreboard_regd_port && scoreboard_regd_port->hasData()) {
+        has_regd_data = true;
+        auto regd_packet =
+            std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+                scoreboard_regd_port->read());
+        if (regd_packet) {
+          scoreboard_regd = static_cast<uint32_t>(regd_packet->value);
         }
       }
 
-      // Poll MLU output from wire (using Wire's currentData buffer like ALU)
-      if (mlu_wb_connection_) {
-        if (mlu_wb_connection_->hasCurrentData()) {
-          auto result = mlu_wb_connection_->getCurrentData();
+      std::cerr << "[Stage2] Time " << current_time
+                << ": has_comb=" << has_comb_data << " comb=0x" << std::hex
+                << scoreboard_comb << " has_regd=" << std::dec << has_regd_data
+                << " regd=0x" << std::hex << scoreboard_regd << std::dec
+                << std::endl;
 
-          // Try casting to MluData first (from Pipeline output)
-          auto mlu_data =
-              std::dynamic_pointer_cast<MultiplyUnit::MluData>(result);
-          if (mlu_data && mlu_data->rd_addr != 0) {
-            regfile_->writeRegister(mlu_data->rd_addr, mlu_data->result);
-            TRACE_COMPUTE(current_time, getName(), "REGFILE_WRITE",
-                          "MLU wrote x" << mlu_data->rd_addr << " = "
-                                        << mlu_data->result);
-            retireInstruction(mlu_data->rd_addr);
-            TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
-                          "Retired MLU result=" << mlu_data->result << " to x"
-                                                << mlu_data->rd_addr);
-            csr_.incrementInstret(1);
-            wb_result = result;
-
-            // Clear the wire buffer after successful read
-            mlu_wb_connection_->clearCurrentData();
-          } else {
-            // Try casting to MLUResultPacket (legacy/fallback)
-            auto mlu_result =
-                std::dynamic_pointer_cast<Architecture::MLUResultPacket>(
-                    result);
-            if (mlu_result && mlu_result->rd != 0) {
-              regfile_->writeRegister(mlu_result->rd, mlu_result->value);
-              TRACE_COMPUTE(current_time, getName(), "REGFILE_WRITE",
-                            "MLU wrote x" << mlu_result->rd << " = "
-                                          << mlu_result->value);
-              retireInstruction(mlu_result->rd);
-              TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
-                            "Retired MLU result=" << mlu_result->value
-                                                  << " to x" << mlu_result->rd);
-              csr_.incrementInstret(1);
-              wb_result = result;
-
-              // Clear the wire buffer after successful read
-              mlu_wb_connection_->clearCurrentData();
-            }
-          }
+      // Sync dispatch_ctrl_ scoreboard with RegisterFile's actual scoreboard
+      // Following golden reference (Coral NPU):
+      // - dispatch_ctrl_.scoreboard tracks registers that dispatch has marked
+      // - RegisterFile.scoreboard_comb tracks which actually have data arriving
+      // - Clear dispatch_ctrl_ when RegisterFile clears (data has arrived)
+      //
+      // The key insight: if RegisterFile says a register is NOT pending
+      // (cleared), then dispatch_ctrl_ should also clear it (data has arrived).
+      // This keeps dispatch_ctrl_ in sync with actual data availability.
+      uint32_t regfile_not_pending = ~scoreboard_comb;
+      for (uint32_t i = 1; i < 32; ++i) {
+        uint32_t bit_mask = (1u << i);
+        if (regfile_not_pending & bit_mask) {
+          // RegisterFile says this register is NOT pending
+          // Clear dispatch_ctrl_ so dispatch knows data is available
+          dispatch_ctrl_.retireRegister(i);
         }
       }
 
-      // Poll LSU response from writeback wire
-      // LSU handles both load (needs writeback) and store (no writeback)
-      // operations
-      if (lsu_wb_connection_) {
-        if (lsu_wb_connection_->hasCurrentData()) {
-          auto result = lsu_wb_connection_->getCurrentData();
-          auto lsu_response =
-              std::dynamic_pointer_cast<MemoryResponsePacket>(result);
-          if (lsu_response) {
-            // For LOAD operations (rd != 0), write back the loaded data
-            // For STORE operations (rd == 0), just retire the instruction
-            // NOTE: We don't have rd info in MemoryResponsePacket currently,
-            // so we always count it as an instruction retirement
-            TRACE_COMPUTE(
-                current_time, getName(), "LSU_RESPONSE",
-                "LSU resp req_id=" << lsu_response->request_id
-                                   << " addr=" << lsu_response->address
-                                   << " data=" << lsu_response->data);
-
-            csr_.incrementInstret(1);
-            wb_result = result;
-
-            // Clear the wire buffer after successful read
-            lsu_wb_connection_->clearCurrentData();
-          }
-        }
-      }
-
-      // If we found an ALU result, return it (keeps Stage 2 active)
-      // Otherwise return the data from Stage 1 (if any)
-      // This ensures Stage 2 is always called even when dispatch is stalled
-
-      // ===== CSR and Status Register Updates (per-cycle) =====
-      // Track instruction retirement - count completion events directly
+      // Count retired instructions: those that were in scoreboard_regd last
+      // cycle but are no longer in scoreboard_comb this cycle
       uint32_t retired_count = 0;
+      uint32_t retired_mask = scoreboard_regd & ~scoreboard_comb;
+      for (uint32_t i = 1; i < 32; ++i) {
+        if (retired_mask & (1u << i)) {
+          retired_count++;
+        }
+      }
 
-      TRACE_COMPUTE(
-          current_time, getName(), "CSR_CYCLE_UPDATE",
-          "mcycle=" << csr_.getMcycle() << " minstret=" << csr_.getMinstret());
+      if (retired_count > 0) {
+        TRACE_COMPUTE(current_time, getName(), "INSTRET_RETIRE",
+                      "Retired " << retired_count << " instructions (mask=0x"
+                                 << std::hex << retired_mask << std::dec
+                                 << ")");
+        csr_.incrementInstret(retired_count);
+      }
 
-      return wb_result ? wb_result : data;
+      TRACE_COMPUTE(current_time, getName(), "SCOREBOARD_UPDATE",
+                    "comb=0x" << std::hex << scoreboard_comb << " regd=0x"
+                              << scoreboard_regd << " retired=" << std::dec
+                              << retired_count);
+
+      // Cache RegisterFile's scoreboard for dispatch to use next cycle
+      // This is necessary because dispatch runs before Stage2 updates the
+      // scoreboard
+      cached_regfile_scoreboard_comb_ = scoreboard_comb;
+
+      return data;
     });
   }
 
@@ -863,6 +814,7 @@ class SCore : public Pipeline {
     regfile_->reset();
 
     csr_.reset();
+    dispatch_count_ = 0;  // Reset dispatch counter
   }
 
   /**
@@ -891,24 +843,24 @@ class SCore : public Pipeline {
       return;
     }
 
-    // Tracked via CSR mcycle    // Delegate to helper methods to reduce
-    // duplication
+    // Delegate to helper methods to reduce duplication
+    bool dispatch_ok = false;
     switch (op_type) {
       case OpType::ALU:
-        issueALU(lane, operand1, operand2, opcode, rd);
+        dispatch_ok = issueALU(lane, operand1, operand2, opcode, rd);
         TRACE_COMPUTE(current_time, getName(), "DISPATCH_ALU",
                       "lane=" << lane << " rd=" << rd << " op1=" << operand1
                               << " op2=" << operand2);
         break;
 
       case OpType::BRU:
-        issueBRU(operand1, opcode, 0, 0, rd);
+        dispatch_ok = issueBRU(operand1, opcode, 0, 0, rd);
         TRACE_COMPUTE(current_time, getName(), "DISPATCH_BRU",
                       "rd=" << rd << " operand=" << operand1);
         break;
 
       case OpType::MLU:
-        issueMLU(
+        dispatch_ok = issueMLU(
             rd, opcode,
             static_cast<int64_t>(operand1) * static_cast<int64_t>(operand2));
         TRACE_COMPUTE(
@@ -917,18 +869,24 @@ class SCore : public Pipeline {
         break;
 
       case OpType::DVU:
-        issueDVU(rd, opcode, static_cast<int32_t>(operand1),
-                 static_cast<int32_t>(operand2));
+        dispatch_ok = issueDVU(rd, opcode, static_cast<int32_t>(operand1),
+                               static_cast<int32_t>(operand2));
         TRACE_COMPUTE(
             current_time, getName(), "DISPATCH_DVU",
             "rd=" << rd << " op1=" << operand1 << " op2=" << operand2);
         break;
 
       case OpType::LSU:
-        issueLSU(opcode, operand1, static_cast<int32_t>(operand2));
+        dispatch_ok =
+            issueLSU(opcode, operand1, static_cast<int32_t>(operand2));
         TRACE_COMPUTE(current_time, getName(), "DISPATCH_LSU",
                       "addr=" << operand1 << " data=" << operand2);
         break;
+    }
+
+    // Increment dispatch counter if dispatch was successful
+    if (dispatch_ok) {
+      dispatch_count_++;
     }
   }
 
@@ -959,6 +917,12 @@ class SCore : public Pipeline {
    */
   uint32_t dispatch() {
     uint64_t current_time = scheduler_.getCurrentTime();
+
+    // Use RegisterFile's actual scoreboard from previous cycle (cached value)
+    // This tells us which registers have data actually arriving (not just
+    // dispatched) We use the cached value because RegisterFile updates it in
+    // Stage2 (after dispatch runs)
+    uint32_t regfile_scoreboard_comb = cached_regfile_scoreboard_comb_;
 
     // Clear resource usage trackers for this cycle
     dispatch_ctrl_.clearResourceTrackers();
@@ -1028,6 +992,7 @@ class SCore : public Pipeline {
                           << batch_dispatched
                           << " vector instructions dispatched, remaining="
                           << fetch_buffer_.size());
+        dispatch_count_ += batch_dispatched;
         return batch_dispatched;
       }
     }
@@ -1049,7 +1014,7 @@ class SCore : public Pipeline {
       }
 
       // In-order rule: if this instruction couldn't dispatch, stop
-      if (!canDispatch(inst, lane)) {
+      if (!canDispatch(inst, lane, regfile_scoreboard_comb)) {
         TRACE_COMPUTE(current_time, getName(), "DISPATCH_BLOCKED",
                       "Cannot dispatch at lane=" << lane << ", rd=" << inst.rd);
         break;
@@ -1068,11 +1033,11 @@ class SCore : public Pipeline {
       TRACE_COMPUTE(current_time, getName(), "DISPATCH_SUCCESS",
                     "Dispatched to lane=" << lane << ", rd=" << inst.rd);
 
-      // Update scoreboard with destination register
-      dispatch_ctrl_.updateScoreboard(inst.rd);
+      // Update register file scoreboard to mark destination as pending write
       if (inst.rd != 0) {  // Register 0 is hardwired to 0
-        scoreboard_[inst.rd] = true;
+        regfile_->setScoreboard(inst.rd);
       }
+      dispatch_ctrl_.updateScoreboard(inst.rd);
 
       // Mark resource busy if needed
       dispatch_ctrl_.setResourceBusy(inst);
@@ -1131,16 +1096,42 @@ class SCore : public Pipeline {
                                   << fetch_buffer_.size());
     }
 
+    // Track total dispatched instructions
+    dispatch_count_ += dispatched_count;
+
     return dispatched_count;
   }
 
   /**
    * @brief Check if instruction can be dispatched
    *
-   * Implements hazard detection and resource constraints
+   * Implements hazard detection and resource constraints.
+   *
+   * Following golden reference (Coral NPU):
+   * - dispatch_ctrl maintains its own scoreboard of what dispatch has marked
+   * - But checks against RegisterFile.scoreboard_comb to see what's actually
+   * ready
+   * - This allows dispatch to see when data actually arrives, not just when
+   * writes dispatch
    */
-  bool canDispatch(const DecodedInstruction& inst, uint32_t lane) {
+  bool canDispatch(const DecodedInstruction& inst, uint32_t lane,
+                   uint32_t regfile_scoreboard_comb) {
     bool result = dispatch_ctrl_.canDispatch(inst, lane);
+
+    // Additionally check against RegisterFile's actual scoreboard
+    // If RegisterFile says register is pending, block dispatch
+    // Read directly from RegisterFile's scoreboard array for immediate updates
+    if (result && inst.rs1 != 0) {
+      if (regfile_->isScoreboardSet(inst.rs1)) {
+        result = false;
+      }
+    }
+    if (result && inst.rs2 != 0) {
+      if (regfile_->isScoreboardSet(inst.rs2)) {
+        result = false;
+      }
+    }
+
     uint64_t current_time = scheduler_.getCurrentTime();
 
     // Debug: Print reason if dispatch is blocked
@@ -1152,15 +1143,19 @@ class SCore : public Pipeline {
           (inst.rs1 != 0 && dispatch_ctrl_.getScoreboard()[inst.rs1]);
       bool raw_rs2 =
           (inst.rs2 != 0 && dispatch_ctrl_.getScoreboard()[inst.rs2]);
+      bool rf_pending_rs1 =
+          (inst.rs1 != 0 && regfile_->isScoreboardSet(inst.rs1));
+      bool rf_pending_rs2 =
+          (inst.rs2 != 0 && regfile_->isScoreboardSet(inst.rs2));
       bool resource_conflict = false;
 
-      TRACE_COMPUTE(
-          current_time, getName(), "DISPATCH_FAIL_REASON",
-          "rd=" << inst.rd << " lane=" << lane << " special=" << is_special
-                << " raw_rs1[" << inst.rs1 << "]=" << raw_rs1 << " raw_rs2["
-                << inst.rs2 << "]=" << raw_rs2
-                << " rs1_val=" << dispatch_ctrl_.getScoreboard()[inst.rs1]
-                << " rs2_val=" << dispatch_ctrl_.getScoreboard()[inst.rs2]);
+      TRACE_COMPUTE(current_time, getName(), "DISPATCH_FAIL_REASON",
+                    "rd=" << inst.rd << " lane=" << lane
+                          << " special=" << is_special << " dispatch_raw_rs1["
+                          << inst.rs1 << "]=" << raw_rs1 << " dispatch_raw_rs2["
+                          << inst.rs2 << "]=" << raw_rs2
+                          << " rf_pending_rs1=" << rf_pending_rs1
+                          << " rf_pending_rs2=" << rf_pending_rs2);
     }
 
     return result;
@@ -1333,6 +1328,46 @@ class SCore : public Pipeline {
   // ============ Private Helper Method Implementations ============
 
   /**
+   * @brief Helper: Bind a RegisterFileWire between a functional unit and
+   * register file
+   * @param regf_wire The RegisterFileWire connection to bind
+   * @param fu_unit The functional unit (must have rd_out and data_out ports)
+   * @param port_idx The register file write port index to bind to
+   */
+  void bindRegisterFileWire(std::shared_ptr<RegisterFileWire> regf_wire,
+                            std::shared_ptr<Component> fu_unit,
+                            uint32_t port_idx) {
+    if (!regf_wire || !fu_unit) {
+      return;
+    }
+
+    // Bind source side (FU outputs: rd_out and data_out)
+    auto rd_port = fu_unit->getPort("rd_out");
+    auto data_port = fu_unit->getPort("data_out");
+
+    if (rd_port && data_port) {
+      regf_wire->bindSrcRdPort(rd_port);
+      regf_wire->bindSrcValuePort(data_port);
+    }
+
+    // Bind destination side (Register file inputs)
+    auto rf_addr_port =
+        regfile_->getPort("write_addr_" + std::to_string(port_idx));
+    auto rf_data_port =
+        regfile_->getPort("write_data_" + std::to_string(port_idx));
+    auto rf_mask_port =
+        regfile_->getPort("write_mask_" + std::to_string(port_idx));
+
+    if (rf_addr_port && rf_data_port) {
+      regf_wire->bindDstAddrPort(rf_addr_port);
+      regf_wire->bindDstDataPort(rf_data_port);
+      if (rf_mask_port) {
+        regf_wire->bindDstMaskPort(rf_mask_port);
+      }
+    }
+  }
+
+  /**
    * @brief Helper: Write ALU command to functional unit
    * @private
    */
@@ -1446,16 +1481,6 @@ class SCore : public Pipeline {
   }
 
   /**
-   * @brief Clear scoreboard after instruction retirement
-   */
-  void retireInstruction(uint32_t rd) {
-    dispatch_ctrl_.retireRegister(rd);
-    if (rd != 0 && rd < scoreboard_.size()) {
-      scoreboard_[rd] = false;
-    }
-  }
-
-  /**
    * @brief Get register value
    */
   uint32_t readRegister(uint32_t addr) {
@@ -1565,7 +1590,7 @@ class SCore : public Pipeline {
    * @brief Get statistics
    */
   uint64_t getInstructionsDispatched() const {
-    return csr_.getMcycle();  // Use CSR mcycle counter
+    return dispatch_count_;  // Return actual instruction count dispatched
   }
 
   uint64_t getInstructionsRetired() const {
@@ -1655,23 +1680,31 @@ class SCore : public Pipeline {
 
   // Connections
   std::vector<std::shared_ptr<Wire>> regfile_connections_;
-  std::vector<std::shared_ptr<Wire>> alu_wb_connections_;
-  std::vector<std::shared_ptr<Wire>>
-      bru_wb_connections_;                   // BRU write connections
-  std::shared_ptr<Wire> bru_wb_connection_;  // First BRU (backward compat)
-  std::shared_ptr<Wire> mlu_wb_connection_;
-  std::shared_ptr<Wire> dvu_wb_connection_;
-  std::shared_ptr<Wire> lsu_wb_connection_;
+  std::vector<std::shared_ptr<TickingConnection>> alu_wb_connections_;
+  std::vector<std::shared_ptr<RegisterFileWire>>
+      bru_wb_connections_;  // BRU write connections
+  std::shared_ptr<RegisterFileWire>
+      bru_wb_connection_;  // First BRU (backward compat)
+  std::shared_ptr<RegisterFileWire> mlu_wb_connection_;
+  std::shared_ptr<RegisterFileWire> dvu_wb_connection_;
+  std::shared_ptr<RegisterFileWire> lsu_wb_connection_;
 
   // Dispatch control
   bool dispatch_ready_;
 
   // Dispatch state
   std::vector<std::pair<uint32_t, uint32_t>> fetch_buffer_;  // (PC, word)
-  std::vector<bool> scoreboard_;  // Register dependency tracking
+  // Note: scoreboard tracking is handled by RegisterFile, not locally
   bool mlu_busy_;
   bool dvu_busy_;
   bool lsu_busy_;
+
+  // Dispatch statistics
+  uint64_t dispatch_count_;  // Number of instructions dispatched
+
+  // Cached RegisterFile scoreboard for dispatch to use
+  // This is updated by Stage2, then used by dispatch in the next cycle
+  uint32_t cached_regfile_scoreboard_comb_;
 
   // Control state
   bool branch_taken_;  // Branch taken in this cycle

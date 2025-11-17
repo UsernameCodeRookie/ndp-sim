@@ -32,7 +32,10 @@ class TickingComponent : public Component {
  public:
   TickingComponent(const std::string& name,
                    EventDriven::EventScheduler& scheduler, uint64_t period)
-      : Component(name, scheduler), period_(period), tick_count_(0) {}
+      : Component(name, scheduler),
+        period_(period),
+        tick_count_(0),
+        enabled_(true) {}
 
   virtual ~TickingComponent() = default;
 
@@ -77,6 +80,7 @@ class TickingComponent : public Component {
 
   uint64_t period_;      // Tick period (cycle time)
   uint64_t tick_count_;  // Number of ticks executed
+  bool enabled_;         // Whether the component is active
 };
 
 /**

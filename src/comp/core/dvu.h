@@ -131,6 +131,14 @@ class DivideUnit : public Pipeline {
     if (!getPort("out")) {
       addPort("out", Architecture::PortDirection::OUTPUT);
     }
+
+    // Create ports for RegisterFileWire
+    if (!getPort("rd_out")) {
+      addPort("rd_out", Architecture::PortDirection::OUTPUT);
+    }
+    if (!getPort("data_out")) {
+      addPort("data_out", Architecture::PortDirection::OUTPUT);
+    }
   }
 
   /**
@@ -267,6 +275,18 @@ class DivideUnit : public Pipeline {
 
       dvu_data->result = raw_result;
       results_output_++;
+
+      // Output rd and result to RegisterFileWire ports
+      if (dvu_data->rd_addr != 0) {
+        auto rd_port = getPort("rd_out");
+        auto data_port = getPort("data_out");
+        if (rd_port && data_port) {
+          rd_port->setData(
+              std::make_shared<Architecture::IntDataPacket>(dvu_data->rd_addr));
+          data_port->setData(
+              std::make_shared<Architecture::IntDataPacket>(raw_result));
+        }
+      }
 
       return std::static_pointer_cast<Architecture::DataPacket>(dvu_data);
     });

@@ -324,6 +324,40 @@ TEST_F(RegisterFileTest, StatisticsCollection) {
   EXPECT_GT(regfile->getTotalWrites(), 0);
 }
 
+// Test 16: Latency mask detection
+TEST_F(RegisterFileTest, LatencyMask) {
+  RegisterFileParameters params(32, 16, 8, 4, 32, true, true, false);
+  auto regfile =
+      std::make_shared<RegisterFile>("test_regfile", *scheduler, params);
+
+  // Scenario: Register 5 had a pending write (was scoreboarded last cycle)
+  // but the write completed in this cycle.
+
+  // First, set up state where register 5 was scoreboarded and is still
+  // scoreboarded
+  regfile->setScoreboard(5);
+
+  // Simulate the cycle update by calling updatePorts which saves
+  // the current scoreboard mask to scoreboard_prev_
+  std::map<std::string, std::string> dummy_req, dummy_resp;
+  regfile->updatePorts();
+
+  // After updatePorts, scoreboard_prev_ = 0x20 (bit 5 set)
+  uint32_t current_mask = regfile->getScoreboardMask();
+  EXPECT_EQ(current_mask & (1u << 5), (1u << 5));
+
+  // Now in the next cycle, write to register 5, clearing the scoreboard
+  regfile->writeRegister(5, 0x5555);
+  EXPECT_FALSE(regfile->isScoreboardSet(5));
+
+  // Now the latency mask should be non-zero because:
+  // scoreboard_prev_ has bit 5 set (from last cycle)
+  // current scoreboard doesn't have bit 5 set (after write)
+  uint32_t latency_mask = regfile->getLatencyMask();
+  EXPECT_NE(latency_mask, 0);
+  EXPECT_EQ(latency_mask & (1u << 5), (1u << 5));
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

@@ -127,6 +127,10 @@ class BranchUnit : public Pipeline {
         system_exceptions_(0) {
     // Setup stage functions for BRU pipeline
     setupStageFunctions();
+
+    // Create output ports for RegisterFileWire
+    addPort("rd_out", Architecture::PortDirection::OUTPUT);
+    addPort("data_out", Architecture::PortDirection::OUTPUT);
   }
 
   /**
@@ -230,11 +234,23 @@ class BranchUnit : public Pipeline {
         branches_taken_++;
       }
 
-      // Send to output port
+      // Send to output port (backward compatibility)
       auto output_port = getPort("out");
       if (output_port) {
         output_port->write(
             std::static_pointer_cast<Architecture::DataPacket>(result));
+      }
+
+      // Output rd and link_data to RegisterFileWire ports
+      if (result->link_valid && result->rd != 0) {
+        auto rd_port = getPort("rd_out");
+        auto data_port = getPort("data_out");
+        if (rd_port && data_port) {
+          rd_port->setData(
+              std::make_shared<Architecture::IntDataPacket>(result->rd));
+          data_port->setData(
+              std::make_shared<Architecture::IntDataPacket>(result->link_data));
+        }
       }
 
       return data;  // Return the original data packet type

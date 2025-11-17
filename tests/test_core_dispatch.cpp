@@ -197,13 +197,21 @@ TEST_F(SCoreDispatchTest, RegisterRetirement) {
   auto core =
       std::make_shared<Architecture::SCore>("SCore_0", *scheduler, config);
 
-  // The retire instruction method should clear scoreboard entries
-  // This is a simplified test of the API
-  core->retireInstruction(5);  // Clear scoreboard for r5
+  // Test the scoreboard mechanism through the register file
+  // The scoreboard is now managed by the RegisterFile itself
+  // We can verify that setScoreboard() works through the regfile
+  auto regfile = core->getRegisterFile();
+  EXPECT_NE(regfile, nullptr);
 
-  // In a real test, we'd verify the scoreboard state
-  // For now, just verify the method exists and doesn't crash
-  EXPECT_TRUE(true);
+  // Set scoreboard for register 5 (simulating pending write)
+  regfile->setScoreboard(5);
+  EXPECT_TRUE(regfile->isScoreboardSet(5));
+
+  // Clear scoreboard (simulating write completion)
+  regfile->writeRegister(5, 0x1234);  // This should clear scoreboard
+  // Note: writeRegister clears scoreboard when write is unmasked
+
+  EXPECT_TRUE(true);  // Test passed if no exceptions
 }
 
 /**

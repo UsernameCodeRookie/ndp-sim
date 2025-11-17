@@ -499,9 +499,14 @@ TEST_F(SCoreEventDrivenTest, ScoreboardRetirement) {
       std::make_shared<Architecture::SCore>("SCore_0", *scheduler, config);
   core->initialize();
 
-  // Manually test retire instruction
-  // (This would normally be automatic in stage 2)
-  core->retireInstruction(5);  // Should clear scoreboard for r5
+  // Manually test scoreboard mechanism through register file
+  // The scoreboard is now managed by the RegisterFile itself
+  auto regfile = core->getRegisterFile();
+  EXPECT_NE(regfile, nullptr);
+
+  // Set scoreboard for register 5 (simulating pending write)
+  regfile->setScoreboard(5);
+  EXPECT_TRUE(regfile->isScoreboardSet(5));
 
   // Verify no crash and basic functionality
   EXPECT_TRUE(true);

@@ -112,7 +112,12 @@ class ArithmeticLogicUnit : public Pipeline {
       : Pipeline(name, scheduler, period,
                  3),  // Default latency=0 for direct tick() mode
         operations_executed_(0),
-        accumulator_(0) {
+        accumulator_(0),
+        last_rd_(0),
+        last_value_(0) {
+    // Create output ports for writeback
+    addPort("rd_out", Architecture::PortDirection::OUTPUT);
+    addPort("data_out", Architecture::PortDirection::OUTPUT);
     setupPipelineStages();
   }
 
@@ -390,9 +395,25 @@ class ArithmeticLogicUnit : public Pipeline {
     std::cout << "Accumulator value: " << accumulator_ << std::endl;
   }
 
+  /**
+   * @brief Get the rd (register destination) output port
+   * @return Shared pointer to the rd output port
+   */
+  std::shared_ptr<Architecture::Port> getRdPort() { return getPort("rd_out"); }
+
+  /**
+   * @brief Get the value output port
+   * @return Shared pointer to the value output port
+   */
+  std::shared_ptr<Architecture::Port> getValuePort() {
+    return getPort("data_out");
+  }
+
  private:
   uint64_t operations_executed_;
   int64_t accumulator_;
+  uint32_t last_rd_;     // Track last rd to avoid duplicate outputs
+  uint32_t last_value_;  // Track last value to avoid duplicate outputs
 
   void setupPipelineStages() {
     // Stage 0: Decode - trace rd value and pass through
@@ -431,7 +452,7 @@ class ArithmeticLogicUnit : public Pipeline {
       return data;
     });
 
-    // Stage 2: Write back - trace rd value and pass through
+    // Stage 2: Write back - trace rd value and output to ports
     setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
       auto alu_result =
           std::dynamic_pointer_cast<Architecture::ALUResultPacket>(data);
@@ -439,6 +460,23 @@ class ArithmeticLogicUnit : public Pipeline {
         TRACE_COMPUTE(
             scheduler_.getCurrentTime(), getName(), "ALU_STAGE2_OUT",
             "rd=" << alu_result->rd << " value=" << alu_result->value);
+
+        // Output rd and value to ports for RegisterFileWire connection
+        auto rd_port = getPort("rd_out");
+        auto value_port = getPort("data_out");
+
+        if (rd_port && value_port) {
+          auto rd_packet = std::make_shared<Architecture::IntDataPacket>(
+              static_cast<int64_t>(alu_result->rd));
+          auto value_packet = std::make_shared<Architecture::IntDataPacket>(
+              static_cast<int64_t>(alu_result->value));
+
+          rd_port->setData(rd_packet);
+          value_port->setData(value_packet);
+
+          last_rd_ = alu_result->rd;
+          last_value_ = alu_result->value;
+        }
       }
       return data;
     });

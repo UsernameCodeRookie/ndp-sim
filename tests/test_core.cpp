@@ -23,7 +23,7 @@ TEST_F(SCoreTest, BasicCreation) {
       std::make_shared<Architecture::SCore>("SCore_0", *scheduler, config);
 
   EXPECT_NE(core, nullptr);
-  EXPECT_EQ(core->getALUs().size(), 2);  // num_instruction_lanes = 2
+  EXPECT_EQ(core->getALUs().size(), 4);  // num_instruction_lanes = 4 (default)
   EXPECT_NE(core->getBRU(), nullptr);
   EXPECT_NE(core->getMLU(), nullptr);
   EXPECT_NE(core->getDVU(), nullptr);

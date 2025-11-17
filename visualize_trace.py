@@ -234,8 +234,9 @@ def create_timeline_visualization(entries, output_file='trace_timeline.html',
     
     print(f"Showing top {len(selected_components)} components out of {len(component_counts)}")
     
-    # Filter entries
-    filtered_entries = [e for e in entries if e.component in selected_components]
+    # Filter entries (exclude TICK and PROP events)
+    filtered_entries = [e for e in entries if e.component in selected_components 
+                        and e.event_type not in ['TICK', 'PROP']]
     
     # Assign y-axis positions to components
     component_list = sorted(selected_components)

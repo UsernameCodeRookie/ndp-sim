@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "../../packet.h"
+#include "../../pipeline.h"
 #include "../../port.h"
 #include "../../tick.h"
 #include "../../trace.h"
@@ -122,9 +123,11 @@ struct ScoreboardEntry {
 };
 
 /**
- * @brief Register File Component
+ * @brief Register File Component (Event-Driven Pipeline Version)
  *
- * Multi-port register file with optional scoreboard and write forwarding
+ * Event-driven register file that inherits from TickingComponent for automatic
+ * tick-based port processing. Processes read/write ports every cycle.
+ *
  * Based on Coral NPU design:
  * - Multiple read ports (e.g., 8 per lane × 2 operands = 16 ports)
  * - Multiple write ports (instruction lanes + extra for MLU/DVU/LSU)
@@ -133,12 +136,18 @@ struct ScoreboardEntry {
  * - Support for masked writes (under speculation)
  *
  * Architecture:
- * - Register storage: uint32_t array
- * - Scoreboard: tracks which registers have pending writes
- * - Write priority encoder: handles multi-writer conflicts
- * - Read forwarding logic: provides latest data from pending writes
+ * - Single tick cycle that processes all ports
+ * - Read operations: fetch data from registers based on address ports
+ * - Write operations: update registers from write ports
+ * - Scoreboard: tracks pending writes and prevents RAW hazards
+ *
+ * Port Protocol:
+ * - Read: client sets read_addr_N port with register address
+ *         RF outputs read_data_N with the register value
+ * - Write: connection sets write_addr_N, write_data_N, write_mask_N ports
+ *          RF updates registers and clears scoreboard if unmasked
  */
-class RegisterFile : public Architecture::Component {
+class RegisterFile : public Architecture::TickingComponent {
  public:
   /**
    * @brief Constructor
@@ -148,10 +157,11 @@ class RegisterFile : public Architecture::Component {
    */
   RegisterFile(const std::string& name, EventDriven::EventScheduler& scheduler,
                const RegisterFileParameters& params)
-      : Component(name, scheduler),
+      : TickingComponent(name, scheduler, 1),  // period = 1 cycle
         params_(params),
         registers_(params.num_registers, 0),
         scoreboard_(params.num_registers),
+        scoreboard_prev_(0),  // Initialize previous scoreboard to 0
         read_port_data_(params.num_read_ports),
         read_port_valid_(params.num_read_ports, false),
         total_reads_(0),
@@ -171,7 +181,7 @@ class RegisterFile : public Architecture::Component {
               Architecture::PortDirection::OUTPUT);
     }
 
-    // Create write ports
+    // Create write ports (for RegisterFileWire connections)
     for (uint32_t i = 0; i < params_.num_write_ports; ++i) {
       addPort("write_addr_" + std::to_string(i),
               Architecture::PortDirection::INPUT);
@@ -209,10 +219,16 @@ class RegisterFile : public Architecture::Component {
   }
 
   /**
-   * @brief Write to a register
+   * @brief Write to a register (updates register value only, NOT scoreboard)
    * @param addr Register address
    * @param data Data to write
    * @param masked Whether this write is masked (speculative)
+   *
+   * Following golden reference (Coral NPU):
+   * - Register value is updated here
+   * - Scoreboard clearing happens separately in processWrites() when data
+   * arrives
+   * - This separation ensures dispatch_ctrl_ sees correct availability timing
    */
   void writeRegister(uint32_t addr, uint32_t data, bool masked = false) {
     if (addr == 0) {
@@ -224,9 +240,9 @@ class RegisterFile : public Architecture::Component {
     }
 
     registers_[addr] = data;
-    if (!masked) {
-      scoreboard_[addr].valid = false;  // Clear dependency
-    }
+    // NOTE: Scoreboard is NOT cleared here. It will be cleared in
+    // processWrites() when the write data is actually received on the write
+    // port.
     total_writes_++;
   }
 
@@ -278,6 +294,7 @@ class RegisterFile : public Architecture::Component {
     for (auto& entry : scoreboard_) {
       entry.valid = false;
     }
+    scoreboard_prev_ = 0;
     total_reads_ = 0;
     total_writes_ = 0;
     total_forwards_ = 0;
@@ -311,14 +328,42 @@ class RegisterFile : public Architecture::Component {
   uint32_t getWriteCount() const { return write_count_; }
 
   /**
-   * @brief Process ports for synchronous update
-   *
-   * Call this at the end of each cycle to:
-   * 1. Read register values from read address ports
-   * 2. Process write operations from write ports
-   * 3. Update scoreboard
-   * 4. Update read data ports
+   * @brief Get the latency mask for registers that became available this cycle
    */
+  uint32_t getLatencyMask() const {
+    // Registers that are becoming available this cycle are those that were
+    // scoreboarded last cycle but are not scoreboarded this cycle
+    return scoreboard_prev_ & ~getScoreboardMask();
+  }
+
+  /**
+   * @brief Get current scoreboard mask and previous cycle's mask
+   */
+  void getScoreboardState(uint32_t& comb, uint32_t& regd) const {
+    comb = getScoreboardMask();
+    regd = scoreboard_prev_;
+  }
+
+  /**
+   * @brief Event-driven tick: automatically process all ports each cycle
+   *
+   * Called by Pipeline framework on each tick. This ensures all read and write
+   * ports are processed automatically without manual calling from Core.
+   */
+  void tick() override {
+    // Process all read and write ports
+    TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_TICK",
+                  "Starting tick");
+    updatePorts();
+  } /**
+     * @brief Process ports for synchronous update
+     *
+     * Call this at the end of each cycle to:
+     * 1. Read register values from read address ports
+     * 2. Process write operations from write ports
+     * 3. Update scoreboard
+     * 4. Update read data ports
+     */
   void updatePorts() {
     write_count_ = 0;  // Reset write count for this cycle
 
@@ -382,6 +427,8 @@ class RegisterFile : public Architecture::Component {
 
   // Scoreboard for dependency tracking
   std::vector<ScoreboardEntry> scoreboard_;
+  uint32_t
+      scoreboard_prev_;  // Previous cycle's scoreboard (registered version)
 
   // Read port state
   std::vector<uint32_t> read_port_data_;
@@ -449,6 +496,8 @@ class RegisterFile : public Architecture::Component {
    * @brief Process write operations and detect conflicts
    */
   void processWrites() {
+    TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(),
+                  "REGFILE_PROCESS_WRITES_CALLED", "Starting");
     // Collect all write requests
     std::vector<std::pair<uint32_t, uint32_t>> writes;  // (addr, data)
     std::vector<bool> write_valid(params_.num_write_ports, false);
@@ -460,17 +509,62 @@ class RegisterFile : public Architecture::Component {
       auto data_port = getPort("write_data_" + std::to_string(i));
       auto mask_port = getPort("write_mask_" + std::to_string(i));
 
-      if (!addr_port || !data_port || !addr_port->hasData() ||
-          !data_port->hasData()) {
+      if (!addr_port || !data_port) {
         continue;
       }
 
-      auto addr_packet =
-          std::dynamic_pointer_cast<RegfileWritePacket>(addr_port->read());
-      auto data_packet =
-          std::dynamic_pointer_cast<RegfileWritePacket>(data_port->read());
+      if (!addr_port->hasData() || !data_port->hasData()) {
+        TRACE_COMPUTE(
+            scheduler_.getCurrentTime(), getName(), "REGFILE_WRITE_CHECK",
+            "Port " << i << ": no data (addr="
+                    << (addr_port->hasData() ? "yes" : "no") << " data="
+                    << (data_port->hasData() ? "yes" : "no") << ")");
+        continue;
+      }
 
-      if (!addr_packet || !addr_packet->valid_write) {
+      TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(),
+                    "REGFILE_WRITE_CHECK", "Port " << i << ": has data");
+
+      uint32_t addr = 0;
+      uint32_t data = 0;
+      bool found_data = false;
+
+      // Get the data without consuming it first
+      auto addr_packet = addr_port->getData();
+      auto data_packet = data_port->getData();
+
+      // Try to read as IntDataPacket (from RegisterFileWire)
+      auto addr_data =
+          std::dynamic_pointer_cast<Architecture::IntDataPacket>(addr_packet);
+      auto data_data =
+          std::dynamic_pointer_cast<Architecture::IntDataPacket>(data_packet);
+
+      if (addr_data && data_data) {
+        addr = static_cast<uint32_t>(addr_data->value);
+        data = static_cast<uint32_t>(data_data->value);
+        found_data = true;
+        // Consume the data after reading
+        addr_port->read();
+        data_port->read();
+      } else {
+        // Try legacy RegfileWritePacket format
+        auto addr_legacy =
+            std::dynamic_pointer_cast<RegfileWritePacket>(addr_packet);
+        auto data_legacy =
+            std::dynamic_pointer_cast<RegfileWritePacket>(data_packet);
+
+        if (addr_legacy && data_legacy && addr_legacy->valid_write &&
+            data_legacy->valid_write) {
+          addr = addr_legacy->addr;
+          data = data_legacy->data;
+          found_data = true;
+          // Consume the data after reading
+          addr_port->read();
+          data_port->read();
+        }
+      }
+
+      if (!found_data) {
         continue;
       }
 
@@ -482,7 +576,7 @@ class RegisterFile : public Architecture::Component {
                     ->value
               : false;
 
-      writes.push_back({addr_packet->addr, data_packet->data});
+      writes.push_back({addr, data});
     }
 
     // Detect conflicts (multiple writes to same register)
@@ -501,6 +595,7 @@ class RegisterFile : public Architecture::Component {
     for (uint32_t i = 0; i < writes.size(); ++i) {
       uint32_t addr = writes[i].first;
       uint32_t data = writes[i].second;
+      bool is_masked = write_masked[i];
 
       if (addr == 0 || write_applied[addr]) {
         // x0 is always zero or this address already written
@@ -508,45 +603,82 @@ class RegisterFile : public Architecture::Component {
       }
 
       // Apply write
-      writeRegister(addr, data, write_masked[i]);
+      writeRegister(addr, data, is_masked);
       write_applied[addr] = true;
       write_count_++;
+
+      // Clear scoreboard when write data arrives (unmasked only)
+      // Following golden reference (Coral NPU): scoreboard clears when
+      // writeData port has data
+      if (!is_masked) {
+        scoreboard_[addr].valid = false;
+        std::cerr << "[processWrites] Cleared scoreboard for x" << addr
+                  << " on data arrival (cycle " << scheduler_.getCurrentTime()
+                  << ")" << std::endl;
+      } else {
+        std::cerr << "[processWrites] MASKED write to x" << addr
+                  << " - NOT clearing scoreboard" << std::endl;
+      }
 
       // Trace the write operation
       std::stringstream ss;
       ss << "Port " << i << ": x" << addr << " = " << data;
-      if (write_masked[i]) {
+      if (is_masked) {
         ss << " (masked)";
       }
       TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_WRITE",
                     ss.str());
-
-      // Update scoreboard if not masked
-      if (!write_masked[i]) {
-        setScoreboard(addr);
-      }
     }
   }
 
   /**
    * @brief Output current scoreboard state
+   *
+   * Following golden reference (Coral NPU):
+   * - regd: Previous cycle's scoreboard (registered version)
+   * - comb: Current cycle's scoreboard with this cycle's clears applied
+   *   = (current scoreboard) - (registers cleared this cycle)
+   *
+   * This ensures dispatch_ctrl_ sees when data actually arrives, not just
+   * when write operations are dispatched.
    */
   void outputScoreboard() {
     uint32_t scoreboard_mask = getScoreboardMask();
 
+    // Compute which registers were cleared this cycle
+    // These are registers that were in scoreboard_prev_ but not in
+    // scoreboard_mask
+    uint32_t cleared_this_cycle = scoreboard_prev_ & ~scoreboard_mask;
+
+    std::cerr << "[outputScoreboard] Time " << scheduler_.getCurrentTime()
+              << ": scoreboard_mask=0x" << std::hex << scoreboard_mask
+              << " prev=0x" << scoreboard_prev_ << " cleared=0x"
+              << cleared_this_cycle << std::dec << std::endl;
+
+    // Output previous cycle's scoreboard (registered)
+    // This is what was in scoreboard at end of previous cycle
     auto regd_port = getPort("scoreboard_regd");
     if (regd_port) {
       auto packet =
-          std::make_shared<Architecture::IntDataPacket>(scoreboard_mask);
+          std::make_shared<Architecture::IntDataPacket>(scoreboard_prev_);
       regd_port->write(packet);
     }
 
+    // Output current combinational scoreboard
+    // = registered + (clears happening this cycle applied)
+    // But since we already updated scoreboard_mask with clears, this is just
+    // scoreboard_mask However, to be explicit: comb = scoreboard_prev -
+    // cleared_this_cycle
+    uint32_t comb_scoreboard = scoreboard_prev_ & ~cleared_this_cycle;
     auto comb_port = getPort("scoreboard_comb");
     if (comb_port) {
       auto packet =
-          std::make_shared<Architecture::IntDataPacket>(scoreboard_mask);
+          std::make_shared<Architecture::IntDataPacket>(comb_scoreboard);
       comb_port->write(packet);
     }
+
+    // Update previous scoreboard for next cycle
+    scoreboard_prev_ = scoreboard_mask;
   }
 };
 

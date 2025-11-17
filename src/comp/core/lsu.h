@@ -146,11 +146,11 @@ class MemoryRequestPacket : public Architecture::DataPacket {
 class MemoryResponsePacket : public Architecture::DataPacket {
  public:
   MemoryResponsePacket(int32_t data = 0, uint32_t address = 0,
-                       uint32_t request_id = 0)
-      : data(data), address(address), request_id(request_id) {}
+                       uint32_t request_id = 0, uint32_t rd = 0)
+      : data(data), address(address), request_id(request_id), rd(rd) {}
 
   std::shared_ptr<Architecture::DataPacket> clone() const override {
-    return cloneImpl<MemoryResponsePacket>(data, address, request_id);
+    return cloneImpl<MemoryResponsePacket>(data, address, request_id, rd);
   }
 
   // Loaded data
@@ -161,6 +161,9 @@ class MemoryResponsePacket : public Architecture::DataPacket {
 
   // Request identifier to match response with request
   uint32_t request_id;
+
+  // Destination register address (for loads)
+  uint32_t rd;
 };
 
 /**
@@ -419,6 +422,10 @@ class LoadStoreUnit : public Pipeline {
     addPort("ready", Architecture::PortDirection::OUTPUT);  // Can accept
     addPort("valid", Architecture::PortDirection::OUTPUT);  // Response valid
     addPort("done", Architecture::PortDirection::OUTPUT);   // All ops done
+
+    // Create ports for RegisterFileWire
+    addPort("rd_out", Architecture::PortDirection::OUTPUT);
+    addPort("data_out", Architecture::PortDirection::OUTPUT);
   }
 
   /**
@@ -594,6 +601,18 @@ class LoadStoreUnit : public Pipeline {
         if (resp_out) {
           resp_out->write(
               std::static_pointer_cast<Architecture::DataPacket>(resp));
+        }
+
+        // Output rd and loaded data to RegisterFileWire ports (for loads only)
+        if (resp->rd != 0) {
+          auto rd_port = getPort("rd_out");
+          auto data_port = getPort("data_out");
+          if (rd_port && data_port) {
+            rd_port->setData(
+                std::make_shared<Architecture::IntDataPacket>(resp->rd));
+            data_port->setData(std::make_shared<Architecture::IntDataPacket>(
+                static_cast<uint32_t>(resp->data)));
+          }
         }
 
         // Set valid signal
