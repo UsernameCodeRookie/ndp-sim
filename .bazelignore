@@ -1,0 +1,7 @@
+build/
+cmake-build-debug/
+cmake-build-release/
+.cmake/
+*.egg-info/
+dist/
+__pycache__/

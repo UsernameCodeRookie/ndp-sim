@@ -1,0 +1,21 @@
+# Bazel configuration file
+
+# Build options
+build --cxxopt=-std=c++20
+build --host_cxxopt=-std=c++20
+
+# Warnings
+build --cxxopt=-Wall
+build --cxxopt=-Wextra
+build --cxxopt=-Wpedantic
+build --cxxopt=-O2
+
+# Tests
+test --test_output=summary
+test --verbose_failures
+
+# Python
+build:py --action_env=PYTHONPATH
+
+# Use clang if available (optional, comment out if using gcc)
+# build:clang --compiler=clang

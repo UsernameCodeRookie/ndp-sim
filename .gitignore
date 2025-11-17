@@ -1,8 +1,38 @@
+# IDE and Editor
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build directories
 build/
-data/
+bazel-bin
+bazel-out
+bazel-testlogs
+bazel-ndp-sim
+
+# Bazel-specific
+MODULE.bazel.lock
+user.bazelrc
+
+# Python
 .venv/
+venv/
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Data and output
+data/
 *.html
+*.log
+
+# CMake (if using dual build system)
+CMakeLists.txt.bak
