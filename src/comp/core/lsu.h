@@ -618,12 +618,10 @@ class LoadStoreUnit : public Pipeline {
       return data;
     });
 
-    // Set stage latencies (0 for direct tick() testing, would be 1+ for
-    // event-driven)
-    setStageLatency(0, 0);  // Address decode: 0 cycles for testing
-    setStageLatency(1, 0);  // Memory access: 0 cycles for testing (use
-                            // config_.bank_latency in event-driven mode)
-    setStageLatency(2, 0);  // Response: 0 cycles for testing
+    // Set stage latencies
+    setStageLatency(0, 1);                     // Address decode: 1 cycle
+    setStageLatency(1, config_.bank_latency);  // Memory access: bank latency
+    setStageLatency(2, 1);                     // Response: 1 cycle
   }
 
   // Member variables

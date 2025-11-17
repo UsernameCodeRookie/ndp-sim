@@ -14,19 +14,21 @@
 #include "trace.h"
 
 /**
- * @brief Pipeline stage data structure
+ * @brief PipelineStageData
  *
  * Represents data in a pipeline stage
  */
 struct PipelineStageData {
   std::shared_ptr<Architecture::DataPacket> data;
-  uint64_t stage_entry_time;  // When data entered this stage
+  uint64_t stage_entry_time;  // Wall clock time when data entered this stage
+  uint32_t cycles_in_stage;   // Number of ticks data has been in this stage
   bool valid;                 // Whether this stage contains valid data
 
-  PipelineStageData() : data(nullptr), stage_entry_time(0), valid(false) {}
+  PipelineStageData()
+      : data(nullptr), stage_entry_time(0), cycles_in_stage(0), valid(false) {}
 
   PipelineStageData(std::shared_ptr<Architecture::DataPacket> d, uint64_t time)
-      : data(d), stage_entry_time(time), valid(true) {}
+      : data(d), stage_entry_time(time), cycles_in_stage(0), valid(true) {}
 };
 
 /**
@@ -204,6 +206,13 @@ class Pipeline : public Architecture::TickingComponent {
       return;
     }
 
+    // Increment cycle counters for all valid stages
+    for (auto& stage : stages_) {
+      if (stage.valid) {
+        stage.cycles_in_stage++;
+      }
+    }
+
     // Process pipeline stages from back to front
     // Stage N-1 (last stage) -> output (to all OUTPUT ports)
     if (stages_[num_stages_ - 1].valid) {
@@ -242,17 +251,16 @@ class Pipeline : public Architecture::TickingComponent {
     for (int i = num_stages_ - 1; i > 0; --i) {
       if (stages_[i - 1].valid && !stages_[i].valid) {
         // Stage i-1 has data and stage i is empty
-        // Check if stage latency requirement has been met
-        uint64_t elapsed =
-            scheduler_.getCurrentTime() - stages_[i - 1].stage_entry_time;
-        uint64_t required_latency = stage_latencies_[i - 1];
+        // Check if stage latency requirement has been met using tick cycles
+        uint32_t required_latency = stage_latencies_[i - 1];
+        uint32_t cycles_held = stages_[i - 1].cycles_in_stage;
 
-        if (elapsed < required_latency) {
-          // Not enough time has passed, keep data in stage i-1
+        if (cycles_held < required_latency) {
+          // Not enough cycles have passed, keep data in stage i-1
           TRACE_COMPUTE(
               scheduler_.getCurrentTime(), getName(), "PIPELINE_LATENCY_HOLD",
-              "Stage[" << (i - 1) << "] latency hold: elapsed=" << elapsed
-                       << " required=" << required_latency);
+              "Stage[" << (i - 1) << "] latency hold: cycles_held="
+                       << cycles_held << " required=" << required_latency);
           total_stalls_++;
           continue;
         }
