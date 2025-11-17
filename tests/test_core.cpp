@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "../src/comp/core.h"
+#include "../src/comp/core/core.h"
 #include "../src/scheduler.h"
 
 class SCoreTest : public ::testing::Test {

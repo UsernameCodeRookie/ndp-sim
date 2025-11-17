@@ -3,7 +3,7 @@
 #include <iostream>
 #include <memory>
 
-#include "../src/comp/dvu.h"
+#include "../src/comp/core/dvu.h"
 #include "../src/scheduler.h"
 #include "../src/trace.h"
 

@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-#include "../src/comp/rvv_backend.h"
+#include "../src/comp/rvv/rvv_backend.h"
 
 using namespace Architecture;
 
@@ -24,9 +24,12 @@ class RVVBackendTest : public ::testing::Test {
   std::unique_ptr<EventDriven::EventScheduler> scheduler;
   std::unique_ptr<RVVBackend> backend;
 
-  RVVInstruction createInstruction(uint64_t inst_id, uint32_t opcode,
-                                   uint32_t vs1, uint32_t vs2, uint32_t vd) {
-    RVVInstruction inst;
+  RVVCoreInterface::InstructionRequest createInstruction(uint64_t inst_id,
+                                                         uint32_t opcode,
+                                                         uint32_t vs1,
+                                                         uint32_t vs2,
+                                                         uint32_t vd) {
+    RVVCoreInterface::InstructionRequest inst;
     inst.inst_id = inst_id;
     inst.opcode = opcode;
     inst.vs1_idx = vs1;
@@ -50,7 +53,7 @@ TEST_F(RVVBackendTest, Initialize) {
 }
 
 TEST_F(RVVBackendTest, IssueSimpleInstruction) {
-  RVVInstruction inst = createInstruction(0, 0x01, 1, 2, 3);
+  auto inst = createInstruction(0, 0x01, 1, 2, 3);
   bool accepted = backend->issueInstruction(inst);
 
   EXPECT_TRUE(accepted);
@@ -59,7 +62,7 @@ TEST_F(RVVBackendTest, IssueSimpleInstruction) {
 
 TEST_F(RVVBackendTest, IssueMultipleInstructions) {
   for (int i = 0; i < 5; i++) {
-    RVVInstruction inst = createInstruction(i, 0x01, 1, 2, 3);
+    auto inst = createInstruction(i, 0x01, 1, 2, 3);
     bool accepted = backend->issueInstruction(inst);
     EXPECT_TRUE(accepted);
   }
@@ -68,7 +71,7 @@ TEST_F(RVVBackendTest, IssueMultipleInstructions) {
 }
 
 TEST_F(RVVBackendTest, ExecutionCycle) {
-  RVVInstruction inst = createInstruction(0, 0x01, 1, 2, 3);
+  auto inst = createInstruction(0, 0x01, 1, 2, 3);
   backend->issueInstruction(inst);
 
   runPipeline(5);
@@ -78,7 +81,7 @@ TEST_F(RVVBackendTest, ExecutionCycle) {
 }
 
 TEST_F(RVVBackendTest, RetirementCycle) {
-  RVVInstruction inst = createInstruction(0, 0x01, 1, 2, 3);
+  auto inst = createInstruction(0, 0x01, 1, 2, 3);
   backend->issueInstruction(inst);
 
   runPipeline(10);
@@ -89,7 +92,7 @@ TEST_F(RVVBackendTest, RetirementCycle) {
 
 TEST_F(RVVBackendTest, PipelineFlow) {
   for (int i = 0; i < 4; i++) {
-    RVVInstruction inst = createInstruction(i, 0x01, 1, 2, 3);
+    auto inst = createInstruction(i, 0x01, 1, 2, 3);
     backend->issueInstruction(inst);
   }
 
@@ -122,7 +125,7 @@ TEST_F(RVVBackendTest, AccessComponents) {
 
 TEST_F(RVVBackendTest, ROBUtilization) {
   for (int i = 0; i < 3; i++) {
-    RVVInstruction inst = createInstruction(i, 0x01, 1, 2, 3);
+    auto inst = createInstruction(i, 0x01, 1, 2, 3);
     backend->issueInstruction(inst);
   }
 

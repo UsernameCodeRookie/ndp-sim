@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "comp/rvv_regfile.h"
+#include "comp/rvv/rvv_regfile.h"
 
 using namespace Architecture;
 

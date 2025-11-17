@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 
-#include "../src/comp/bru.h"
+#include "../src/comp/core/bru.h"
 #include "../src/scheduler.h"
 
 class BruTest : public ::testing::Test {

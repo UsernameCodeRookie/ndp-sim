@@ -3,7 +3,7 @@
 #include <map>
 #include <memory>
 
-#include "comp/rvv_dvu.h"
+#include "comp/rvv/rvv_dvu.h"
 #include "tick.h"
 
 /**

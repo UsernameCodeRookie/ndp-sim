@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 
-#include "../src/comp/regfile.h"
+#include "../src/comp/core/regfile.h"
 #include "../src/scheduler.h"
 
 class RegisterFileTest : public ::testing::Test {

@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-#include "../src/comp/core.h"
+#include "../src/comp/core/core.h"
 #include "../src/scheduler.h"
 #include "../src/trace.h"
 

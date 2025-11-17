@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "../../trace.h"
-#include "../bru.h"
+#include "bru.h"
 #include "decode.h"
 
 namespace Architecture {

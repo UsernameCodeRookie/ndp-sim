@@ -5,10 +5,10 @@
 #include <memory>
 
 #include "../../packet.h"
-#include "../alu.h"
-#include "../bru.h"
-#include "../lsu.h"
-#include "../mlu.h"
+#include "alu.h"
+#include "bru.h"
+#include "lsu.h"
+#include "mlu.h"
 
 namespace Architecture {
 

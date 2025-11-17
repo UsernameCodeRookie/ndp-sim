@@ -10,7 +10,7 @@
 #include "../port.h"
 #include "../tick.h"
 #include "../trace.h"
-#include "lsu.h"
+#include "core/lsu.h"
 
 /**
  * @brief PingPong Controller

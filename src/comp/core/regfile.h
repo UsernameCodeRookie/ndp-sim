@@ -10,10 +10,10 @@
 #include <string>
 #include <vector>
 
-#include "../packet.h"
-#include "../port.h"
-#include "../tick.h"
-#include "../trace.h"
+#include "../../packet.h"
+#include "../../port.h"
+#include "../../tick.h"
+#include "../../trace.h"
 
 /**
  * @brief Register File Parameters

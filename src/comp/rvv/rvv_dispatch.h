@@ -10,15 +10,15 @@
 #include <string>
 #include <vector>
 
-#include "../event.h"
-#include "../packet.h"
-#include "../port.h"
-#include "../scheduler.h"
-#include "../stage.h"
-#include "../tick.h"
-#include "../trace.h"
-#include "component.h"
-#include "pipeline.h"
+#include "../../component.h"
+#include "../../event.h"
+#include "../../packet.h"
+#include "../../pipeline.h"
+#include "../../port.h"
+#include "../../scheduler.h"
+#include "../../stage.h"
+#include "../../tick.h"
+#include "../../trace.h"
 
 namespace Architecture {
 

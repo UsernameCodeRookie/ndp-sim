@@ -7,14 +7,14 @@
 #include <string>
 #include <vector>
 
-#include "../packet.h"
-#include "../port.h"
-#include "../tick.h"
-#include "../trace.h"
+#include "../../packet.h"
+#include "../../port.h"
+#include "../../tick.h"
+#include "../../trace.h"
 
 // Conditional include for DRAMsim3
 #ifdef USE_DRAMSIM3
-#include "dram.h"
+#include "../dram.h"
 #endif
 
 /**

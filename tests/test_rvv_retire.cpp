@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-#include "../src/comp/rvv_retire.h"
+#include "../src/comp/rvv/rvv_retire.h"
 
 using namespace Architecture;
 

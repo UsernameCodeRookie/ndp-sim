@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-#include "../src/comp/alu.h"
+#include "../src/comp/core/alu.h"
 #include "../src/scheduler.h"
 #include "../src/trace.h"
 

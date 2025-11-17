@@ -4,8 +4,8 @@
 #include <memory>
 #include <vector>
 
-#include "../src/comp/rvv_backend.h"
-#include "../src/comp/rvv_interface.h"
+#include "../src/comp/rvv/rvv_backend.h"
+#include "../src/comp/rvv/rvv_interface.h"
 
 using namespace Architecture;
 

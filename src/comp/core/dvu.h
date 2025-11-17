@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "pipeline.h"
+#include "../../pipeline.h"
 
 /**
  * @brief DVU (Division/Remainder Logic Unit) Component

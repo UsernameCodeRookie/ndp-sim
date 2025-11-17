@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "comp/rvv_dispatch.h"
+#include "comp/rvv/rvv_dispatch.h"
 
 using namespace Architecture;
 

@@ -44,9 +44,9 @@
 #include <memory>
 #include <vector>
 
-#include "../src/comp/core.h"
-#include "../src/comp/rvv_backend.h"
-#include "../src/comp/rvv_interface.h"
+#include "../src/comp/core/core.h"
+#include "../src/comp/rvv/rvv_backend.h"
+#include "../src/comp/rvv/rvv_interface.h"
 #include "../src/scheduler.h"
 #include "../src/trace.h"
 

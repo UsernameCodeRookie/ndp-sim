@@ -7,11 +7,11 @@
 #include <string>
 #include <vector>
 
-#include "../packet.h"
-#include "../port.h"
-#include "../tick.h"
-#include "../trace.h"
-#include "pipeline.h"
+#include "../../packet.h"
+#include "../../pipeline.h"
+#include "../../port.h"
+#include "../../tick.h"
+#include "../../trace.h"
 
 namespace Architecture {
 

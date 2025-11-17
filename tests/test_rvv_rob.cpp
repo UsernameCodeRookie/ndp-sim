@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-#include "../src/comp/rvv_rob.h"
+#include "../src/comp/rvv/rvv_rob.h"
 
 using namespace Architecture;
 

@@ -3,7 +3,7 @@
 #include <iostream>
 #include <memory>
 
-#include "../src/comp/lsu.h"
+#include "../src/comp/core/lsu.h"
 #include "../src/comp/pingpong.h"
 #include "../src/scheduler.h"
 #include "../src/trace.h"

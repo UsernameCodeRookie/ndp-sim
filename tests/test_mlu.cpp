@@ -3,7 +3,7 @@
 #include <iostream>
 #include <memory>
 
-#include "../src/comp/mlu.h"
+#include "../src/comp/core/mlu.h"
 #include "../src/scheduler.h"
 #include "../src/trace.h"
 

@@ -6,8 +6,8 @@
 #include <string>
 #include <vector>
 
-#include "../packet.h"
-#include "pipeline.h"
+#include "../../packet.h"
+#include "../../pipeline.h"
 
 namespace Architecture {
 
