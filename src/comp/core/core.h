@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "../../buffer.h"
 #include "../../conn/credit.h"
 #include "../../conn/ready_valid.h"
 #include "../../conn/wire.h"
@@ -17,7 +18,6 @@
 #include "../../port.h"
 #include "../../scheduler.h"
 #include "../../trace.h"
-#include "../buffer.h"
 #include "../rvv/rvv_interface.h"
 #include "alu.h"
 #include "bru.h"

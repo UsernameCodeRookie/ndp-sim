@@ -7,8 +7,8 @@
 #include <sstream>
 #include <string>
 
-#include "../packet.h"
-#include "../scheduler.h"
+#include "packet.h"
+#include "scheduler.h"
 
 /**
  * @brief Buffer Mode Enumeration

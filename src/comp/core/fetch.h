@@ -6,8 +6,8 @@
 #include <queue>
 #include <vector>
 
+#include "../../buffer.h"
 #include "../../trace.h"
-#include "../buffer.h"
 #include "decode.h"
 
 namespace Architecture {
