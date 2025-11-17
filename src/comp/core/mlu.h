@@ -135,48 +135,6 @@ class MultiplyUnit : public Pipeline {
     std::cout << "MLU Results output: " << results_output_ << std::endl;
   }
 
-  void tick() override {
-    // Call parent tick for pipeline processing
-    Pipeline::tick();
-
-    // Post-process output in stage 2 and create result packet
-    if (stages_[num_stages_ - 1].valid) {
-      auto mlu_data =
-          std::dynamic_pointer_cast<MluData>(stages_[num_stages_ - 1].data);
-      if (mlu_data) {
-        // Compute result based on operation
-        uint32_t result = 0;
-        switch (mlu_data->op) {
-          case MulOp::MUL:
-            result = static_cast<uint32_t>(mlu_data->product & 0xFFFFFFFFUL);
-            break;
-          case MulOp::MULH:
-          case MulOp::MULHSU:
-          case MulOp::MULHU:
-            result =
-                static_cast<uint32_t>((mlu_data->product >> 32) & 0xFFFFFFFFUL);
-            break;
-        }
-
-        // Create and enqueue result packet to output port
-        auto result_packet = std::make_shared<Architecture::MLUResultPacket>(
-            result, mlu_data->rd_addr);
-        auto out_port = getPort("out");
-        if (out_port) {
-          out_port->write(result_packet);
-        }
-
-        results_output_++;
-
-        TRACE_EVENT(scheduler_.getCurrentTime(), name_, "MLU_OUTPUT",
-                    "rd_addr=0x" << std::hex << mlu_data->rd_addr << std::dec
-                                 << " op=" << static_cast<int>(mlu_data->op)
-                                 << " result=0x" << std::hex << result
-                                 << std::dec);
-      }
-    }
-  }
-
  private:
   void createPorts() {
     // Create multi-lane request ports
@@ -213,9 +171,39 @@ class MultiplyUnit : public Pipeline {
       return data;  // Multiplication already computed
     });
 
-    // Stage 2: Result formatting (done in tick() after parent processing)
-    setStageFunction(2, [](std::shared_ptr<Architecture::DataPacket> data) {
-      return data;  // Pass through
+    // Stage 2: Result formatting
+    // Compute result based on operation, but DO NOT write to port
+    // Pipeline::tick() will write the stage data to out port automatically
+    setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
+      auto mlu_data = std::dynamic_pointer_cast<MluData>(data);
+      if (mlu_data) {
+        // Compute result based on operation
+        uint32_t result = 0;
+        switch (mlu_data->op) {
+          case MulOp::MUL:
+            result = static_cast<uint32_t>(mlu_data->product & 0xFFFFFFFFUL);
+            break;
+          case MulOp::MULH:
+          case MulOp::MULHSU:
+          case MulOp::MULHU:
+            result =
+                static_cast<uint32_t>((mlu_data->product >> 32) & 0xFFFFFFFFUL);
+            break;
+        }
+
+        // Update result in place
+        mlu_data->result = result;
+        results_output_++;
+
+        TRACE_EVENT(scheduler_.getCurrentTime(), name_, "MLU_OUTPUT",
+                    "rd_addr=0x" << std::hex << mlu_data->rd_addr << std::dec
+                                 << " op=" << static_cast<int>(mlu_data->op)
+                                 << " result=0x" << std::hex << result
+                                 << std::dec);
+      }
+      return data;
+      // NOTE: Pipeline::tick() will automatically write this data to out port
+      // via stages_[num_stages_ - 1].valid && out->write(processed_data)
     });
   }
 

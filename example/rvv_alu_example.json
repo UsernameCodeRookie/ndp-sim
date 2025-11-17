@@ -1,0 +1,300 @@
+{
+    "name": "RVV Vector ALU Example",
+    "description": "Event-driven RVV Vector ALU example with Scalar Core frontend and RVV Backend. Tests vector operations with data dependencies and multi-issue",
+    "core_config": {
+        "num_instruction_lanes": 4,
+        "num_registers": 32,
+        "num_read_ports": 8,
+        "num_write_ports": 6,
+        "use_regfile_forwarding": true,
+        "alu_period": 1,
+        "bru_period": 1,
+        "num_bru_units": 4,
+        "mlu_period": 3,
+        "dvu_period": 8,
+        "lsu_period": 2
+    },
+    "vector_config": {
+        "enable_rvv": true,
+        "vector_issue_width": 4,
+        "vlen": 256,
+        "vector_register_count": 32
+    },
+    "memory_config": {
+        "instruction_memory_size": 4096,
+        "data_memory_size": 8192
+    },
+    "simulation_config": {
+        "max_cycles": 300,
+        "enable_tracing": true,
+        "verbose": false,
+        "trace_output": "rvv_alu_trace.log",
+        "collect_statistics": true
+    },
+    "rvv_config": {
+        "vl": 8,
+        "sew": 0,
+        "lmul": 0,
+        "vstart": 0,
+        "ma": false,
+        "ta": false
+    },
+    "vector_init_data": [
+        {
+            "vreg": 1,
+            "values": [
+                10,
+                20,
+                30,
+                40,
+                50,
+                60,
+                70,
+                80
+            ],
+            "comment": "v1 base operand"
+        },
+        {
+            "vreg": 2,
+            "values": [
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12
+            ],
+            "comment": "v2 base operand"
+        },
+        {
+            "vreg": 3,
+            "values": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+            ],
+            "comment": "v3 base operand"
+        },
+        {
+            "vreg": 4,
+            "values": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+            ],
+            "comment": "v4 base operand"
+        },
+        {
+            "vreg": 5,
+            "values": [
+                15,
+                15,
+                15,
+                15,
+                15,
+                15,
+                15,
+                15
+            ],
+            "comment": "v5 constant"
+        },
+        {
+            "vreg": 6,
+            "values": [
+                15,
+                15,
+                15,
+                15,
+                15,
+                15,
+                15,
+                15
+            ],
+            "comment": "v6 constant"
+        }
+    ],
+    "instructions": [
+        {
+            "address": 0,
+            "comment": "Block 1: Independent ALU ops (no dependencies)",
+            "type": "comment"
+        },
+        {
+            "address": 0,
+            "comment": "VADD v3, v1, v2",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 4,
+            "comment": "VAND v4, v1, v2",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 8,
+            "comment": "VOR v5, v1, v2",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 12,
+            "comment": "VSUB v6, v2, v1",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 16,
+            "comment": "Block 2: RAW Dependencies (read-after-write)",
+            "type": "comment"
+        },
+        {
+            "address": 16,
+            "comment": "VADD v7, v1, v2",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 20,
+            "comment": "VSUB v8, v7, v1",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 24,
+            "comment": "VAND v9, v8, v2",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 28,
+            "comment": "VOR v10, v8, v1",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 32,
+            "comment": "Block 3: WAR Dependencies (write-after-read)",
+            "type": "comment"
+        },
+        {
+            "address": 32,
+            "comment": "VADD v11, v1, v2",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 36,
+            "comment": "VADD v1, v3, v4 (WAR: writes v1 that previous reads)",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 40,
+            "comment": "VSUB v12, v1, v11",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 44,
+            "comment": "VAND v13, v11, v2",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 48,
+            "comment": "Block 4: WAW Dependencies (write-after-write)",
+            "type": "comment"
+        },
+        {
+            "address": 48,
+            "comment": "VADD v14, v1, v2",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 52,
+            "comment": "VSUB v14, v3, v4 (WAW: overwrites v14)",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 56,
+            "comment": "VOR v14, v5, v6 (WAW: overwrites v14 again)",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 60,
+            "comment": "VAND v15, v14, v1",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 64,
+            "comment": "Block 5: Multi-issue stress test",
+            "type": "comment"
+        },
+        {
+            "address": 64,
+            "comment": "VADD v16, v1, v2",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 68,
+            "comment": "VAND v17, v1, v2",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 72,
+            "comment": "VOR v18, v1, v2",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 76,
+            "comment": "VSUB v19, v2, v1",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 80,
+            "comment": "VADD v20, v1, v3",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 84,
+            "comment": "VAND v21, v5, v6",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 88,
+            "comment": "VOR v22, v4, v3",
+            "binary": "0x0020a157"
+        },
+        {
+            "address": 92,
+            "comment": "VSUB v23, v6, v5",
+            "binary": "0x0020a157"
+        }
+    ],
+    "expected_results": {
+        "description": "Test comprehensive vector execution with RAW/WAR/WAW hazards and multi-issue",
+        "test_blocks": [
+            {
+                "name": "Block 1 (Independent ops)",
+                "description": "All 4 instructions should execute in parallel with no stalls"
+            },
+            {
+                "name": "Block 2 (RAW dependency chains)",
+                "description": "v7->v8->v9 and v7->v10 form dependency chains with sequential execution"
+            },
+            {
+                "name": "Block 3 (WAR hazards)",
+                "description": "v1 write must occur after all prior v1 reads, causing dispatch serialization"
+            },
+            {
+                "name": "Block 4 (WAW hazards)",
+                "description": "Multiple writes to v14 - only last value (VOR result) visible"
+            },
+            {
+                "name": "Block 5 (Multi-issue stress)",
+                "description": "8 independent instructions test sustained 4-lane throughput"
+            }
+        ]
+    }
+}

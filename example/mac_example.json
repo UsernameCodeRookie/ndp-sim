@@ -1,0 +1,124 @@
+{
+    "name": "MAC (Multiply-Accumulate) Example",
+    "description": "Event-driven MAC example with automatic instruction fetch from instruction memory. Computes MAC = sum(a[i] * b[i]) for i=0..3",
+    "core_config": {
+        "num_instruction_lanes": 2,
+        "num_registers": 32,
+        "num_read_ports": 6,
+        "num_write_ports": 6,
+        "use_regfile_forwarding": true,
+        "alu_period": 1,
+        "bru_period": 1,
+        "num_bru_units": 2,
+        "mlu_period": 3,
+        "dvu_period": 8,
+        "lsu_period": 2
+    },
+    "vector_config": {
+        "enable_rvv": false,
+        "vector_issue_width": 4,
+        "vlen": 256,
+        "vector_register_count": 32
+    },
+    "memory_config": {
+        "instruction_memory_size": 4096,
+        "data_memory_size": 8192
+    },
+    "simulation_config": {
+        "max_cycles": 1000,
+        "enable_tracing": true,
+        "verbose": false,
+        "trace_output": "mac_trace.log",
+        "collect_statistics": true
+    },
+    "data_memory": [
+        {
+            "address": "0x000",
+            "values": [
+                10,
+                20,
+                30,
+                40
+            ],
+            "comment": "a[] = {10, 20, 30, 40}"
+        },
+        {
+            "address": "0x010",
+            "values": [
+                5,
+                6,
+                7,
+                8
+            ],
+            "comment": "b[] = {5, 6, 7, 8}"
+        },
+        {
+            "address": "0x020",
+            "values": [
+                0
+            ],
+            "comment": "accumulator"
+        }
+    ],
+    "instructions": [
+        {
+            "address": 0,
+            "comment": "ADDI x1, x0, 10",
+            "binary": "0x00a00093"
+        },
+        {
+            "address": 4,
+            "comment": "ADDI x2, x0, 20",
+            "binary": "0x01400113"
+        },
+        {
+            "address": 8,
+            "comment": "ADDI x3, x0, 30",
+            "binary": "0x01e00193"
+        },
+        {
+            "address": 12,
+            "comment": "ADDI x4, x0, 5",
+            "binary": "0x00500213"
+        },
+        {
+            "address": 16,
+            "comment": "MUL x5, x1, x4",
+            "binary": "0x024082b3"
+        },
+        {
+            "address": 20,
+            "comment": "MUL x6, x2, x4",
+            "binary": "0x02410333"
+        },
+        {
+            "address": 24,
+            "comment": "ADD x7, x5, x6",
+            "binary": "0x006283b3"
+        },
+        {
+            "address": 28,
+            "comment": "ADDI x8, x0, 40",
+            "binary": "0x02800413"
+        },
+        {
+            "address": 32,
+            "comment": "MUL x9, x3, x8",
+            "binary": "0x028184b3"
+        },
+        {
+            "address": 36,
+            "comment": "ADD x10, x7, x9",
+            "binary": "0x00938533"
+        },
+        {
+            "address": 40,
+            "comment": "SW x10, 0(x0)",
+            "binary": "0x00a02023"
+        }
+    ],
+    "expected_results": {
+        "description": "Expected MAC result: 10×5 + 20×6 + 30×7 + 40×8 = 50 + 120 + 210 + 320 = 700",
+        "memory_0x000": 700
+    }
+}

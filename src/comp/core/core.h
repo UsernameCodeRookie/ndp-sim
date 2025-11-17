@@ -502,9 +502,14 @@ class SCore : public Pipeline {
         // Only stop if we've explicitly detected end of program
         fetch_buffer_.push_back({pc_, inst_word});
 
-        TRACE_COMPUTE(current_time, getName(), "STAGE0_FETCH",
-                      "Fetch from PC=0x" << std::hex << pc_ << " word=0x"
-                                         << inst_word << std::dec);
+        // Create detailed trace message with hex values explicitly converted
+        {
+          char trace_buf[256];
+          snprintf(trace_buf, sizeof(trace_buf), "Fetch from PC=0x%x word=0x%x",
+                   pc_, inst_word);
+          TRACE_COMPUTE(current_time, getName(), "STAGE0_FETCH",
+                        std::string(trace_buf));
+        }
 
         // Increment PC for next instruction
         pc_ += 4;
@@ -636,24 +641,48 @@ class SCore : public Pipeline {
         }
       }
 
-      // Poll MLU output from wire
-      if (mlu_wb_connection_ && !mlu_wb_connection_->getSourcePorts().empty()) {
-        auto src_port = mlu_wb_connection_->getSourcePorts()[0];
-        if (src_port && src_port->hasData()) {
-          auto result = src_port->read();
-          auto mlu_result =
-              std::dynamic_pointer_cast<Architecture::MLUResultPacket>(result);
-          if (mlu_result && mlu_result->rd != 0) {
-            regfile_->writeRegister(mlu_result->rd, mlu_result->value);
-            TRACE_COMPUTE(
-                current_time, getName(), "REGFILE_WRITE",
-                "MLU wrote x" << mlu_result->rd << " = " << mlu_result->value);
-            retireInstruction(mlu_result->rd);
+      // Poll MLU output from wire (using Wire's currentData buffer like ALU)
+      if (mlu_wb_connection_) {
+        if (mlu_wb_connection_->hasCurrentData()) {
+          auto result = mlu_wb_connection_->getCurrentData();
+
+          // Try casting to MluData first (from Pipeline output)
+          auto mlu_data =
+              std::dynamic_pointer_cast<MultiplyUnit::MluData>(result);
+          if (mlu_data && mlu_data->rd_addr != 0) {
+            regfile_->writeRegister(mlu_data->rd_addr, mlu_data->result);
+            TRACE_COMPUTE(current_time, getName(), "REGFILE_WRITE",
+                          "MLU wrote x" << mlu_data->rd_addr << " = "
+                                        << mlu_data->result);
+            retireInstruction(mlu_data->rd_addr);
             TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
-                          "Retired MLU result=" << mlu_result->value << " to x"
-                                                << mlu_result->rd);
+                          "Retired MLU result=" << mlu_data->result << " to x"
+                                                << mlu_data->rd_addr);
             instructions_retired_++;
             wb_result = result;
+
+            // Clear the wire buffer after successful read
+            mlu_wb_connection_->clearCurrentData();
+          } else {
+            // Try casting to MLUResultPacket (legacy/fallback)
+            auto mlu_result =
+                std::dynamic_pointer_cast<Architecture::MLUResultPacket>(
+                    result);
+            if (mlu_result && mlu_result->rd != 0) {
+              regfile_->writeRegister(mlu_result->rd, mlu_result->value);
+              TRACE_COMPUTE(current_time, getName(), "REGFILE_WRITE",
+                            "MLU wrote x" << mlu_result->rd << " = "
+                                          << mlu_result->value);
+              retireInstruction(mlu_result->rd);
+              TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
+                            "Retired MLU result=" << mlu_result->value
+                                                  << " to x" << mlu_result->rd);
+              instructions_retired_++;
+              wb_result = result;
+
+              // Clear the wire buffer after successful read
+              mlu_wb_connection_->clearCurrentData();
+            }
           }
         }
       }
