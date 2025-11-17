@@ -123,7 +123,7 @@ class RVVVectorDVU : public Pipeline {
    */
   RVVVectorDVU(const std::string& name, EventDriven::EventScheduler& scheduler,
                uint64_t period, uint32_t vlen = 128)
-      : Pipeline(name, scheduler, period, 3),
+      : Pipeline(name, scheduler, period, 3),  // Default latency=0
         vlen_(vlen),
         operations_executed_(0),
         division_by_zero_count_(0) {

@@ -89,7 +89,7 @@ class MultiplyUnit : public Pipeline {
 
   MultiplyUnit(const std::string& name, EventDriven::EventScheduler& scheduler,
                uint64_t period, uint32_t num_lanes = 4)
-      : Pipeline(name, scheduler, period, 3),
+      : Pipeline(name, scheduler, period, 3),  // Default latency=0
         num_lanes_(num_lanes),
         requests_processed_(0),
         results_output_(0) {

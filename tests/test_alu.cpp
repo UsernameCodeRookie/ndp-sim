@@ -144,14 +144,16 @@ TEST_F(ALUTest, PipelineOperation) {
   auto packet = std::make_shared<ALUDataPacket>(10, 5, ALUOp::ADD);
   input_port->write(packet);
 
-  // Execute pipeline stages (3 stages + 1 to output = 4 ticks)
-  for (int i = 0; i < 4; i++) {
+  // Execute pipeline stages with enough ticks for data to flow through all
+  // stages With latency=0 (default): tick 1 loads, tick 2-4 propagates through
+  // stages, tick 5 outputs
+  for (int i = 0; i < 6; i++) {
     alu->tick();
   }
 
   // Check output
   ASSERT_TRUE(output_port->hasData());
-  auto result_packet = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+  auto result_packet = std::dynamic_pointer_cast<Architecture::ALUResultPacket>(
       output_port->read());
   ASSERT_NE(result_packet, nullptr);
   EXPECT_EQ(result_packet->value, 15);
@@ -171,7 +173,8 @@ TEST_F(ALUTest, AccumulatorMACOperation) {
   auto packet1 = std::make_shared<ALUDataPacket>(3, 4, ALUOp::MAC);
   input_port->write(packet1);
 
-  for (int i = 0; i < 3; i++) {
+  // Need enough ticks for MAC to execute in stage 1
+  for (int i = 0; i < 6; i++) {
     alu->tick();
   }
 
@@ -181,7 +184,7 @@ TEST_F(ALUTest, AccumulatorMACOperation) {
   auto packet2 = std::make_shared<ALUDataPacket>(2, 5, ALUOp::MAC);
   input_port->write(packet2);
 
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < 6; i++) {
     alu->tick();
   }
 
@@ -197,6 +200,11 @@ TEST_F(ALUTest, EventDrivenExecution) {
   auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu_ed", *scheduler,
                                                    2);  // period=2
   alu->start();
+
+  // Set stage latencies for event-driven mode
+  for (size_t i = 0; i < 3; i++) {
+    alu->setStageLatency(i, 1);
+  }
 
   auto input_port = alu->getPort("in");
   auto output_port = alu->getPort("out");
@@ -214,7 +222,7 @@ TEST_F(ALUTest, EventDrivenExecution) {
 
   // Check output appeared after 4 ticks (8 time units with period=2)
   EXPECT_TRUE(output_port->hasData());
-  auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+  auto result = std::dynamic_pointer_cast<Architecture::ALUResultPacket>(
       output_port->read());
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(result->value, 13);
@@ -236,6 +244,11 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
   auto alu = std::make_shared<ArithmeticLogicUnit>("test_alu_multi", *scheduler,
                                                    2);  // period=2
   alu->start();
+
+  // Set stage latencies for event-driven mode
+  for (size_t i = 0; i < 3; i++) {
+    alu->setStageLatency(i, 1);
+  }
 
   auto input_port = alu->getPort("in");
   auto output_port = alu->getPort("out");
@@ -271,7 +284,7 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
   // So results at t=7, t=17, t=27
   scheduler->scheduleAt(9, [&](EventDriven::EventScheduler& sched) {
     if (output_port->hasData()) {
-      auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+      auto result = std::dynamic_pointer_cast<Architecture::ALUResultPacket>(
           output_port->read());
       if (result) results.push_back(result->value);
     }
@@ -279,7 +292,7 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
 
   scheduler->scheduleAt(19, [&](EventDriven::EventScheduler& sched) {
     if (output_port->hasData()) {
-      auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+      auto result = std::dynamic_pointer_cast<Architecture::ALUResultPacket>(
           output_port->read());
       if (result) results.push_back(result->value);
     }
@@ -287,7 +300,7 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
 
   scheduler->scheduleAt(29, [&](EventDriven::EventScheduler& sched) {
     if (output_port->hasData()) {
-      auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+      auto result = std::dynamic_pointer_cast<Architecture::ALUResultPacket>(
           output_port->read());
       if (result) results.push_back(result->value);
     }
@@ -301,7 +314,7 @@ TEST_F(ALUTest, EventDrivenMultipleOperations) {
   std::cout << "Has data: " << (output_port->hasData() ? "yes" : "no")
             << std::endl;
   while (output_port->hasData()) {
-    auto result = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+    auto result = std::dynamic_pointer_cast<Architecture::ALUResultPacket>(
         output_port->read());
     if (result) {
       std::cout << "Got result: " << result->value << std::endl;

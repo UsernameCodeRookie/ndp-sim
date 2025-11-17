@@ -119,8 +119,8 @@ class BranchUnit : public Pipeline {
    * @param period Tick period
    */
   BranchUnit(const std::string& name, EventDriven::EventScheduler& scheduler,
-             uint64_t period = 1)
-      : Pipeline(name, scheduler, period, 3),
+             uint64_t period)
+      : Pipeline(name, scheduler, period, 3),  // Default latency=0
         branches_resolved_(0),
         branches_taken_(0),
         branches_mispredicted_(0),

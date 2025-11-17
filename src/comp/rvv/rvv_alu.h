@@ -137,7 +137,7 @@ class RVVVectorALU : public Pipeline {
    */
   RVVVectorALU(const std::string& name, EventDriven::EventScheduler& scheduler,
                uint64_t period, size_t num_units = 4, uint32_t vlen = 128)
-      : Pipeline(name, scheduler, period, 3),
+      : Pipeline(name, scheduler, period, 3),  // Default latency=0
         num_units_(num_units),
         vlen_(vlen),
         unit_busy_(num_units, false),

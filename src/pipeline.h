@@ -46,9 +46,13 @@ class Pipeline : public Architecture::TickingComponent {
    * @param scheduler Event scheduler reference
    * @param period Tick period
    * @param num_stages Number of pipeline stages
+   * @param default_stage_latency Default latency for all stages (default: 0
+   * cycles). Set to 0 when using direct tick() calls in tests, or to 1+ when
+   * using event-driven scheduler.
    */
   Pipeline(const std::string& name, EventDriven::EventScheduler& scheduler,
-           uint64_t period, size_t num_stages = 3)
+           uint64_t period, size_t num_stages = 3,
+           uint64_t default_stage_latency = 0)
       : Architecture::TickingComponent(name, scheduler, period),
         num_stages_(num_stages),
         stall_(false),
@@ -73,8 +77,10 @@ class Pipeline : public Architecture::TickingComponent {
           [](std::shared_ptr<Architecture::DataPacket>) { return false; };
     }
 
-    // Initialize stage latencies (default: 1 cycle per stage)
-    stage_latencies_.resize(num_stages_, 1);
+    // Initialize stage latencies (default: 0 cycles per stage)
+    // This prevents timing issues when using direct tick() calls in unit tests.
+    // For event-driven operation, set this to 1+ when needed.
+    stage_latencies_.resize(num_stages_, default_stage_latency);
 
     // Create ports
     addPort("in", Architecture::PortDirection::INPUT);

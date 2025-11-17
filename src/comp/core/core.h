@@ -140,7 +140,8 @@ class SCore : public Pipeline {
    */
   SCore(const std::string& name, EventDriven::EventScheduler& scheduler,
         const Config& config = Config())
-      : Pipeline(name, scheduler, 1, 3),  // 3-stage pipeline with period 1
+      : Pipeline(name, scheduler, 1,
+                 3),  // 3-stage pipeline with period 1, default latency=0
         config_(config),
         fetch_stage_(name + "_FetchStage", 8),
         dispatch_ctrl_(name + "_DispatchCtrl", config.num_registers,

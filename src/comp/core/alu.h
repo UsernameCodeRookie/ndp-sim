@@ -109,7 +109,8 @@ class ArithmeticLogicUnit : public Pipeline {
  public:
   ArithmeticLogicUnit(const std::string& name,
                       EventDriven::EventScheduler& scheduler, uint64_t period)
-      : Pipeline(name, scheduler, period, 3),
+      : Pipeline(name, scheduler, period,
+                 3),  // Default latency=0 for direct tick() mode
         operations_executed_(0),
         accumulator_(0) {
     setupPipelineStages();

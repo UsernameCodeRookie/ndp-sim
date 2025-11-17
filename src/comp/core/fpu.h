@@ -106,7 +106,8 @@ class FPUComponent : public Pipeline {
 
   FPUComponent(const std::string& name, EventDriven::EventScheduler& scheduler,
                uint64_t period)
-      : Pipeline(name, scheduler, period, pipeline_stages),
+      : Pipeline(name, scheduler, period,
+                 pipeline_stages),  // Default latency=0
         operations_executed_(0) {
     setupPipeline();
   }
