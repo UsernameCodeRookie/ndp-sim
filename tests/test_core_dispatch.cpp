@@ -79,7 +79,7 @@ TEST_F(SCoreDispatchTest, ScoreboardRAWHazard) {
   inst1.word = 0x00310333;
 
   // Should be dispatchable initially
-  EXPECT_TRUE(core->canDispatch(inst1, 0));
+  EXPECT_TRUE(core->canDispatch(inst1, 0, 0));
 
   // Now dispatch it (which should set scoreboard for r5)
   core->dispatchToUnit(inst1, 0);
@@ -166,11 +166,11 @@ TEST_F(SCoreDispatchTest, SpecialInstructionSlot0Only) {
   special_inst.opcode = 0;
 
   // Should be dispatchable in slot 0
-  EXPECT_TRUE(core->canDispatch(special_inst, 0));
+  EXPECT_TRUE(core->canDispatch(special_inst, 0, 0));
 
   // Should NOT be dispatchable in slot 1 or higher
-  EXPECT_FALSE(core->canDispatch(special_inst, 1));
-  EXPECT_FALSE(core->canDispatch(special_inst, 2));
+  EXPECT_FALSE(core->canDispatch(special_inst, 1, 0));
+  EXPECT_FALSE(core->canDispatch(special_inst, 2, 0));
 }
 
 /**
