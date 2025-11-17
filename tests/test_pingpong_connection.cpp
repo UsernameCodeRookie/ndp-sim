@@ -46,9 +46,13 @@ TEST_F(PingPongConnectionTest, BasicPingPongWithConnection) {
   auto controller = std::make_shared<PingPongController>(
       "PingPongCtrl", *scheduler, CLOCK_PERIOD, NUM_ITERATIONS);
 
-  auto lsu = std::make_shared<LoadStoreUnit>("LSU", *scheduler, CLOCK_PERIOD,
-                                             4 /* banks */, 2 /* queue depth */,
-                                             64 /* bank capacity */);
+  LoadStoreUnit::Config lsu_config;
+  lsu_config.period = CLOCK_PERIOD;
+  lsu_config.num_banks = 4;
+  lsu_config.bank_capacity = 64;
+  lsu_config.queue_depth = 2;
+
+  auto lsu = std::make_shared<LoadStoreUnit>("LSU", *scheduler, lsu_config);
 
   // Get ports
   auto ctrl_req_out = controller->getPort("req_out");
@@ -58,7 +62,7 @@ TEST_F(PingPongConnectionTest, BasicPingPongWithConnection) {
 
   auto lsu_req_in = lsu->getPort("req_in");
   auto lsu_resp_out = lsu->getPort("resp_out");
-  auto lsu_resp_valid_out = lsu->getPort("resp_valid");
+  auto lsu_resp_valid_out = lsu->getPort("valid");
   auto lsu_ready_out = lsu->getPort("ready");
   auto ctrl_resp_ready_out = controller->getPort("resp_ready_out");
 
@@ -114,7 +118,7 @@ TEST_F(PingPongConnectionTest, BasicPingPongWithConnection) {
   std::cout << "\nLSU Statistics:" << std::endl;
   std::cout << "Operations completed: " << lsu->getOperationsCompleted()
             << std::endl;
-  std::cout << "Cycles stalled: " << lsu->getCyclesStalled() << std::endl;
+  std::cout << "Bank conflicts: " << lsu->getBankConflicts() << std::endl;
 
   // Verify results
   EXPECT_TRUE(controller->isDone());
@@ -137,8 +141,14 @@ TEST_F(PingPongConnectionTest, PingPongWithLatency) {
   auto controller = std::make_shared<PingPongController>(
       "PingPongCtrl", *scheduler, CLOCK_PERIOD, NUM_ITERATIONS);
 
-  auto lsu = std::make_shared<LoadStoreUnit>("LSU", *scheduler, CLOCK_PERIOD, 4,
-                                             2, 64);
+  LoadStoreUnit::Config lsu_config;
+  lsu_config.period = CLOCK_PERIOD;
+  lsu_config.num_banks = 4;
+  lsu_config.bank_capacity = 64;
+  lsu_config.queue_depth = 2;
+  lsu_config.bank_latency = CONNECTION_LATENCY;
+
+  auto lsu = std::make_shared<LoadStoreUnit>("LSU", *scheduler, lsu_config);
 
   // Get ports
   auto ctrl_req_out = controller->getPort("req_out");
@@ -148,7 +158,7 @@ TEST_F(PingPongConnectionTest, PingPongWithLatency) {
 
   auto lsu_req_in = lsu->getPort("req_in");
   auto lsu_resp_out = lsu->getPort("resp_out");
-  auto lsu_resp_valid_out = lsu->getPort("resp_valid");
+  auto lsu_resp_valid_out = lsu->getPort("valid");
   auto lsu_ready_out = lsu->getPort("ready");
   auto ctrl_resp_ready_out = controller->getPort("resp_ready_out");
 
@@ -210,8 +220,13 @@ TEST_F(PingPongConnectionTest, PingPongWithBackPressure) {
   auto controller = std::make_shared<PingPongController>(
       "PingPongCtrl", *scheduler, CLOCK_PERIOD, NUM_ITERATIONS);
 
-  auto lsu = std::make_shared<LoadStoreUnit>("LSU", *scheduler, CLOCK_PERIOD, 4,
-                                             1 /* small queue */, 64);
+  LoadStoreUnit::Config lsu_config;
+  lsu_config.period = CLOCK_PERIOD;
+  lsu_config.num_banks = 4;
+  lsu_config.bank_capacity = 64;
+  lsu_config.queue_depth = 1;  // small queue to test back pressure
+
+  auto lsu = std::make_shared<LoadStoreUnit>("LSU", *scheduler, lsu_config);
 
   // Get ports
   auto ctrl_req_out = controller->getPort("req_out");
@@ -221,7 +236,7 @@ TEST_F(PingPongConnectionTest, PingPongWithBackPressure) {
 
   auto lsu_req_in = lsu->getPort("req_in");
   auto lsu_resp_out = lsu->getPort("resp_out");
-  auto lsu_resp_valid_out = lsu->getPort("resp_valid");
+  auto lsu_resp_valid_out = lsu->getPort("valid");
   auto lsu_ready_out = lsu->getPort("ready");
   auto ctrl_resp_ready_out = controller->getPort("resp_ready_out");
 

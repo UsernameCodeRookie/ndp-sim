@@ -137,7 +137,7 @@ class PingPongController : public Architecture::TickingComponent {
 
     // Create store request
     auto store_request = std::make_shared<MemoryRequestPacket>(
-        LSUOp::STORE, current_address_, current_value_);
+        LSUOp::SW, current_address_, current_value_);
 
     // Send request with valid signal - connection will handle backpressure
     auto req_out = getPort("req_out");
@@ -181,7 +181,7 @@ class PingPongController : public Architecture::TickingComponent {
   void handleSendLoad() {
     // Create load request
     auto load_request =
-        std::make_shared<MemoryRequestPacket>(LSUOp::LOAD, current_address_);
+        std::make_shared<MemoryRequestPacket>(LSUOp::LW, current_address_);
 
     // Send request with valid signal - connection will handle backpressure
     auto req_out = getPort("req_out");

@@ -248,8 +248,14 @@ class SCore : public Pipeline {
                                         config_.dvu_period);
 
     // Create LSU (1 instance)
-    lsu_ = std::make_shared<LoadStoreUnit>(name_ + "_LSU", scheduler_,
-                                           config_.lsu_period);
+    LoadStoreUnit::Config lsu_config;
+    lsu_config.period = config_.lsu_period;
+    lsu_config.num_banks = 4;        // Default: 4 banks
+    lsu_config.bank_capacity = 256;  // Default: 256 words per bank
+    lsu_config.queue_depth = 8;      // Default: 8-entry request queue
+    lsu_config.bank_latency = 2;     // Default: 2 cycle bank latency
+    lsu_ =
+        std::make_shared<LoadStoreUnit>(name_ + "_LSU", scheduler_, lsu_config);
   }
 
   /**
@@ -345,6 +351,14 @@ class SCore : public Pipeline {
       auto out_port = mlu_->getPort("out");
       if (out_port && mlu_wb_connection_) {
         mlu_wb_connection_->addSourcePort(out_port);
+      }
+    }
+
+    // Connect LSU response output to writeback wire
+    if (lsu_) {
+      auto resp_port = lsu_->getPort("resp_out");
+      if (resp_port && lsu_wb_connection_) {
+        lsu_wb_connection_->addSourcePort(resp_port);
       }
     }
   }
@@ -683,6 +697,34 @@ class SCore : public Pipeline {
               // Clear the wire buffer after successful read
               mlu_wb_connection_->clearCurrentData();
             }
+          }
+        }
+      }
+
+      // Poll LSU response from writeback wire
+      // LSU handles both load (needs writeback) and store (no writeback)
+      // operations
+      if (lsu_wb_connection_) {
+        if (lsu_wb_connection_->hasCurrentData()) {
+          auto result = lsu_wb_connection_->getCurrentData();
+          auto lsu_response =
+              std::dynamic_pointer_cast<MemoryResponsePacket>(result);
+          if (lsu_response) {
+            // For LOAD operations (rd != 0), write back the loaded data
+            // For STORE operations (rd == 0), just retire the instruction
+            // NOTE: We don't have rd info in MemoryResponsePacket currently,
+            // so we always count it as an instruction retirement
+            TRACE_COMPUTE(
+                current_time, getName(), "LSU_RESPONSE",
+                "LSU resp req_id=" << lsu_response->request_id
+                                   << " addr=" << lsu_response->address
+                                   << " data=" << lsu_response->data);
+
+            instructions_retired_++;
+            wb_result = result;
+
+            // Clear the wire buffer after successful read
+            lsu_wb_connection_->clearCurrentData();
           }
         }
       }
@@ -1269,10 +1311,10 @@ class SCore : public Pipeline {
    */
   bool issueLSU(uint32_t opcode, uint32_t addr, int32_t data) {
     if (lsu_) {
-      auto in_port = lsu_->getPort("in");
+      auto in_port = lsu_->getPort("req_in");
       if (in_port && !in_port->hasData()) {
         auto cmd = std::make_shared<MemoryRequestPacket>(
-            static_cast<LSUOp>(opcode), addr, data, 1, 1, false);
+            static_cast<LSUOp>(opcode), addr, data);
         cmd->timestamp = scheduler_.getCurrentTime();
         in_port->write(cmd);
         return true;

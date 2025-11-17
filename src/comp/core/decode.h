@@ -157,14 +157,54 @@ class DecodeStage {
       // Load instructions
       case 0x03:  // LB, LH, LW, LBU, LHU
         inst.op_type = DecodedInstruction::OpType::LSU;
-        inst.opcode = static_cast<uint32_t>(LSUOp::LOAD);
+        // Decode the specific load type from funct3 (bits 12-14)
+        {
+          uint8_t funct3 = (word >> 12) & 0x7;
+          switch (funct3) {
+            case 0:
+              inst.opcode = static_cast<uint32_t>(LSUOp::LB);
+              break;
+            case 1:
+              inst.opcode = static_cast<uint32_t>(LSUOp::LH);
+              break;
+            case 2:
+              inst.opcode = static_cast<uint32_t>(LSUOp::LW);
+              break;
+            case 4:
+              inst.opcode = static_cast<uint32_t>(LSUOp::LBU);
+              break;
+            case 5:
+              inst.opcode = static_cast<uint32_t>(LSUOp::LHU);
+              break;
+            default:
+              inst.opcode = static_cast<uint32_t>(LSUOp::LW);
+              break;
+          }
+        }
         // rs2 stays 0 for I-type
         break;
 
       // Store instructions
       case 0x23:  // SB, SH, SW
         inst.op_type = DecodedInstruction::OpType::LSU;
-        inst.opcode = static_cast<uint32_t>(LSUOp::STORE);
+        // Decode the specific store type from funct3 (bits 12-14)
+        {
+          uint8_t funct3 = (word >> 12) & 0x7;
+          switch (funct3) {
+            case 0:
+              inst.opcode = static_cast<uint32_t>(LSUOp::SB);
+              break;
+            case 1:
+              inst.opcode = static_cast<uint32_t>(LSUOp::SH);
+              break;
+            case 2:
+              inst.opcode = static_cast<uint32_t>(LSUOp::SW);
+              break;
+            default:
+              inst.opcode = static_cast<uint32_t>(LSUOp::SW);
+              break;
+          }
+        }
         inst.rs2 = (word >> 20) & 0x1F;  // S-type: extract rs2
         break;
 
