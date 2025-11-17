@@ -155,7 +155,8 @@ class SCore : public Pipeline {
         dvu_busy_(false),
         lsu_busy_(false),
         dispatch_count_(0),
-        cached_regfile_scoreboard_comb_(0) {
+        cached_regfile_scoreboard_comb_(0),
+        cached_regfile_scoreboard_regd_(0) {
     // Initialize all functional units
     initializeFunctionalUnits();
 
@@ -607,46 +608,21 @@ class SCore : public Pipeline {
       // scoreboard mechanism. RegisterFileWire automatically handles writeback
       // to RF and scoreboard updates.
       //
-      // We monitor scoreboard_comb and scoreboard_regd ports to track:
-      // - Which registers have pending writes (combinational updates)
-      // - Which registers had writes retire (registered updates)
+      // NOTE: RegisterFile.tick() is scheduled with higher priority
+      // (EVENT_PRIORITY_COMBINATION) so it executes before Core
+      // (EVENT_PRIORITY_COMPONENT), ensuring that scoreboard_comb and
+      // scoreboard_regd ports have valid data when Stage2 reads them.
 
       TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
                     "Writeback stage executing");
 
-      // Read combinational scoreboard (current pending writes)
-      auto scoreboard_comb_port = regfile_->getPort("scoreboard_comb");
-      uint32_t scoreboard_comb = 0;
-      bool has_comb_data = false;
-      if (scoreboard_comb_port && scoreboard_comb_port->hasData()) {
-        has_comb_data = true;
-        auto comb_packet =
-            std::dynamic_pointer_cast<Architecture::IntDataPacket>(
-                scoreboard_comb_port->read());
-        if (comb_packet) {
-          scoreboard_comb = static_cast<uint32_t>(comb_packet->value);
-        }
-      }
-
-      // Read registered scoreboard (previous cycle's pending writes)
-      auto scoreboard_regd_port = regfile_->getPort("scoreboard_regd");
-      uint32_t scoreboard_regd = 0;
-      bool has_regd_data = false;
-      if (scoreboard_regd_port && scoreboard_regd_port->hasData()) {
-        has_regd_data = true;
-        auto regd_packet =
-            std::dynamic_pointer_cast<Architecture::IntDataPacket>(
-                scoreboard_regd_port->read());
-        if (regd_packet) {
-          scoreboard_regd = static_cast<uint32_t>(regd_packet->value);
-        }
-      }
-
-      std::cerr << "[Stage2] Time " << current_time
-                << ": has_comb=" << has_comb_data << " comb=0x" << std::hex
-                << scoreboard_comb << " has_regd=" << std::dec << has_regd_data
-                << " regd=0x" << std::hex << scoreboard_regd << std::dec
-                << std::endl;
+      // Get latest RegisterFile scoreboard state directly
+      // RegisterFile has higher event priority, so its tick has executed before
+      // this
+      uint32_t scoreboard_comb =
+          regfile_->getScoreboardMask();  // Current cycle
+      uint32_t scoreboard_regd =
+          regfile_->getScoreboardPrev();  // Previous cycle
 
       // Sync dispatch_ctrl_ scoreboard with RegisterFile's actual scoreboard
       // Following golden reference (Coral NPU):
@@ -1705,6 +1681,7 @@ class SCore : public Pipeline {
   // Cached RegisterFile scoreboard for dispatch to use
   // This is updated by Stage2, then used by dispatch in the next cycle
   uint32_t cached_regfile_scoreboard_comb_;
+  uint32_t cached_regfile_scoreboard_regd_;
 
   // Control state
   bool branch_taken_;  // Branch taken in this cycle

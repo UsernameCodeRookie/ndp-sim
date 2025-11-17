@@ -168,7 +168,9 @@ class RegisterFile : public Architecture::TickingComponent {
         total_writes_(0),
         total_forwards_(0),
         total_conflicts_(0),
-        write_count_(0) {
+        write_count_(0),
+        cached_scoreboard_comb_(0),
+        cached_scoreboard_regd_(0) {
     // Create read address ports (one per read port)
     for (uint32_t i = 0; i < params_.num_read_ports; ++i) {
       addPort("read_addr_" + std::to_string(i),
@@ -345,26 +347,73 @@ class RegisterFile : public Architecture::TickingComponent {
   }
 
   /**
+   * @brief Get previous cycle's scoreboard value (for Stage2)
+   *
+   * Returns the cached registered scoreboard from start of cycle,
+   * which represents conditions at end of PREVIOUS cycle.
+   */
+  uint32_t getScoreboardPrev() const { return cached_scoreboard_regd_; }
+
+  /**
+   * @brief Get cached scoreboard values for Stage2
+   *
+   * Stage2 should call this method instead of reading ports directly.
+   * This ensures consistent synchronized values without timing issues.
+   */
+  void getCachedScoreboardState(uint32_t& comb, uint32_t& regd) const {
+    comb = cached_scoreboard_comb_;
+    regd = cached_scoreboard_regd_;
+  }
+
+  /**
    * @brief Event-driven tick: automatically process all ports each cycle
    *
    * Called by Pipeline framework on each tick. This ensures all read and write
    * ports are processed automatically without manual calling from Core.
    */
   void tick() override {
-    // Process all read and write ports
+    // First: update scoreboard_prev_ at the start of cycle
+    // This captures the previous cycle's scoreboard state BEFORE processing new
+    // writes (scoreboard_prev_ will be updated at the END of this tick, after
+    // outputScoreboard)
+
+    // Then: Process all read and write ports
     TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_TICK",
                   "Starting tick");
     updatePorts();
-  } /**
-     * @brief Process ports for synchronous update
-     *
-     * Call this at the end of each cycle to:
-     * 1. Read register values from read address ports
-     * 2. Process write operations from write ports
-     * 3. Update scoreboard
-     * 4. Update read data ports
-     */
+  }
+
+  /**
+   * @brief Override start to use higher priority for RegisterFile
+   *
+   * RegisterFile must execute before other components (like Core) to ensure
+   * that combinational outputs (scoreboard_comb) are ready for synchronous
+   * reading by Core's dispatch and Stage2 logic.
+   */
+  void start(uint64_t start_time = 0) override {
+    if (!enabled_) return;
+
+    // Call parent's schedule with COMBINATION priority
+    schedule(start_time, Architecture::EVENT_PRIORITY_COMBINATION);
+  }
+
+  /**
+   * @brief Process ports for synchronous update
+   *
+   * Call this at the end of each cycle to:
+   * 1. Snapshot current scoreboard as "this cycle's previous" for Stage2 to
+   * read
+   * 2. Read register values from read address ports
+   * 3. Process write operations from write ports
+   * 4. Update scoreboard
+   * 5. Update read data ports
+   */
   void updatePorts() {
+    // FIRST: Snapshot the CURRENT scoreboard before processing writes
+    // This becomes "previous scoreboard" for Stage2 to read
+    // This is the registered value (snapshot from start of cycle)
+    uint32_t snapshot_prev_scoreboard = getScoreboardMask();
+
     write_count_ = 0;  // Reset write count for this cycle
 
     // Process write operations and update scoreboard
@@ -381,7 +430,8 @@ class RegisterFile : public Architecture::TickingComponent {
     }
 
     // Output scoreboard values
-    outputScoreboard();
+    // Use the snapshotted "previous" value instead of scoreboard_prev_
+    outputScoreboard(snapshot_prev_scoreboard);
   }
 
   /**
@@ -440,6 +490,10 @@ class RegisterFile : public Architecture::TickingComponent {
   uint64_t total_forwards_;
   uint64_t total_conflicts_;
   uint32_t write_count_;  // Number of writes this cycle
+
+  // Cached scoreboard values for Stage2 to read synchronously
+  uint32_t cached_scoreboard_comb_;
+  uint32_t cached_scoreboard_regd_;
 
   /**
    * @brief Process read operations
@@ -642,42 +696,40 @@ class RegisterFile : public Architecture::TickingComponent {
    * This ensures dispatch_ctrl_ sees when data actually arrives, not just
    * when write operations are dispatched.
    */
-  void outputScoreboard() {
+  void outputScoreboard(uint32_t snapshot_prev = 0) {
     uint32_t scoreboard_mask = getScoreboardMask();
 
-    // Compute which registers were cleared this cycle
-    // These are registers that were in scoreboard_prev_ but not in
-    // scoreboard_mask
-    uint32_t cleared_this_cycle = scoreboard_prev_ & ~scoreboard_mask;
-
-    std::cerr << "[outputScoreboard] Time " << scheduler_.getCurrentTime()
-              << ": scoreboard_mask=0x" << std::hex << scoreboard_mask
-              << " prev=0x" << scoreboard_prev_ << " cleared=0x"
-              << cleared_this_cycle << std::dec << std::endl;
+    // Following golden reference (Coral NPU):
+    // - regd (registered): snapshot from START of this cycle (before processing
+    // writes)
+    // - comb (combinational): current cycle's pending registers (after
+    // processing)
+    uint32_t regd_value = snapshot_prev;
+    uint32_t comb_value = scoreboard_mask;
 
     // Output previous cycle's scoreboard (registered)
-    // This is what was in scoreboard at end of previous cycle
+    // This is snapshot from start of cycle = conditions at PREVIOUS cycle's end
     auto regd_port = getPort("scoreboard_regd");
     if (regd_port) {
-      auto packet =
-          std::make_shared<Architecture::IntDataPacket>(scoreboard_prev_);
+      auto packet = std::make_shared<Architecture::IntDataPacket>(regd_value);
       regd_port->write(packet);
     }
 
     // Output current combinational scoreboard
-    // = registered + (clears happening this cycle applied)
-    // But since we already updated scoreboard_mask with clears, this is just
-    // scoreboard_mask However, to be explicit: comb = scoreboard_prev -
-    // cleared_this_cycle
-    uint32_t comb_scoreboard = scoreboard_prev_ & ~cleared_this_cycle;
+    // This is the current pending registers (combinational logic)
     auto comb_port = getPort("scoreboard_comb");
     if (comb_port) {
-      auto packet =
-          std::make_shared<Architecture::IntDataPacket>(comb_scoreboard);
+      auto packet = std::make_shared<Architecture::IntDataPacket>(comb_value);
       comb_port->write(packet);
     }
 
-    // Update previous scoreboard for next cycle
+    // Cache the scoreboard values for Stage2 to read synchronously
+    // This ensures Stage2 always reads consistent values without timing issues
+    cached_scoreboard_comb_ = comb_value;
+    cached_scoreboard_regd_ = regd_value;
+
+    // Update scoreboard_prev for NEXT cycle's start snapshot
+    // This will be snapshotted again next cycle BEFORE processing writes
     scoreboard_prev_ = scoreboard_mask;
   }
 };

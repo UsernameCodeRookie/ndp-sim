@@ -18,9 +18,12 @@ namespace Architecture {
 /**
  * @brief Event priority levels for scheduling
  */
-constexpr int EVENT_PRIORITY_COMPONENT = 0;  // Component ticks (execute first)
+constexpr int EVENT_PRIORITY_COMBINATION =
+    1;  // RegisterFile ticks (execute first to output combinational logic)
+constexpr int EVENT_PRIORITY_COMPONENT =
+    0;  // Component ticks (execute after regfile)
 constexpr int EVENT_PRIORITY_CONNECTION =
-    1;  // Connection propagates (execute after components)
+    -1;  // Connection propagates (execute after components)
 
 /**
  * @brief TickingComponent class
@@ -40,7 +43,7 @@ class TickingComponent : public Component {
   virtual ~TickingComponent() = default;
 
   // Start the ticking component
-  void start(uint64_t start_time = 0) { schedule(start_time); }
+  virtual void start(uint64_t start_time = 0) { schedule(start_time); }
 
   // Stop the ticking component
   void stop() { enabled_ = false; }
@@ -53,12 +56,13 @@ class TickingComponent : public Component {
   virtual void tick() = 0;
 
  protected:
-  void schedule(uint64_t time) {
+  virtual void schedule(uint64_t time,
+                        int priority = EVENT_PRIORITY_COMPONENT) {
     if (!enabled_) return;
 
     auto tick_event = std::make_shared<EventDriven::LambdaEvent>(
         time,
-        [this](EventDriven::EventScheduler& sched) {
+        [this, priority](EventDriven::EventScheduler& sched) {
           if (!enabled_) return;
 
           // Trace tick event
@@ -70,14 +74,13 @@ class TickingComponent : public Component {
           tick();
           tick_count_++;
 
-          // Schedule next tick
-          schedule(sched.getCurrentTime() + period_);
+          // Schedule next tick with same priority
+          schedule(sched.getCurrentTime() + period_, priority);
         },
-        EVENT_PRIORITY_COMPONENT, name_ + "_Tick");
+        priority, name_ + "_Tick");
 
     scheduler_.schedule(tick_event);
   }
-
   uint64_t period_;      // Tick period (cycle time)
   uint64_t tick_count_;  // Number of ticks executed
   bool enabled_;         // Whether the component is active
@@ -114,12 +117,12 @@ class TickingConnection : public Connection {
   virtual void propagate() {};
 
  protected:
-  void schedule(uint64_t time) {
+  void schedule(uint64_t time, int priority = EVENT_PRIORITY_CONNECTION) {
     if (!enabled_) return;
 
     auto propagate_event = std::make_shared<EventDriven::LambdaEvent>(
         time,
-        [this](EventDriven::EventScheduler& sched) {
+        [this, priority](EventDriven::EventScheduler& sched) {
           if (!enabled_) return;
 
           // Trace propagate event
@@ -131,10 +134,10 @@ class TickingConnection : public Connection {
           // Execute propagate logic
           propagate();
 
-          // Schedule next propagate
-          schedule(sched.getCurrentTime() + period_);
+          // Schedule next propagate with same priority
+          schedule(sched.getCurrentTime() + period_, priority);
         },
-        EVENT_PRIORITY_CONNECTION, name_ + "_Propagate");
+        priority, name_ + "_Propagate");
 
     scheduler_.schedule(propagate_event);
   }

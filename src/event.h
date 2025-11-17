@@ -63,14 +63,14 @@ class Event {
 
   /**
    * @brief Comparison operator for priority queue sorting
-   * Earlier events have higher priority, when time is the same, higher priority
-   * value comes first
+   * Earlier events have higher priority, when time is the same, HIGHER priority
+   * number comes first (higher priority)
    */
   bool operator<(const Event& other) const {
     if (time_ != other.time_) {
       return time_ > other.time_;  // Min heap, earlier time comes first
     }
-    return priority_ < other.priority_;  // Higher priority value comes first
+    return priority_ > other.priority_;  // HIGHER priority NUMBER comes first
   }
 
  protected:
