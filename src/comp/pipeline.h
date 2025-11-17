@@ -9,6 +9,7 @@
 
 #include "../packet.h"
 #include "../port.h"
+#include "../stage.h"
 #include "../tick.h"
 #include "../trace.h"
 
@@ -131,6 +132,46 @@ class Pipeline : public Architecture::TickingComponent {
       return stage_latencies_[stage_index];
     }
     return 1;  // Default: 1 cycle
+  }
+
+  /**
+   * @brief Register a Stage object at a specific pipeline stage
+   *
+   * Replaces the stage function at stage_index with one that calls
+   * the Stage::process() method.
+   *
+   * @param stage_index Pipeline stage index (0-based)
+   * @param stage Pointer to the Stage object
+   * @return True if successful
+   */
+  bool setStage(size_t stage_index,
+                std::shared_ptr<Architecture::Stage> stage) {
+    if (stage_index >= num_stages_ || !stage) {
+      return false;
+    }
+
+    // Store the stage object
+    if (stage_index >= stage_objects_.size()) {
+      stage_objects_.resize(stage_index + 1, nullptr);
+    }
+    stage_objects_[stage_index] = stage;
+
+    // Create a stage function that calls the Stage's process method
+    setStageFunction(stage_index,
+                     [stage](std::shared_ptr<Architecture::DataPacket> data) {
+                       return stage->process(data);
+                     });
+
+    // Set the stall predicate to use the Stage's shouldStall method
+    setStageStallPredicate(
+        stage_index, [stage](std::shared_ptr<Architecture::DataPacket> data) {
+          return stage->shouldStall(data);
+        });
+
+    // Set the latency from the Stage
+    setStageLatency(stage_index, stage->getLatency());
+
+    return true;
   }
 
   /**
@@ -344,10 +385,12 @@ class Pipeline : public Architecture::TickingComponent {
   std::vector<std::function<bool(std::shared_ptr<Architecture::DataPacket>)>>
       stage_stall_predicates_;             // Stall predicates for each stage
   std::vector<uint64_t> stage_latencies_;  // Latency (in cycles) for each stage
-  bool stall_;                             // Pipeline stall flag
-  bool flush_;                             // Pipeline flush flag
-  uint64_t total_processed_;               // Total items processed
-  uint64_t total_stalls_;                  // Total stall cycles
+  std::vector<std::shared_ptr<Architecture::Stage>>
+      stage_objects_;         // Stage objects registered at each stage
+  bool stall_;                // Pipeline stall flag
+  bool flush_;                // Pipeline flush flag
+  uint64_t total_processed_;  // Total items processed
+  uint64_t total_stalls_;     // Total stall cycles
 };
 
 /**

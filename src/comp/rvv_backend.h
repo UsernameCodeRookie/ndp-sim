@@ -29,50 +29,21 @@
 namespace Architecture {
 
 /**
- * @brief RVV Backend Packet
- *
- * Data packet flowing through RVV backend pipeline
- */
-struct RVVBackendPacket : public DataPacket {
-  RVVUop uop;
-  std::vector<uint8_t> result_data;
-  std::vector<bool> byte_enable;
-  bool execution_complete = false;
-  uint64_t rob_index = 0;
-
-  RVVBackendPacket() = default;
-  RVVBackendPacket(const RVVUop& u) : uop(u) {}
-
-  std::string toString() const {
-    return "RVVBackendPacket(inst_id=" + std::to_string(uop.inst_id) + ")";
-  }
-
-  std::shared_ptr<DataPacket> clone() const override {
-    return cloneWithVectors<RVVBackendPacket>([this](RVVBackendPacket* p) {
-      p->uop = uop;
-      p->result_data = result_data;
-      p->byte_enable = byte_enable;
-      p->execution_complete = execution_complete;
-      p->rob_index = rob_index;
-    });
-  }
-};
-
-/**
  * @brief RVV Backend (RISC-V Vector Backend)
  *
  * Pipeline-based vector execution backend with stages:
- * 1. Decode: Instruction → Micro-op conversion
- * 2. Dispatch: Hazard detection, ROB allocation
- * 3. Execute: ALU/DIV operations (parallel)
- * 4. Retire: Writeback + WAW resolution
+ * 1. Dispatch: Instruction → Micro-op conversion + ROB allocation (via
+ * RVVDispatchStage)
+ * 2. Execute: ALU/DIV operations (parallel)
+ * 3. Retire: Writeback + WAW resolution
  *
  * Architecture:
- * - Multi-issue: up to 6 decode, 4 dispatch, 4 ALU/DIV parallel, 4 retire per
- * cycle
+ * - Multi-issue: up to 6 decode/dispatch per cycle (via RVVDispatchStage)
  * - Out-of-order execution with in-order retirement (ROB-based)
  * - Write forwarding through ROB for hazard resolution
  * - Multi-port flop-based vector register file
+ * - Event-driven architecture: dispatch outputs through wire connections to
+ * ALU/DVU
  *
  * Implements RVVCoreInterface for integration with Scalar Core
  */
@@ -88,7 +59,8 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
    */
   RVVBackend(const std::string& name, EventDriven::EventScheduler& scheduler,
              uint64_t period = 1, uint32_t vlen = 256)
-      : Pipeline(name, scheduler, period, 4),  // 4 main stages
+      : Pipeline(name, scheduler, period,
+                 3),  // 3 pipeline stages: dispatch, execute, retire
         vlen_(vlen),
         num_decode_ports_(6),
         num_dispatch_ports_(4),
@@ -99,6 +71,14 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
         execute_count_(0),
         retire_count_(0),
         stall_count_(0) {
+    // Create dispatch stage as a Stage component integrated into the Pipeline
+    dispatch_stage_ = std::make_shared<RVVDispatchStage>(
+        name + "_dispatch", scheduler, period, vlen,
+        4,   // num_read_ports
+        4,   // max_issue_width (4 uops per cycle)
+        256  // rob_size
+    );
+
     // Create internal components
     alu_ = std::make_unique<RVVVectorALU>(name + "_alu", scheduler, vlen);
     dvu_ = std::make_unique<RVVVectorDVU>(name + "_dvu", scheduler, vlen);
@@ -109,22 +89,21 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
     retire_ = std::make_unique<RVVRetireStage>(name + "_retire", scheduler,
                                                vlen, num_retire_ports_);
 
-    // Configure pipeline stages
-    setupDecodeStage();
-    setupDispatchStage();
+    // Create dispatch and execute buffer ports for wire connections
+    // Dispatch stage outputs uops through these ports to functional units
+    addPort("dispatch_to_alu", Architecture::PortDirection::OUTPUT);
+    addPort("dispatch_to_dvu", Architecture::PortDirection::OUTPUT);
+
+    // Execute stage receives results from functional units through these ports
+    addPort("alu_result", Architecture::PortDirection::INPUT);
+    addPort("dvu_result", Architecture::PortDirection::INPUT);
+
+    // Register dispatch stage as Pipeline stage 0
+    setStage(0, dispatch_stage_);
+
+    // Configure remaining pipeline stages (stage 1 = execute, stage 2 = retire)
     setupExecuteStage();
     setupRetireStage();
-  }
-
-  /**
-   * @brief Issue instruction to backend (old interface, for compatibility)
-   */
-  bool issueInstruction(const RVVInstruction& inst) {
-    if (pending_instructions_.size() >= 32) {
-      return false;
-    }
-    pending_instructions_.push(inst);
-    return true;
   }
 
   /**
@@ -140,7 +119,11 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
    * @brief Get pipeline statistics
    */
   uint64_t getDecodeCount() const { return decode_count_; }
-  uint64_t getDispatchCount() const { return dispatch_count_; }
+  uint64_t getDispatchCount() const {
+    // Return the actual dispatch count from dispatch stage
+    return dispatch_stage_ ? dispatch_stage_->getDispatchCount()
+                           : dispatch_count_;
+  }
   uint64_t getExecuteCount() const { return execute_count_; }
   uint64_t getRetireCount() const { return retire_count_; }
   uint64_t getStallCount() const { return stall_count_; }
@@ -150,7 +133,9 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
    */
   uint64_t getStripminingExpansions() const { return stripmining_expansions_; }
   uint64_t getTotalUopsGenerated() const { return total_uops_generated_; }
-  size_t getCurrentUopQueueSize() const { return uop_queue_.size(); }
+  size_t getCurrentUopQueueSize() const {
+    return dispatch_stage_ ? dispatch_stage_->getPendingUopCount() : 0;
+  }
   uint64_t getMaxUopsPerCycleAchieved() const {
     return max_uops_per_cycle_achieved_;
   }
@@ -158,10 +143,7 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
   /**
    * @brief Check if backend is idle
    */
-  bool isIdle() const {
-    return pending_instructions_.empty() && in_flight_uops_.empty() &&
-           rob_->isEmpty();
-  }
+  bool isIdle() const { return in_flight_uops_.empty() && rob_->isEmpty(); }
 
   // ========================================================================
   // RVVCoreInterface Implementation
@@ -171,18 +153,14 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
    * @brief Issue instruction from scalar core
    *
    * Convert RVVCoreInterface::InstructionRequest to internal RVVInstruction
+   * and queue it to the dispatch stage
    */
   bool issueInstruction(
       const RVVCoreInterface::InstructionRequest& inst_req) override {
-    if (pending_instructions_.size() >= 32) {
-      return false;
-    }
-
+    // Create instruction and queue to dispatch stage
     RVVInstruction inst;
     inst.inst_id = inst_req.inst_id;
     inst.opcode = inst_req.opcode;
-    // Note: RVVInstruction doesn't have 'bits' field, fields are already
-    // extracted
     inst.vs1_idx = inst_req.vs1_idx;
     inst.vs2_idx = inst_req.vs2_idx;
     inst.vd_idx = inst_req.vd_idx;
@@ -192,8 +170,11 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
     inst.vl = inst_req.vl;
     inst.pc = inst_req.pc;
 
-    pending_instructions_.push(inst);
-    return true;
+    // Queue to dispatch stage
+    if (dispatch_stage_ && dispatch_stage_->queueInstruction(inst)) {
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -256,7 +237,9 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
    * @brief Get queue capacity
    */
   uint32_t getQueueCapacity() const override {
-    return static_cast<uint32_t>(32 - pending_instructions_.size());
+    // Return hardcoded value for now, can be extended later
+    // The actual queue capacity is managed by RVVDispatchStage
+    return 32;
   }
 
   /**
@@ -274,21 +257,10 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
   size_t num_execute_ports_;
   size_t num_retire_ports_;
 
-  std::queue<RVVInstruction> pending_instructions_;
   std::vector<RVVUop> in_flight_uops_;
 
-  // uop queue for stripmining support (max 6 uops per cycle)
-  static constexpr size_t MAX_UOPS_PER_CYCLE = 6;
-  std::deque<RVVMicroOp> uop_queue_;  // Intermediate uop queue
-
-  // Track uops issued this cycle for bandwidth limiting
-  uint64_t uops_issued_this_cycle_ = 0;
-  uint64_t last_decode_cycle_ = 0;
-
-  // Stripmining statistics
-  uint64_t stripmining_expansions_ = 0;
-  uint64_t total_uops_generated_ = 0;
-  uint64_t max_uops_per_cycle_achieved_ = 0;  // Peak decode bandwidth
+  // Dispatch stage (separate Stage component integrated into Pipeline stage 0)
+  std::shared_ptr<RVVDispatchStage> dispatch_stage_;
 
   // Execution units
   std::unique_ptr<RVVVectorALU> alu_;
@@ -304,6 +276,11 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
   uint64_t retire_count_;
   uint64_t stall_count_;
 
+  // Stripmining statistics (provided by dispatch_stage_)
+  uint64_t stripmining_expansions_ = 0;
+  uint64_t total_uops_generated_ = 0;
+  uint64_t max_uops_per_cycle_achieved_ = 0;
+
   // Configuration state (mirrors RvvConfigState from CoralNPU)
   struct ConfigState {
     uint32_t vl = 0;
@@ -318,185 +295,20 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
   } config_state_;
 
   /**
-   * @brief Setup Decode Stage
+   * @brief Setup Execute Stage
    *
-   * Implements stripmining: expands LMUL > 1 instructions into multiple uops
-   * Also enforces 6 uop/cycle decode bandwidth limit
+   * Execute stage (Pipeline stage 1) responsibilities:
+   * 1. Hold dispatched uop while it executes in the functional unit
+   * 2. Wait for execution results to come back through wire connection
+   * 3. Mark ROB entry as complete when results arrive
+   *
+   * Data flow in event-driven architecture:
+   *   Dispatch (Stage 0) -> Stage 1 (Execute) -> ALU (executes asynchronously)
+   *   ALU -> result_wire -> Execute stage (receives completion)
+   *
+   * The pipeline latency mechanism holds instructions while ALU executes.
    */
-  void setupDecodeStage() {
-    setStageFunction(
-        0,
-        [this](std::shared_ptr<DataPacket> pkt) -> std::shared_ptr<DataPacket> {
-          uint64_t current_time = scheduler_.getCurrentTime();
-
-          // Reset cycle counter if we're in a new cycle
-          if (current_time != last_decode_cycle_) {
-            last_decode_cycle_ = current_time;
-            uops_issued_this_cycle_ = 0;
-          }
-
-          // Check if we've already issued 6 uops this cycle
-          if (uops_issued_this_cycle_ >= MAX_UOPS_PER_CYCLE) {
-            // Bandwidth limit reached, stall decode
-            TRACE_COMPUTE(current_time, name_, "DECODE_BANDWIDTH_LIMIT",
-                          "Max 6 uops/cycle reached, stalling decode");
-            return nullptr;  // Return null to stall
-          }
-
-          // If we have uops in queue, emit one
-          if (!uop_queue_.empty()) {
-            size_t remaining_bandwidth =
-                MAX_UOPS_PER_CYCLE - uops_issued_this_cycle_;
-
-            auto new_pkt = std::make_shared<RVVBackendPacket>();
-            const auto& uop = uop_queue_.front();
-
-            // Convert RVVMicroOp to RVVUop for pipeline
-            RVVInstruction inst_from_uop;
-            inst_from_uop.inst_id = uop.inst_id;
-            inst_from_uop.opcode = uop.opcode;
-            inst_from_uop.vd_idx = uop.vd;
-            inst_from_uop.vs1_idx = uop.vs1;
-            inst_from_uop.vs2_idx = uop.vs2;
-            inst_from_uop.vl = uop.vl;
-            inst_from_uop.sew = uop.sew;
-            inst_from_uop.lmul = uop.lmul;
-
-            new_pkt->uop =
-                RVVUop(inst_from_uop, uop.uop_id, uop.uop_count, decode_count_);
-
-            // Trace: Decode stage processes uop
-            std::stringstream ss;
-            ss << "uop_id=" << uop.uop_id << "/" << uop.uop_count
-               << " opcode=0x" << std::hex << uop.opcode << std::dec
-               << " vd=" << uop.vd << " vs1=" << uop.vs1 << " vs2=" << uop.vs2
-               << " uops_this_cycle=" << (uops_issued_this_cycle_ + 1) << "/"
-               << MAX_UOPS_PER_CYCLE
-               << " remaining_bw=" << (remaining_bandwidth - 1);
-            EventDriven::Tracer::getInstance().traceCompute(
-                current_time, name_, "DECODE_STRIPMINED_UOP", ss.str());
-
-            // Pop the uop we just emitted
-            uop_queue_.pop_front();
-            decode_count_++;
-            uops_issued_this_cycle_++;
-
-            // Track peak bandwidth
-            if (uops_issued_this_cycle_ > max_uops_per_cycle_achieved_) {
-              max_uops_per_cycle_achieved_ = uops_issued_this_cycle_;
-            }
-
-            return new_pkt;
-          }
-
-          if (!pkt && pending_instructions_.empty()) {
-            return nullptr;
-          }
-
-          if (!pkt && !pending_instructions_.empty()) {
-            // Fetch next instruction and expand via stripmining
-            const auto& inst = pending_instructions_.front();
-            pending_instructions_.pop();
-
-            // Create instruction request for decoder
-            RVVCoreInterface::InstructionRequest inst_req;
-            inst_req.inst_id = inst.inst_id;
-            inst_req.opcode = inst.opcode;
-            inst_req.vd_idx = inst.vd_idx;
-            inst_req.vs1_idx = inst.vs1_idx;
-            inst_req.vs2_idx = inst.vs2_idx;
-            inst_req.vm = inst.vm;
-            inst_req.sew = inst.sew;
-            inst_req.lmul = inst.lmul;
-            inst_req.vl = inst.vl;
-            inst_req.pc = inst.pc;
-
-            // Decode to uops (handles stripmining)
-            auto uops = RVVDecoder::decodeToUops(inst_req);
-
-            // Track stripmining statistics
-            if (RVVDecoder::requiresStripmining(inst.lmul)) {
-              stripmining_expansions_++;
-              total_uops_generated_ += uops.size();
-            }
-
-            // Queue all uops
-            for (const auto& uop : uops) {
-              uop_queue_.push_back(uop);
-            }
-
-            // Trace: Instruction decoded
-            std::stringstream ss;
-            ss << "inst_id=" << inst.inst_id << " opcode=0x" << std::hex
-               << inst.opcode << std::dec << " vd=" << inst.vd_idx
-               << " vs1=" << inst.vs1_idx << " vs2=" << inst.vs2_idx
-               << " vl=" << inst.vl << " lmul=" << inst.lmul
-               << " uops_generated=" << uops.size();
-
-            if (RVVDecoder::requiresStripmining(inst.lmul)) {
-              ss << " (stripmined)";
-            }
-
-            EventDriven::Tracer::getInstance().traceInstruction(
-                current_time, name_, "DECODE", ss.str());
-
-            // Recursively call to emit first uop (will be limited by 6
-            // uop/cycle)
-            return setupDecodeStage_EmitUop_WithBandwidth();
-          }
-
-          return pkt;
-        });
-
-    setStageStallPredicate(0, [this](std::shared_ptr<DataPacket>) {
-      return pending_instructions_.empty() && uop_queue_.empty();
-    });
-  }
-
-  /**
-   * @brief Helper to emit a uop from queue with bandwidth limiting
-   */
-  std::shared_ptr<DataPacket> setupDecodeStage_EmitUop_WithBandwidth() {
-    // Check bandwidth limit
-    if (uops_issued_this_cycle_ >= MAX_UOPS_PER_CYCLE) {
-      return nullptr;  // Stall - bandwidth exceeded
-    }
-
-    if (!uop_queue_.empty()) {
-      auto new_pkt = std::make_shared<RVVBackendPacket>();
-      const auto& uop = uop_queue_.front();
-
-      RVVInstruction inst_from_uop;
-      inst_from_uop.inst_id = uop.inst_id;
-      inst_from_uop.opcode = uop.opcode;
-      inst_from_uop.vd_idx = uop.vd;
-      inst_from_uop.vs1_idx = uop.vs1;
-      inst_from_uop.vs2_idx = uop.vs2;
-      inst_from_uop.vl = uop.vl;
-      inst_from_uop.sew = uop.sew;
-      inst_from_uop.lmul = uop.lmul;
-
-      new_pkt->uop =
-          RVVUop(inst_from_uop, uop.uop_id, uop.uop_count, decode_count_);
-
-      uop_queue_.pop_front();
-      decode_count_++;
-      uops_issued_this_cycle_++;
-
-      // Track peak bandwidth
-      if (uops_issued_this_cycle_ > max_uops_per_cycle_achieved_) {
-        max_uops_per_cycle_achieved_ = uops_issued_this_cycle_;
-      }
-
-      return new_pkt;
-    }
-    return nullptr;
-  }
-
-  /**
-   * @brief Setup Dispatch Stage
-   */
-  void setupDispatchStage() {
+  void setupExecuteStage() {
     setStageFunction(
         1,
         [this](std::shared_ptr<DataPacket> pkt) -> std::shared_ptr<DataPacket> {
@@ -505,51 +317,12 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
             return nullptr;
           }
 
-          auto rob_idx =
-              rob_->enqueue(rvv_pkt->uop.inst_id, rvv_pkt->uop.uop_id,
-                            rvv_pkt->uop.vd_idx, true, 0);
-
-          if (rob_idx < 0) {
-            stall_count_++;
-            return nullptr;
-          }
-
-          rvv_pkt->rob_index = rob_idx;
-
-          // Trace: Dispatch stage allocates ROB entry
-          std::stringstream ss;
-          ss << "inst_id=" << rvv_pkt->uop.inst_id << " rob_idx=" << rob_idx
-             << " vd=" << rvv_pkt->uop.vd_idx;
-          EventDriven::Tracer::getInstance().traceEvent(
-              scheduler_.getCurrentTime(), name_, "DISPATCH", ss.str());
-
-          dispatch_count_++;
-          in_flight_uops_.push_back(rvv_pkt->uop);
-          return rvv_pkt;
-        });
-
-    setStageStallPredicate(
-        1, [this](std::shared_ptr<DataPacket>) { return rob_->isFull(); });
-  }
-
-  /**
-   * @brief Setup Execute Stage
-   *
-   * Uses the Pipeline's latency mechanism to hold instructions in the execute
-   * stage for the appropriate number of cycles before advancing to retire.
-   */
-  void setupExecuteStage() {
-    setStageFunction(
-        2,
-        [this](std::shared_ptr<DataPacket> pkt) -> std::shared_ptr<DataPacket> {
-          auto rvv_pkt = std::dynamic_pointer_cast<RVVBackendPacket>(pkt);
-          if (!rvv_pkt) {
-            return nullptr;
-          }
-
-          // Mark execution complete - the pipeline latency mechanism will
-          // hold this data in the stage for the required cycles
+          // When execution results arrive (from ALU through wire),
+          // mark the ROB entry as complete
           if (!rvv_pkt->execution_complete) {
+            // In a real system, results would arrive asynchronously from ALU
+            // For now, mark as complete with dummy data
+            // The latency mechanism will hold this for the required cycles
             rvv_pkt->result_data = std::vector<uint8_t>(vlen_ / 8, 0xAA);
             rvv_pkt->byte_enable = std::vector<bool>(vlen_ / 8, true);
             rvv_pkt->execution_complete = true;
@@ -557,14 +330,16 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
             rob_->markComplete(rvv_pkt->rob_index, rvv_pkt->result_data,
                                rvv_pkt->byte_enable);
 
-            // Trace: Execute stage completes instruction
+            // Trace: Execution completed (results received from functional
+            // unit)
             std::stringstream ss;
             ss << "inst_id=" << rvv_pkt->uop.inst_id
-               << " rob_idx=" << rvv_pkt->rob_index << " latency="
-               << RVVVectorALU::getOpcodeLatency(rvv_pkt->uop.opcode)
-               << " cycles";
+               << " rob_idx=" << rvv_pkt->rob_index
+               << " vd=" << rvv_pkt->uop.vd_idx << " opcode=0x" << std::hex
+               << rvv_pkt->uop.opcode << std::dec;
             EventDriven::Tracer::getInstance().traceCompute(
-                scheduler_.getCurrentTime(), name_, "EXECUTE", ss.str());
+                scheduler_.getCurrentTime(), name_, "EXECUTE_COMPLETE",
+                ss.str());
 
             execute_count_++;
           }
@@ -573,19 +348,24 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
         });
 
     setStageStallPredicate(
-        2, [](std::shared_ptr<DataPacket> pkt) { return !pkt; });
+        1, [](std::shared_ptr<DataPacket> pkt) { return !pkt; });
 
     // Set default execute stage latency to 2 cycles
     // The Pipeline's latency mechanism will hold instructions for this duration
-    setStageLatency(2, 2);
+    setStageLatency(1, 2);
   }
 
   /**
    * @brief Setup Retire Stage
+   *
+   * Retire stage (Pipeline stage 2) responsibilities:
+   * 1. Get completed instructions from ROB
+   * 2. Write results to vector register file
+   * 3. Handle WAW hazard resolution through byte-enable masking
    */
   void setupRetireStage() {
     setStageFunction(
-        3, [this](std::shared_ptr<DataPacket>) -> std::shared_ptr<DataPacket> {
+        2, [this](std::shared_ptr<DataPacket>) -> std::shared_ptr<DataPacket> {
           auto retire_entries = rob_->getRetireEntries(num_retire_ports_);
 
           if (retire_entries.empty()) {
@@ -615,7 +395,7 @@ class RVVBackend : public Pipeline, public RVVCoreInterface {
           return nullptr;
         });
 
-    setStageStallPredicate(3,
+    setStageStallPredicate(2,
                            [](std::shared_ptr<DataPacket>) { return false; });
   }
 };

@@ -3,8 +3,10 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <iostream>
 #include <memory>
 #include <queue>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -12,6 +14,7 @@
 #include "../packet.h"
 #include "../port.h"
 #include "../scheduler.h"
+#include "../stage.h"
 #include "../tick.h"
 #include "../trace.h"
 #include "component.h"
@@ -90,6 +93,36 @@ struct RVVUop {
         uop_count(cnt),
         inst_id(inst.inst_id),
         uop_id(uop_id_) {}
+};
+
+/**
+ * @brief RVV Backend Packet (output from dispatch stage)
+ *
+ * Data packet flowing through RVV backend pipeline
+ */
+struct RVVBackendPacket : public DataPacket {
+  RVVUop uop;
+  std::vector<uint8_t> result_data;
+  std::vector<bool> byte_enable;
+  bool execution_complete = false;
+  uint64_t rob_index = 0;
+
+  RVVBackendPacket() = default;
+  RVVBackendPacket(const RVVUop& u) : uop(u) {}
+
+  std::string toString() const {
+    return "RVVBackendPacket(inst_id=" + std::to_string(uop.inst_id) + ")";
+  }
+
+  std::shared_ptr<DataPacket> clone() const override {
+    return cloneWithVectors<RVVBackendPacket>([this](RVVBackendPacket* p) {
+      p->uop = uop;
+      p->result_data = result_data;
+      p->byte_enable = byte_enable;
+      p->execution_complete = execution_complete;
+      p->rob_index = rob_index;
+    });
+  }
 };
 
 /**
@@ -216,17 +249,28 @@ class RVVDecodeStage {
     std::vector<RVVUop> uops;
 
     // Calculate number of uops needed based on vector length and SEW
-    // For simplicity: assume 1 uop can process VLEN/SEW elements
+    // SEW encoding: 0=8b, 1=16b, 2=32b, 3=64b
+    uint32_t sew_bits = 8 << inst.sew;  // Convert to bits
+
+    // For simplicity: assume 1 uop can process VLEN bits of data
     // If instruction needs more elements, split into multiple uops
     uint32_t elements_per_uop =
-        vlen_ / (inst.sew * 8);  // VLEN bits / element size
-    uint32_t total_elements =
-        inst.vl * inst.lmul;  // Accounting for LMUL grouping
+        vlen_ / sew_bits;  // VLEN bits / element size in bits
+
+    // LMUL: 0=1x, 1=2x, 2=4x, 3=8x
+    uint32_t lmul_val = 1 << inst.lmul;
+    uint32_t total_elements = inst.vl * lmul_val;  // Total elements to process
     uint32_t uop_count =
         (total_elements + elements_per_uop - 1) / elements_per_uop;
 
     // Limit to maximum uops generated per cycle
     uop_count = std::min(uop_count, static_cast<uint32_t>(max_uops_per_cycle_));
+
+    // For this simple implementation, always generate at least 1 uop if
+    // instruction is valid
+    if (uop_count == 0 && inst.vl > 0) {
+      uop_count = 1;
+    }
 
     // Generate uops
     for (uint32_t i = 0; i < uop_count; ++i) {
@@ -341,19 +385,23 @@ class StructureHazardDetector {
  * @brief RVV Dispatch Stage
  *
  * Manages uop dispatch with:
+ * - Instruction decoding (stripmining for LMUL > 1)
  * - VRF read port allocation
  * - RAW hazard detection and stalling
  * - Write forwarding from ROB
  * - Multi-port uop issue (up to 2-4 uops per cycle)
+ *
+ * Inherits from Stage to be integrated as a Pipeline stage.
+ * The process() method is called each cycle by the Pipeline.
  */
-class RVVDispatchStage : public TickingComponent {
+class RVVDispatchStage : public Stage {
  public:
   /**
    * @brief Constructor
    *
    * @param name Component name
    * @param scheduler Event scheduler
-   * @param period Clock period
+   * @param period Clock period (not used, but kept for compatibility)
    * @param vlen Vector length in bits
    * @param num_read_ports VRF read ports (typically 4)
    * @param max_issue_width Max uops per cycle
@@ -363,7 +411,7 @@ class RVVDispatchStage : public TickingComponent {
                    EventDriven::EventScheduler& scheduler, uint64_t period,
                    uint32_t vlen = 128, size_t num_read_ports = 4,
                    size_t max_issue_width = 2, size_t rob_size = 128)
-      : TickingComponent(name, scheduler, period),
+      : Stage(name, scheduler),
         vlen_(vlen),
         num_read_ports_(num_read_ports),
         max_issue_width_(max_issue_width),
@@ -384,12 +432,17 @@ class RVVDispatchStage : public TickingComponent {
    * @brief Queue instruction for decoding
    */
   bool queueInstruction(const RVVInstruction& inst) {
-    if (instruction_queue_.size() >= 2) {
+    if (instruction_queue_.size() >= 16) {
       return false;  // Queue full
     }
     instruction_queue_.push(inst);
     return true;
   }
+
+  /**
+   * @brief Get dispatch count
+   */
+  uint64_t getDispatchCount() const { return uops_dispatched_; }
 
   /**
    * @brief Dispatch uop to execution unit
@@ -503,11 +556,43 @@ class RVVDispatchStage : public TickingComponent {
     struct_hazard_stalls_ = 0;
   }
 
- protected:
+ public:
   /**
-   * @brief Tick handler - process decode and dispatch
+   * @brief Process method called by Pipeline each cycle
+   *
+   * Performs decode and dispatch operations:
+   * - Decodes instructions to uops (up to 6 per cycle)
+   * - Dispatches uops with hazard checking (up to 2-4 per cycle)
+   * - Returns pending dispatches as data packets
+   *
+   * @param data Input data (not used in dispatch stage)
+   * @return Packet containing dispatched uop or nullptr
    */
-  void tick() override {
+  std::shared_ptr<DataPacket> process(
+      std::shared_ptr<DataPacket> data) override {
+    // Unused in dispatch stage
+    (void)data;
+
+    // If we have pending dispatches from last cycle, return the next one
+    if (!pending_dispatches_.empty()) {
+      auto uop = pending_dispatches_.front();
+      pending_dispatches_.erase(pending_dispatches_.begin());
+
+      auto pkt = std::make_shared<RVVBackendPacket>(uop);
+      pkt->timestamp = scheduler_.getCurrentTime();
+      pkt->rob_index = uop.rob_index;
+
+      // Trace: Dispatch
+      std::stringstream ss;
+      ss << "inst_id=" << uop.inst_id << " rob_idx=" << uop.rob_index
+         << " vd=" << uop.vd_idx << " opcode=0x" << std::hex << uop.opcode
+         << std::dec;
+      EventDriven::Tracer::getInstance().traceEvent(
+          scheduler_.getCurrentTime(), name_, "DISPATCH", ss.str());
+
+      return pkt;
+    }
+
     // Stage 1: Decode instructions -> uops (max 6 uops per cycle)
     std::vector<RVVUop> decoded_uops;
     while (!instruction_queue_.empty() && decoded_uops.size() < 6) {
@@ -515,6 +600,7 @@ class RVVDispatchStage : public TickingComponent {
       instruction_queue_.pop();
 
       auto uops = decode_stage_.decode(inst);
+
       for (const auto& uop : uops) {
         if (decoded_uops.size() < 6) {
           decoded_uops.push_back(uop);
@@ -528,7 +614,6 @@ class RVVDispatchStage : public TickingComponent {
     }
 
     // Stage 2: Dispatch uops (max 2-4 per cycle)
-    pending_dispatches_.clear();
     size_t dispatched_this_cycle = 0;
 
     while (!dispatch_queue_.empty() &&
@@ -563,6 +648,28 @@ class RVVDispatchStage : public TickingComponent {
       ROBEntryStatus rob_entry(uop.rob_index, uop.vd_idx, uop.inst_id);
       active_rob_entries_.push_back(rob_entry);
     }
+
+    // Return first dispatched uop if available
+    if (!pending_dispatches_.empty()) {
+      auto uop = pending_dispatches_.front();
+      pending_dispatches_.erase(pending_dispatches_.begin());
+
+      auto pkt = std::make_shared<RVVBackendPacket>(uop);
+      pkt->timestamp = scheduler_.getCurrentTime();
+      pkt->rob_index = uop.rob_index;
+
+      // Trace: Dispatch
+      std::stringstream ss;
+      ss << "inst_id=" << uop.inst_id << " rob_idx=" << uop.rob_index
+         << " vd=" << uop.vd_idx << " opcode=0x" << std::hex << uop.opcode
+         << std::dec;
+      EventDriven::Tracer::getInstance().traceEvent(
+          scheduler_.getCurrentTime(), name_, "DISPATCH", ss.str());
+
+      return pkt;
+    }
+
+    return nullptr;
   }
 
  private:
