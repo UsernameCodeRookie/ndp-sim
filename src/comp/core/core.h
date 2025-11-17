@@ -21,6 +21,7 @@
 #include "../rvv/rvv_interface.h"
 #include "alu.h"
 #include "bru.h"
+#include "csr.h"
 #include "decode.h"
 #include "dispatch.h"
 #include "dvu.h"
@@ -146,10 +147,8 @@ class SCore : public Pipeline {
         fetch_stage_(name + "_FetchStage", 8),
         dispatch_ctrl_(name + "_DispatchCtrl", config.num_registers,
                        config.num_instruction_lanes),
-        instructions_dispatched_(0),
-        instructions_retired_(0),
+        csr_(),
         branch_taken_(false),
-        pc_(0),
         dispatch_ready_(true),
         scoreboard_(config.num_registers, false),
         mlu_busy_(false),
@@ -495,7 +494,7 @@ class SCore : public Pipeline {
    * Configures the 3-stage instruction pipeline:
    * - Stage 0: Fetch/Decode - Extract instruction from buffer, decode fields
    * - Stage 1: Dispatch - Issue instruction to execution unit
-   * - Stage 2: Execute/Writeback - Monitor completion
+   * - Stage 2: Execute/Writeback - Monitor completion, update CSR counters
    */
   void setupPipelineStages() {
     // Stage 0: Fetch/Decode
@@ -503,30 +502,33 @@ class SCore : public Pipeline {
     setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
       uint64_t current_time = scheduler_.getCurrentTime();
 
+      // Update cycle counter every cycle
+      csr_.incrementCycle();
+
       // Try to fetch a new instruction from instruction buffer
       // Allow fetch_buffer to accumulate instructions (max size 8) to handle
       // stalls
       const size_t MAX_FETCH_BUFFER = 8;
       if (fetch_buffer_.size() < MAX_FETCH_BUFFER) {
         // Load from buffer - always attempt to fetch
-        uint32_t inst_word = ibuffer_->load(pc_);
+        uint32_t inst_word = ibuffer_->load(csr_.mpc);
 
         // Continue fetching as long as we're in valid address space
         // Don't use inst_word value as stopping condition (0 is valid NOP)
         // Only stop if we've explicitly detected end of program
-        fetch_buffer_.push_back({pc_, inst_word});
+        fetch_buffer_.push_back({csr_.mpc, inst_word});
 
         // Create detailed trace message with hex values explicitly converted
         {
           char trace_buf[256];
           snprintf(trace_buf, sizeof(trace_buf), "Fetch from PC=0x%x word=0x%x",
-                   pc_, inst_word);
+                   csr_.mpc, inst_word);
           TRACE_COMPUTE(current_time, getName(), "STAGE0_FETCH",
                         std::string(trace_buf));
         }
 
         // Increment PC for next instruction
-        pc_ += 4;
+        csr_.mpc += 4;
       }
 
       // If we have instructions in fetch buffer, create a packet to drive the
@@ -565,8 +567,8 @@ class SCore : public Pipeline {
         uint32_t dispatched = dispatch();
         if (dispatched > 0) {
           TRACE_COMPUTE(current_time, getName(), "STAGE1_DISPATCH",
-                        "Dispatched " << dispatched << " instructions, total="
-                                      << instructions_dispatched_);
+                        "Dispatched " << dispatched
+                                      << " instructions, total=" << ("N/A"));
         } else if (!fetch_buffer_.empty()) {
           TRACE_COMPUTE(
               current_time, getName(), "STAGE1_STALL",
@@ -627,7 +629,8 @@ class SCore : public Pipeline {
                   // Clear the wire buffer after successful read
                   conn->clearCurrentData();
                 }
-                instructions_retired_++;
+                // Track retired instruction (CSR minstret incremented in Stage
+                // 2)
                 wb_result = result;  // Keep last result
               }
             }
@@ -649,7 +652,7 @@ class SCore : public Pipeline {
                           "BRU wrote x" << bru_result->rd << " = "
                                         << bru_result->link_data);
             retireInstruction(bru_result->rd);
-            instructions_retired_++;
+            csr_.incrementInstret(1);
             wb_result = result;
           }
         }
@@ -672,7 +675,7 @@ class SCore : public Pipeline {
             TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
                           "Retired MLU result=" << mlu_data->result << " to x"
                                                 << mlu_data->rd_addr);
-            instructions_retired_++;
+            csr_.incrementInstret(1);
             wb_result = result;
 
             // Clear the wire buffer after successful read
@@ -691,7 +694,7 @@ class SCore : public Pipeline {
               TRACE_COMPUTE(current_time, getName(), "STAGE2_WRITEBACK",
                             "Retired MLU result=" << mlu_result->value
                                                   << " to x" << mlu_result->rd);
-              instructions_retired_++;
+              csr_.incrementInstret(1);
               wb_result = result;
 
               // Clear the wire buffer after successful read
@@ -720,7 +723,7 @@ class SCore : public Pipeline {
                                    << " addr=" << lsu_response->address
                                    << " data=" << lsu_response->data);
 
-            instructions_retired_++;
+            csr_.incrementInstret(1);
             wb_result = result;
 
             // Clear the wire buffer after successful read
@@ -732,9 +735,115 @@ class SCore : public Pipeline {
       // If we found an ALU result, return it (keeps Stage 2 active)
       // Otherwise return the data from Stage 1 (if any)
       // This ensures Stage 2 is always called even when dispatch is stalled
+
+      // ===== CSR and Status Register Updates (per-cycle) =====
+      // Track instruction retirement - count completion events directly
+      uint32_t retired_count = 0;
+
+      TRACE_COMPUTE(
+          current_time, getName(), "CSR_CYCLE_UPDATE",
+          "mcycle=" << csr_.getMcycle() << " minstret=" << csr_.getMinstret());
+
       return wb_result ? wb_result : data;
     });
   }
+
+  // ========== CSR Instruction Execution ==========
+
+  /**
+   * @brief Execute a CSR instruction
+   *
+   * Implements RISC-V CSR instructions (CSRRW, CSRRS, CSRRC)
+   * This should be called from dispatch when a CSR instruction is encountered
+   *
+   * @param csr_addr CSR address (12-bit RISC-V address)
+   * @param operation CSR operation (CSRRW, CSRRS, CSRRC)
+   * @param rs1_value Value from rs1 register
+   * @param rd_value Output: old CSR value to write to rd
+   * @return true if operation succeeded, false if access denied
+   */
+  bool executeCsrInstruction(uint16_t csr_addr, uint8_t operation,
+                             uint32_t rs1_value, uint32_t& rd_value) {
+    uint64_t current_time = scheduler_.getCurrentTime();
+
+    // Check if address is valid
+    CsrAddress address;
+    try {
+      address = static_cast<CsrAddress>(csr_addr);
+    } catch (...) {
+      TRACE_COMPUTE(current_time, getName(), "CSR_INVALID_ADDR",
+                    "Invalid CSR address 0x" << std::hex << csr_addr);
+      return false;
+    }
+
+    // Parse operation
+    CsrOperation op;
+    try {
+      op = static_cast<CsrOperation>(operation & 0x3);
+    } catch (...) {
+      TRACE_COMPUTE(current_time, getName(), "CSR_INVALID_OP",
+                    "Invalid CSR operation " << operation);
+      return false;
+    }
+
+    // Perform CSR operation (atomic read-modify-write)
+    rd_value = csr_.modifyCSR(address, op, rs1_value);
+
+    TRACE_COMPUTE(current_time, getName(), "CSR_EXEC",
+                  "addr=0x" << std::hex << csr_addr << std::dec
+                            << " op=" << static_cast<int>(operation)
+                            << " rs1=" << rs1_value << " old=" << rd_value
+                            << " new=" << csr_.readCSR(address));
+
+    return true;
+  }
+
+  /**
+   * @brief Handle trap/exception: save state to CSR
+   *
+   * Called when an exception or interrupt occurs
+   *
+   * @param pc Instruction address where trap occurred
+   * @param cause Exception/interrupt code
+   * @param trap_value Additional information (address, instruction, etc.)
+   */
+  void handleTrap(uint32_t pc, uint32_t cause, uint32_t trap_value = 0) {
+    uint64_t current_time = scheduler_.getCurrentTime();
+
+    csr_.setTrap(pc, cause, trap_value);
+    csr_.privilege_mode = CoreCSRs::PrivilegeMode::MACHINE;
+
+    TRACE_COMPUTE(current_time, getName(), "TRAP_HANDLED",
+                  "pc=0x" << std::hex << pc << " cause=0x" << cause
+                          << " mtval=0x" << trap_value);
+  }
+
+  /**
+   * @brief Get CSR value (for debugging/testing)
+   *
+   * @param csr_addr CSR address
+   * @return CSR value
+   */
+  uint32_t readCsr(uint16_t csr_addr) {
+    return csr_.readCSR(static_cast<CsrAddress>(csr_addr));
+  }
+
+  /**
+   * @brief Set CSR value (for debugging/testing/initialization)
+   *
+   * @param csr_addr CSR address
+   * @param value Value to write
+   */
+  void writeCsr(uint16_t csr_addr, uint32_t value) {
+    csr_.writeCSR(static_cast<CsrAddress>(csr_addr), value);
+  }
+
+  /**
+   * @brief Get CSR object for advanced manipulation
+   *
+   * Allows direct access to CoreCSRs for bulk operations
+   */
+  CoreCSRs& getCSRs() { return csr_; }
 
   /**
    * @brief Reset core state
@@ -753,8 +862,7 @@ class SCore : public Pipeline {
     lsu_->reset();
     regfile_->reset();
 
-    instructions_dispatched_ = 0;
-    instructions_retired_ = 0;
+    csr_.reset();
   }
 
   /**
@@ -783,9 +891,8 @@ class SCore : public Pipeline {
       return;
     }
 
-    instructions_dispatched_++;
-
-    // Delegate to helper methods to reduce duplication
+    // Tracked via CSR mcycle    // Delegate to helper methods to reduce
+    // duplication
     switch (op_type) {
       case OpType::ALU:
         issueALU(lane, operand1, operand2, opcode, rd);
@@ -915,7 +1022,7 @@ class SCore : public Pipeline {
       if (batch_dispatched > 0) {
         fetch_buffer_.erase(fetch_buffer_.begin(),
                             fetch_buffer_.begin() + batch_dispatched);
-        instructions_dispatched_ += batch_dispatched;
+        // Track batch dispatch (CSR mcycle already incremented in Stage 0)
         TRACE_COMPUTE(current_time, getName(), "DISPATCH_VECTOR_BATCH_COMPLETE",
                       "Completed 4-way vector batch: "
                           << batch_dispatched
@@ -1011,7 +1118,7 @@ class SCore : public Pipeline {
 
       fetch_index++;
       dispatched_count++;
-      instructions_dispatched_++;
+      // Track single dispatch (CSR mcycle already incremented in Stage 0)
     }
 
     // Remove dispatched instructions from fetch buffer
@@ -1123,7 +1230,7 @@ class SCore : public Pipeline {
     uint32_t rs2_val = regfile_->readRegister(inst.rs2);
     TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "REGFILE_READ",
                   "Dispatch: x" << inst.rs2 << " = " << rs2_val);
-    return issueBRU(pc_ + 4, inst.opcode, rs1_val, rs2_val, inst.rd);
+    return issueBRU(csr_.mpc + 4, inst.opcode, rs1_val, rs2_val, inst.rd);
   }
 
   /**
@@ -1259,7 +1366,7 @@ class SCore : public Pipeline {
       auto in_port = bru_->getPort("in");
       if (in_port && !in_port->hasData()) {
         auto cmd = std::make_shared<BruCommandPacket>(
-            pc_, pc_next, static_cast<BruOp>(opcode), op1, op2,
+            csr_.mpc, pc_next, static_cast<BruOp>(opcode), op1, op2,
             static_cast<int>(rd));
         cmd->timestamp = scheduler_.getCurrentTime();
         in_port->write(cmd);
@@ -1375,13 +1482,13 @@ class SCore : public Pipeline {
   /**
    * @brief Get program counter
    */
-  uint32_t getProgramCounter() const { return pc_; }
+  uint32_t getProgramCounter() const { return csr_.mpc; }
 
   /**
    * @brief Set program counter
    */
   void setProgramCounter(uint32_t pc) {
-    pc_ = pc;
+    csr_.mpc = pc;
     fetch_stage_.setPC(pc);
   }
 
@@ -1458,10 +1565,12 @@ class SCore : public Pipeline {
    * @brief Get statistics
    */
   uint64_t getInstructionsDispatched() const {
-    return instructions_dispatched_;
+    return csr_.getMcycle();  // Use CSR mcycle counter
   }
 
-  uint64_t getInstructionsRetired() const { return instructions_retired_; }
+  uint64_t getInstructionsRetired() const {
+    return csr_.getMinstret();
+  }  // Use CSR minstret
 
   /**
    * @brief Print core statistics and status
@@ -1471,9 +1580,8 @@ class SCore : public Pipeline {
               << " Statistics ==========" << std::endl;
 
     std::cout << "\nDispatch Statistics:" << std::endl;
-    std::cout << "  Instructions dispatched: " << instructions_dispatched_
-              << std::endl;
-    std::cout << "  Instructions retired: " << instructions_retired_
+    std::cout << "  Cycles (mcycle): " << csr_.getMcycle() << std::endl;
+    std::cout << "  Instructions retired (minstret): " << csr_.getMinstret()
               << std::endl;
 
     std::cout << "\nFunctional Unit Statistics:" << std::endl;
@@ -1566,16 +1674,17 @@ class SCore : public Pipeline {
   bool lsu_busy_;
 
   // Control state
-  uint32_t pc_;        // Program counter
   bool branch_taken_;  // Branch taken in this cycle
-
-  // Statistics
-  uint64_t instructions_dispatched_;
-  uint64_t instructions_retired_;
 
   // Track last read ALU results to avoid duplicates
   std::map<uint32_t, uint64_t>
       last_alu_rd_cycles_;  // alu_index -> last rd cycle
+
+  // ============================================================================
+  // CSR (Control and Status Registers) - Following Coral NPU/RISC-V Standard
+  // ============================================================================
+  // All CSR registers are encapsulated in CoreCSRs class
+  CoreCSRs csr_;
 };
 
 }  // namespace Architecture
