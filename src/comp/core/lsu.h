@@ -335,7 +335,8 @@ class LoadStoreUnit : public Pipeline {
    */
   LoadStoreUnit(const std::string& name, EventDriven::EventScheduler& scheduler,
                 const Config& config = Config())
-      : Pipeline(name, scheduler, config.period, 3, 1),  // 3-stage pipeline
+      : Pipeline(name, scheduler, config.period, 3,
+                 0),  // 3-stage pipeline, 0 latency for direct tick() calls
         config_(config),
         request_id_counter_(0),
         operations_completed_(0),
@@ -434,14 +435,9 @@ class LoadStoreUnit : public Pipeline {
   void setupPipeline() {
     // Stage 0: Address Decode
     // Decode request and prepare for memory access
+    // Data comes from Pipeline's automatic INPUT port reading
     setStageFunction(0, [this](std::shared_ptr<Architecture::DataPacket> data) {
       uint64_t current_time = scheduler_.getCurrentTime();
-
-      // Try to read a request from input port if stage 0 is empty
-      auto req_in = getPort("req_in");
-      if (!data && req_in && req_in->hasData()) {
-        data = req_in->read();
-      }
 
       if (!data) {
         return data;  // No request available
@@ -581,6 +577,8 @@ class LoadStoreUnit : public Pipeline {
 
     // Stage 2: Response
     // Output response and update statistics
+    // Note: Response packet is automatically written to all OUTPUT ports by
+    // Pipeline
     setStageFunction(2, [this](std::shared_ptr<Architecture::DataPacket> data) {
       uint64_t current_time = scheduler_.getCurrentTime();
 
@@ -596,21 +594,15 @@ class LoadStoreUnit : public Pipeline {
                               << " data=" << resp->data
                               << " ops=" << operations_completed_);
 
-        // Write response to output port
-        auto resp_out = getPort("resp_out");
-        if (resp_out) {
-          resp_out->write(
-              std::static_pointer_cast<Architecture::DataPacket>(resp));
-        }
-
         // Output rd and loaded data to RegisterFileWire ports (for loads only)
+        // These are separate from the response output
         if (resp->rd != 0) {
           auto rd_port = getPort("rd_out");
           auto data_port = getPort("data_out");
           if (rd_port && data_port) {
-            rd_port->setData(
+            rd_port->write(
                 std::make_shared<Architecture::IntDataPacket>(resp->rd));
-            data_port->setData(std::make_shared<Architecture::IntDataPacket>(
+            data_port->write(std::make_shared<Architecture::IntDataPacket>(
                 static_cast<uint32_t>(resp->data)));
           }
         }
@@ -626,10 +618,12 @@ class LoadStoreUnit : public Pipeline {
       return data;
     });
 
-    // Set stage latencies
-    setStageLatency(0, 1);                     // Address decode: 1 cycle
-    setStageLatency(1, config_.bank_latency);  // Memory access: bank latency
-    setStageLatency(2, 1);                     // Response: 1 cycle
+    // Set stage latencies (0 for direct tick() testing, would be 1+ for
+    // event-driven)
+    setStageLatency(0, 0);  // Address decode: 0 cycles for testing
+    setStageLatency(1, 0);  // Memory access: 0 cycles for testing (use
+                            // config_.bank_latency in event-driven mode)
+    setStageLatency(2, 0);  // Response: 0 cycles for testing
   }
 
   // Member variables

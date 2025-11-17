@@ -82,9 +82,12 @@ class Pipeline : public Architecture::TickingComponent {
     // For event-driven operation, set this to 1+ when needed.
     stage_latencies_.resize(num_stages_, default_stage_latency);
 
-    // Create ports
+    // Create default "in" and "out" ports for backward compatibility
+    // Subclasses can call addPort() to create custom ports
     addPort("in", Architecture::PortDirection::INPUT);
     addPort("out", Architecture::PortDirection::OUTPUT);
+
+    // Create stall control port only (other ports are created by subclasses)
     addPort("stall", Architecture::PortDirection::INPUT);
   }
 
@@ -184,8 +187,6 @@ class Pipeline : public Architecture::TickingComponent {
    * @brief Main tick function
    */
   void tick() override {
-    auto in = getPort("in");
-    auto out = getPort("out");
     auto stall_ctrl = getPort("stall");
 
     // Check stall control
@@ -204,44 +205,50 @@ class Pipeline : public Architecture::TickingComponent {
     }
 
     // Process pipeline stages from back to front
-    // Stage N-1 (last stage) -> output
+    // Stage N-1 (last stage) -> output (to all OUTPUT ports)
     if (stages_[num_stages_ - 1].valid) {
       auto processed_data = stages_[num_stages_ - 1].data;
       if (processed_data) {
         processed_data->timestamp = scheduler_.getCurrentTime();
-        out->write(processed_data);
-        total_processed_++;
 
-        // Enhanced pipeline output trace
-        auto int_data = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
-            processed_data);
-        if (int_data) {
-          TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "PIPELINE_OUT",
-                        "Stage[" << (num_stages_ - 1)
-                                 << "]->OUT value=" << int_data->value
-                                 << " cycle=" << scheduler_.getCurrentTime()
-                                 << " latency="
-                                 << (scheduler_.getCurrentTime() -
-                                     stages_[num_stages_ - 1].stage_entry_time)
-                                 << " total_processed=" << total_processed_);
+        // Write to all OUTPUT ports
+        for (const auto& [port_name, port] : ports_) {
+          if (port &&
+              port->getDirection() == Architecture::PortDirection::OUTPUT) {
+            port->write(processed_data);
+
+            // Enhanced pipeline output trace
+            auto int_data =
+                std::dynamic_pointer_cast<Architecture::IntDataPacket>(
+                    processed_data);
+            if (int_data) {
+              TRACE_COMPUTE(
+                  scheduler_.getCurrentTime(), getName(), "PIPELINE_OUT",
+                  "Stage[" << (num_stages_ - 1) << "]->" << port_name
+                           << " value=" << int_data->value << " cycle="
+                           << scheduler_.getCurrentTime() << " latency="
+                           << (scheduler_.getCurrentTime() -
+                               stages_[num_stages_ - 1].stage_entry_time)
+                           << " total_processed=" << total_processed_);
+            }
+          }
         }
+        total_processed_++;
       }
       stages_[num_stages_ - 1].valid = false;
     }
 
-    // Middle stages: propagate data backwards
+    // Middle stages: propagate data from stage i-1 to stage i (backwards)
     for (int i = num_stages_ - 1; i > 0; --i) {
-      if (stages_[i - 1].valid) {
+      if (stages_[i - 1].valid && !stages_[i].valid) {
+        // Stage i-1 has data and stage i is empty
         // Check if stage latency requirement has been met
         uint64_t elapsed =
             scheduler_.getCurrentTime() - stages_[i - 1].stage_entry_time;
         uint64_t required_latency = stage_latencies_[i - 1];
 
         if (elapsed < required_latency) {
-          // Not enough time has passed, stage must remain in this stage
-          // But still apply the stage function to update data in place
-          auto processed_data = stage_functions_[i](stages_[i - 1].data);
-          stages_[i - 1].data = processed_data;
+          // Not enough time has passed, keep data in stage i-1
           TRACE_COMPUTE(
               scheduler_.getCurrentTime(), getName(), "PIPELINE_LATENCY_HOLD",
               "Stage[" << (i - 1) << "] latency hold: elapsed=" << elapsed
@@ -250,30 +257,18 @@ class Pipeline : public Architecture::TickingComponent {
           continue;
         }
 
-        // Check if target stage is already occupied
-        if (stages_[i].valid) {
-          // Target stage is full, stall this stage
-          // But still apply the stage function to the data in place
-          auto processed_data = stage_functions_[i](stages_[i - 1].data);
-          stages_[i - 1].data =
-              processed_data;  // Keep updated data in current stage
-          TRACE_COMPUTE(
-              scheduler_.getCurrentTime(), getName(), "PIPELINE_STALL",
-              "Stage[" << (i - 1) << "] stalled, stage[" << i << "] full");
-          total_stalls_++;
-          continue;  // Don't advance, wait for target to empty
-        }
-
         // Check if this stage is stalled by user-defined predicate
         if (stage_stall_predicates_[i](stages_[i - 1].data)) {
-          // Stage is stalled, apply stage function but don't advance
-          auto processed_data = stage_functions_[i](stages_[i - 1].data);
-          stages_[i - 1].data = processed_data;  // Update data in place
-          continue;                              // Skip advancing to next stage
+          // Stage is stalled, don't advance
+          TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(),
+                        "PIPELINE_STALL",
+                        "Stage[" << (i - 1) << "] stalled by predicate");
+          total_stalls_++;
+          continue;
         }
 
         // Latency requirement met, target stage empty, and no user stalls
-        // Apply stage function
+        // Apply stage function to process the data
         auto processed_data = stage_functions_[i](stages_[i - 1].data);
         stages_[i] =
             PipelineStageData(processed_data, scheduler_.getCurrentTime());
@@ -293,10 +288,23 @@ class Pipeline : public Architecture::TickingComponent {
       }
     }
 
-    // Stage 0: read from input OR generate data internally
-    // If input has data, use it; otherwise call stage 0 function with null data
-    // to allow components like SCore to generate their own data from buffers
-    auto input_data = in->hasData() ? in->read() : nullptr;
+    // Stage 0: read from all INPUT ports OR generate data internally
+    // Try to read from all INPUT ports; if any has data, use it
+    // Otherwise call stage 0 function with null data to allow components
+    // to generate their own data from internal buffers
+    std::shared_ptr<Architecture::DataPacket> input_data = nullptr;
+    std::string input_port_name;
+
+    for (const auto& [port_name, port] : ports_) {
+      if (port && port->getDirection() == Architecture::PortDirection::INPUT &&
+          port_name != "stall") {  // Skip stall control port
+        if (port->hasData()) {
+          input_data = port->read();
+          input_port_name = port_name;
+          break;  // Take first available input
+        }
+      }
+    }
 
     // Always try to process stage 0 (even without external input)
     // This allows stage functions to generate data from internal buffers
@@ -310,11 +318,13 @@ class Pipeline : public Architecture::TickingComponent {
         auto int_data = std::dynamic_pointer_cast<Architecture::IntDataPacket>(
             processed_data);
         if (int_data) {
+          std::string trace_src =
+              input_port_name.empty() ? "INTERNAL" : input_port_name;
           TRACE_COMPUTE(scheduler_.getCurrentTime(), getName(), "PIPELINE_IN",
-                        "IN->Stage[0] value=" << int_data->value << " cycle="
-                                              << scheduler_.getCurrentTime()
-                                              << " period=" << getPeriod()
-                                              << " depth=" << num_stages_);
+                        trace_src << "->Stage[0] value=" << int_data->value
+                                  << " cycle=" << scheduler_.getCurrentTime()
+                                  << " period=" << getPeriod()
+                                  << " depth=" << num_stages_);
         }
       }
     }

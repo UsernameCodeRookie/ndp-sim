@@ -84,13 +84,21 @@ TEST_F(LSUTest, LSULoadOperation) {
   // First, store a value using LSU's loadData method
   lsu->loadData(5, 777);
 
+  // Verify the data was stored
+  int32_t read_val = lsu->readData(5);
+  EXPECT_EQ(read_val, 777);
+
   // Now load the value
   auto load_request = std::make_shared<MemoryRequestPacket>(LSUOp::LW, 5, 0);
   req_in->write(load_request);
 
-  // Wait for response
+  // Process through pipeline stages
+  // Tick 0: Stage 0 reads request from req_in port
+  // Tick 1: Stage 0->Stage 1 transition
+  // Tick 2: Stage 1->Stage 2 transition (Stage 2 has response)
+  // Tick 3: Stage 2 outputs to resp_out
   bool got_response = false;
-  for (int i = 0; i < 20; i++) {
+  for (int i = 0; i < 10; i++) {
     lsu->tick();
     if (resp_out->hasData()) {
       auto response =
