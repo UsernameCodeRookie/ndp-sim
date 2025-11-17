@@ -641,15 +641,6 @@ class RVVSimulator {
     while (scheduler.getPendingEventCount() > 0 &&
            cycles < config_.max_cycles) {
       scheduler.runFor(1);
-
-      uint64_t curr_dispatched = core->getInstructionsDispatched();
-      if (curr_dispatched > prev_dispatched && config_.verbose) {
-        uint64_t dispatched_this_cycle = curr_dispatched - prev_dispatched;
-        std::cout << "Cycle " << std::setw(5) << cycles << ": "
-                  << dispatched_this_cycle << " instruction(s) dispatched\n";
-        prev_dispatched = curr_dispatched;
-      }
-
       cycles++;
     }
 
