@@ -1,15 +1,18 @@
 #ifndef TRACE_H
 #define TRACE_H
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace EventDriven {
@@ -55,10 +58,27 @@ struct TraceEntry {
 };
 
 /**
- * @brief Singleton Tracer class
+ * @brief VCD signal definition
+ */
+struct VCDSignal {
+  std::string name;        // Signal name
+  std::string identifier;  // Single character identifier
+  std::string type;        // wire/reg
+  size_t width;            // Bit width
+  std::string value;       // Current value
+
+  VCDSignal() : name(""), identifier(""), type("wire"), width(32), value("0") {}
+
+  VCDSignal(const std::string& n, const std::string& id, const std::string& t,
+            size_t w, const std::string& v = "x")
+      : name(n), identifier(id), type(t), width(w), value(v) {}
+};
+
+/**
+ * @brief Singleton Tracer class with VCD output
  *
- * Thread-safe tracer for logging simulation events
- * Automatically dumps trace file to data directory
+ * Thread-safe tracer for logging simulation events in VCD format
+ * Automatically dumps trace file to data directory in GTKWave-compatible format
  */
 class Tracer {
  public:
@@ -89,11 +109,18 @@ class Tracer {
     std::string trace_filename = filename;
     if (trace_filename.empty()) {
       auto now = std::chrono::system_clock::now();
-      auto time_t = std::chrono::system_clock::to_time_t(now);
+      auto time_val = std::chrono::system_clock::to_time_t(now);
       std::stringstream ss;
-      ss << "trace_" << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S")
-         << ".log";
+      ss << "trace_"
+         << std::put_time(std::localtime(&time_val), "%Y%m%d_%H%M%S") << ".vcd";
       trace_filename = ss.str();
+    } else {
+      // Convert log extension to vcd if needed
+      if (trace_filename.find(".log") != std::string::npos) {
+        trace_filename.replace(trace_filename.find(".log"), 4, ".vcd");
+      } else if (trace_filename.find(".vcd") == std::string::npos) {
+        trace_filename += ".vcd";
+      }
     }
 
     // Ensure data directory exists (will be created if needed)
@@ -101,6 +128,8 @@ class Tracer {
 
     // Clear previous entries
     entries_.clear();
+    signals_.clear();
+    signal_id_counter_ = 0;
     initialized_ = true;
   }
 
@@ -228,7 +257,7 @@ class Tracer {
   }
 
   /**
-   * @brief Dump all trace entries to file
+   * @brief Dump all trace entries to VCD file
    */
   void dump() {
     if (!enabled_ || !initialized_) return;
@@ -248,21 +277,44 @@ class Tracer {
       return;
     }
 
-    // Write header
-    file << "# Trace Log - Total entries: " << entries_.size() << "\n";
-    file << "# [Timestamp] [Type] [Component] [Event] [Details] [Priority]\n";
-    file << std::string(80, '=') << "\n\n";
+    // Write VCD header
+    writeVCDHeader(file);
 
-    // Write all entries
+    // Initialize all signals to 0 at time 0
+    for (auto& signal_pair : signals_) {
+      auto& signal = signal_pair.second;
+      file << "0" << signal.identifier << "\n";
+    }
+
+    // Write trace data in VCD format
+    uint64_t last_timestamp = 0;
+    uint64_t entries_written = 0;
     for (const auto& entry : entries_) {
-      writeEntry(file, entry);
+      // Format value as hex - this extracts numeric values from details
+      std::string hex_value = formatValueAsHex(entry.details);
+
+      // Only write entries with valid numeric values
+      if (!hex_value.empty()) {
+        if (entry.timestamp != last_timestamp) {
+          file << "#" << entry.timestamp << "\n";
+          last_timestamp = entry.timestamp;
+        }
+
+        // Write signal value change with proper VCD format
+        std::string signal_id =
+            getOrCreateSignalId(entry.component_name, entry.event_name, 32);
+        file << hex_value << signal_id << "\n";
+        entries_written++;
+      }
     }
 
     file.close();
 
     if (verbose_) {
-      std::cout << "[Tracer] Dumped " << entries_.size()
-                << " entries to: " << output_path_ << "\n";
+      std::cout << "[Tracer] Dumped " << entries_written << " / "
+                << entries_.size() << " entries to VCD file: " << output_path_
+                << "\n";
+      std::cout << "[Tracer] Total signals: " << signals_.size() << "\n";
     }
   }
 
@@ -301,7 +353,8 @@ class Tracer {
         initialized_(false),
         verbose_(false),
         immediate_flush_(false),
-        output_path_("data/trace.log") {}
+        output_path_("data/trace.vcd"),
+        signal_id_counter_(0) {}
 
   ~Tracer() {
     // Auto dump on destruction
@@ -310,77 +363,126 @@ class Tracer {
     }
   }
 
-  // Convert event type to string
-  static const char* eventTypeToString(TraceEventType type) {
-    switch (type) {
-      case TraceEventType::TICK:
-        return "TICK";
-      case TraceEventType::EVENT:
-        return "EVENT";
-      case TraceEventType::COMPUTE:
-        return "COMPUTE";
-      case TraceEventType::MEMORY_READ:
-        return "MEM_READ";
-      case TraceEventType::MEMORY_WRITE:
-        return "MEM_WRITE";
-      case TraceEventType::COMMUNICATION:
-        return "COMM";
-      case TraceEventType::STATE_CHANGE:
-        return "STATE";
-      case TraceEventType::INSTRUCTION:
-        return "INSTR";
-      case TraceEventType::MAC_OPERATION:
-        return "MAC";
-      case TraceEventType::REGISTER_ACCESS:
-        return "REG";
-      case TraceEventType::QUEUE_OPERATION:
-        return "QUEUE";
-      case TraceEventType::PROPAGATE:
-        return "PROP";
-      case TraceEventType::CUSTOM:
-        return "CUSTOM";
-      default:
-        return "UNKNOWN";
-    }
+  // VCD identifier generation (uses single-char IDs like !, ", #, etc.)
+  // Avoid special VCD characters that might break the format
+  static const char* getVCDIdentifier(size_t index) {
+    // Use alphanumeric characters only (GTKWave compatible)
+    static const char* identifiers[] = {
+        "a",  "b",  "c",  "d",  "e",  "f",  "g", "h", "i",  "j",  "k",
+        "l",  "m",  "n",  "o",  "p",  "q",  "r", "s", "t",  "u",  "v",
+        "w",  "x",  "y",  "z",  "A",  "B",  "C", "D", "E",  "F",  "G",
+        "H",  "I",  "J",  "K",  "L",  "M",  "N", "O", "P",  "Q",  "R",
+        "S",  "T",  "U",  "V",  "W",  "X",  "Y", "Z", "aa", "ab", "ac",
+        "ad", "ae", "af", "ag", "ah", "ai", "aj"};
+    return identifiers[index % 62];
   }
 
-  // Write a single entry to file
-  void writeEntry(std::ofstream& file, const TraceEntry& entry) {
-    file << "[" << std::setw(10) << std::setfill(' ') << entry.timestamp
-         << "] ";
-    file << "[" << std::setw(10) << std::left << eventTypeToString(entry.type)
-         << "] ";
-    file << "[" << std::setw(20) << entry.component_name << "] ";
-    file << "[" << std::setw(15) << entry.event_name << "] ";
-    if (!entry.details.empty()) {
-      file << entry.details;
+  // Get or create signal ID for a component/event pair
+  std::string getOrCreateSignalId(const std::string& component,
+                                  const std::string& event, size_t width) {
+    std::string signal_name = component + "_" + event;
+    if (signals_.find(signal_name) == signals_.end()) {
+      std::string id = getVCDIdentifier(signal_id_counter_++);
+      signals_[signal_name] = VCDSignal(signal_name, id, "wire", width, "0");
     }
-    if (entry.priority != 0) {
-      file << " (priority=" << entry.priority << ")";
-    }
-    file << "\n";
+    return signals_[signal_name].identifier;
   }
 
-  // Flush a single entry immediately (for immediate_flush mode)
-  void flushEntry(const TraceEntry& entry) {
-    static std::ofstream file;
-
-    if (!file.is_open()) {
-#ifdef _WIN32
-      system("if not exist data mkdir data");
-#else
-      system("mkdir -p data");
-#endif
-      file.open(output_path_);
-      if (file.is_open()) {
-        file << "# Trace Log - Immediate Flush Mode\n\n";
+  // Convert details string to hex value in proper VCD format
+  std::string formatValueAsHex(const std::string& details) {
+    // Try to extract numeric value from details string
+    // Format: "key=value" or just a number, or "key1=val1 key2=val2..."
+    try {
+      // First, try to find any hex value (0x prefix)
+      size_t hex_pos = details.find("0x");
+      if (hex_pos != std::string::npos) {
+        // Extract hex value after 0x
+        std::string hex_val = details.substr(hex_pos + 2);
+        // Take only valid hex digits
+        size_t end = hex_val.find_first_not_of("0123456789abcdefABCDEF ");
+        if (end != std::string::npos) {
+          hex_val = hex_val.substr(0, end);
+        }
+        // Remove spaces
+        hex_val.erase(std::remove(hex_val.begin(), hex_val.end(), ' '),
+                      hex_val.end());
+        if (!hex_val.empty()) {
+          // Pad with zeros to 8 digits max
+          while (hex_val.length() < 8) hex_val = "0" + hex_val;
+          if (hex_val.length() > 8) hex_val = hex_val.substr(0, 8);
+          return hex_val;
+        }
       }
-    }
 
-    if (file.is_open()) {
-      writeEntry(file, entry);
-      file.flush();
+      // Try to find any = sign and extract the first numeric value
+      size_t eq_pos = details.find('=');
+      if (eq_pos != std::string::npos) {
+        std::string value_str = details.substr(eq_pos + 1);
+        // Trim leading whitespace
+        size_t start = value_str.find_first_not_of(" \t");
+        if (start != std::string::npos) {
+          value_str = value_str.substr(start);
+          // Take only digits before space or special char
+          size_t end = value_str.find_first_not_of("0123456789");
+          if (end != std::string::npos) {
+            value_str = value_str.substr(0, end);
+          }
+          if (!value_str.empty()) {
+            long long value = std::stoll(value_str);
+            if (value < 0) value = 0;
+            std::stringstream ss;
+            ss << std::setfill('0') << std::setw(8) << std::hex << value;
+            return ss.str();
+          }
+        }
+      }
+
+      // Try to parse whole string as number
+      size_t space_pos = details.find(' ');
+      std::string first_token = (space_pos != std::string::npos)
+                                    ? details.substr(0, space_pos)
+                                    : details;
+      long long value = std::stoll(first_token);
+      if (value < 0) value = 0;
+      std::stringstream ss;
+      ss << std::setfill('0') << std::setw(8) << std::hex << value;
+      return ss.str();
+    } catch (...) {
+      // If we can't parse, return empty (don't write invalid values)
+      return "";
     }
+  }
+
+  // Write VCD file header
+  void writeVCDHeader(std::ofstream& file) {
+    // Write VCD standard header
+    file << "$date\n";
+    file << "  " << std::string(40, ' ') << "\n";
+
+    auto now = std::chrono::system_clock::now();
+    auto time_val = std::chrono::system_clock::to_time_t(now);
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&time_val), "  %Y-%m-%d %H:%M:%S");
+    file << ss.str() << "\n";
+    file << "$end\n";
+
+    file << "$version\n";
+    file << "  NDP Simulator Event-Driven Tracer\n";
+    file << "$end\n";
+
+    file << "$timescale 1ps $end\n";
+
+    // Write signal definitions
+    file << "$scope module top $end\n";
+    for (const auto& signal_pair : signals_) {
+      const auto& signal = signal_pair.second;
+      file << "$var wire " << signal.width << " " << signal.identifier << " "
+           << signal.name << " $end\n";
+    }
+    file << "$upscope $end\n";
+
+    file << "$enddefs\n";
+    file << "#0\n";
   }
 
   bool enabled_;
@@ -389,8 +491,9 @@ class Tracer {
   bool immediate_flush_;
   std::string output_path_;
   std::vector<TraceEntry> entries_;
-  std::vector<std::string>
-      component_filters_;  // Component name patterns to trace
+  std::unordered_map<std::string, VCDSignal> signals_;
+  size_t signal_id_counter_;
+  std::vector<std::string> component_filters_;
   mutable std::mutex mutex_;
 };
 
@@ -407,11 +510,6 @@ inline void Tracer::trace(uint64_t timestamp, TraceEventType type,
   std::lock_guard<std::mutex> lock(mutex_);
   entries_.emplace_back(timestamp, type, component_name, event_name, details,
                         priority);
-
-  // Optional: immediate flush for debugging (can be disabled for performance)
-  if (immediate_flush_) {
-    flushEntry(entries_.back());
-  }
 }
 
 }  // namespace EventDriven
