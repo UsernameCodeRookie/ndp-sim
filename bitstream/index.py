@@ -148,21 +148,46 @@ class Connect:
             return "COL_LC"
         elif node_name.startswith("STREAM."):
             return "STREAM"
+        elif node_name.startswith("AG"):
+            return "AG"
         else:
             return "UNKNOWN"
+    
+    @staticmethod
+    def _get_lc_row(node_name: str) -> int:
+        """Get which row an LC belongs to (0=first row, 1=second row)."""
+        if node_name.startswith("DRAM_LC.LC"):
+            # Extract the number from "DRAM_LC.LC<num>"
+            lc_num = int(node_name.split(".")[-1][2:])
+            return 0 if lc_num < 8 else 1
+        return -1
     
     def _calculate_relative_index(self) -> int:
         """
         Calculate relative index based on source and destination node types.
         
-        Rules:
-        - LC i → LC j: j in [i-2, i-1, i+1, i+2] maps to [0, 1, 2, 3]
-        - LC i → ROW_LC (GROUP j): LC [(j-1)*2 : (j+1)*2+1] maps to [0, 1, 2, 3, 4, 5]
-        - ROW_LC (GROUP j) → COL_LC (GROUP j): maps to 6
-        - LC i → PE j: j in [i-1, i, i+1] maps to [0, 1, 2]
-        - PE i → PE j: j in [i-2, i-1, i+1, i+2] maps to [3, 4, 5, 6]
-        - LC i → STREAM j: LC [(j-1)*2 : (j+1)*2+1] maps to [0, 1, 2, 3, 4, 5]
-        - PE i → STREAM j: PE [(j-1)*2 : (j+1)*2+1] maps to [6, 7, 8, 9, 10, 11]
+        Architecture:
+        - Row 0: 8 LCs (LC0-LC7)
+        - Row 1: 8 LCs (LC8-LC15)
+        - Row 2: 4 GROUPs (GROUP0-GROUP3), each with ROW_LC and COL_LC
+        - Row 3: 8 PEs (PE0-PE7)
+        - Row 4: 4 AGs (AG0-AG3)
+        
+        Encoding Rules:
+        1. LC → LC (same row):
+           - Indices 0-4: 5 LCs from row above (corresponding + left 2, right 2)
+           - Indices 5-8: 4 neighbors on same row (left 2, right 2)
+           
+        2. LC → ROW_LC: 0-11 (6 from row 0, 6 from row 1)
+        3. COL_LC → ROW_LC: 12
+        
+        4. PE → LC (3 LCs): corresponding LC, left 1, right 1 = indices 0-5
+        5. PE → PE (4 neighbors): left 2, right 2 = indices 6-9
+        
+        6. AG → LC row 0 (6 LCs): indices 0-5
+           AG → LC row 1 (6 LCs): indices 6-11
+           AG → PE (6 PEs): indices 12-17
+           AG ↔ ROW_LC/COL_LC: hard-wired (not variable)
         """
         # Ensure physical IDs are resolved
         if self.src._physical_id is None or self.dst._physical_id is None:
@@ -174,81 +199,148 @@ class Connect:
         src_type = self._get_node_type(self.src.node_name)
         dst_type = self._get_node_type(self.dst.node_name)
         
-        # LC → LC: [i-2, i-1, i+1, i+2] → [0, 1, 2, 3]
+        # ==================== LC → LC ====================
+        # Same row: 5-8 for left 2, right 2 neighbors
+        # Different row: 0-4 for corresponding + left 2, right 2 from other row
         if src_type == "LC" and dst_type == "LC":
-            diff = src_phys_id - dst_phys_id
-            if diff == -2:
-                return 0
-            elif diff == -1:
-                return 1
-            elif diff == 1:
-                return 2
-            elif diff == 2:
-                return 3
+            src_row = self._get_lc_row(self.src.node_name)
+            dst_row = self._get_lc_row(self.dst.node_name)
+            src_lc_idx = src_phys_id % 8
+            dst_lc_idx = dst_phys_id % 8
+            
+            if src_row == dst_row:
+                # Same row connections: left 2, right 2 → indices 5-8
+                diff = src_lc_idx - dst_lc_idx
+                if diff == -2:
+                    return 5  # left 2
+                elif diff == -1:
+                    return 6  # left 1
+                elif diff == 1:
+                    return 7  # right 1
+                elif diff == 2:
+                    return 8  # right 2
+                else:
+                    return 0  # Invalid
             else:
-                return 0  # Fallback for invalid connection
+                # Different row: corresponding LC and neighbors from other row → indices 0-4
+                # Map: [i-2, i-1, i, i+1, i+2] → [0, 1, 2, 3, 4]
+                diff = dst_lc_idx - src_lc_idx
+                if diff == -2:
+                    return 0
+                elif diff == -1:
+                    return 1
+                elif diff == 0:
+                    return 2  # Corresponding
+                elif diff == 1:
+                    return 3
+                elif diff == 2:
+                    return 4
+                else:
+                    return 0  # Invalid
         
-        # LC → ROW_LC (part of GROUP): LC [(group_id-1)*2 : (group_id+1)*2+1] → [0, 1, 2, 3, 4, 5]
+        # ==================== LC → ROW_LC ====================
+        # Each ROW_LC connects to 6 LCs from row 0 and 6 from row 1
+        # Encoding: 0-5 for row 0, 6-11 for row 1
         elif src_type == "LC" and dst_type == "ROW_LC":
-            # Extract GROUP id from dst node name (e.g., "GROUP0.ROW_LC" → 0)
             group_id = dst_phys_id  # ROW_LC shares physical_id with its GROUP
-            # Calculate valid LC range for this GROUP
-            lc_range_start = (group_id - 1) * 2
-            lc_range = list(range(lc_range_start, (group_id + 1) * 2 + 2))
-            if src_phys_id in lc_range:
-                return lc_range.index(src_phys_id)
-            return 0
+            src_row = self._get_lc_row(self.src.node_name)
+            src_lc_idx = src_phys_id % 8
+            
+            # Valid LC range: [group_id*2-1, group_id*2, group_id*2+1, group_id*2+2, group_id*2+3]
+            # This gives left 2, corresponding 2, right 2 LCs
+            lc_range_start = max(0, group_id * 2 - 1)
+            lc_range = list(range(lc_range_start, min(8, group_id * 2 + 3)))
+            
+            if src_lc_idx in lc_range:
+                relative_idx = lc_range.index(src_lc_idx)
+                # Add offset based on which row
+                return relative_idx if src_row == 0 else relative_idx + 6
+            return 0  # Invalid
         
-        # ROW_LC → COL_LC (same GROUP): → 6
-        elif src_type == "ROW_LC" and dst_type == "COL_LC":
-            return 6
+        # ==================== COL_LC → ROW_LC ====================
+        elif src_type == "COL_LC" and dst_type == "ROW_LC":
+            return 12
         
-        # LC → PE: [i-1, i, i+1] → [0, 1, 2]
-        elif src_type == "LC" and dst_type == "PE":
-            diff = src_phys_id - dst_phys_id
+        # ==================== PE → LC ====================
+        # Each PE connects to 3 LCs: corresponding LC, left 1, right 1 → indices 0-5
+        # But since ROW_LC/COL_LC is above PE, this refers to row above
+        elif src_type == "PE" and dst_type == "LC":
+            src_pe_idx = src_phys_id
+            dst_lc_idx = dst_phys_id % 8
+            
+            # PE connects to LCs from rows 0-1
+            # Map: [i-1, i, i+1] → [0, 1, 2] for row 0, [3, 4, 5] for row 1
+            dst_row = self._get_lc_row(self.dst.node_name)
+            diff = dst_lc_idx - src_pe_idx
+            
             if diff == -1:
-                return 0
+                return 0 if dst_row == 0 else 3
             elif diff == 0:
-                return 1
+                return 1 if dst_row == 0 else 4
             elif diff == 1:
-                return 2
+                return 2 if dst_row == 0 else 5
             else:
-                return 0
+                return 0  # Invalid
         
-        # PE → PE: [i-2, i-1, i+1, i+2] → [3, 4, 5, 6]
+        # ==================== PE → PE ====================
+        # Same row PE connections: left 2, right 2 → indices 6-9
         elif src_type == "PE" and dst_type == "PE":
             diff = src_phys_id - dst_phys_id
             if diff == -2:
-                return 3
+                return 6  # left 2
             elif diff == -1:
-                return 4
+                return 7  # left 1
             elif diff == 1:
-                return 5
+                return 8  # right 1
             elif diff == 2:
-                return 6
+                return 9  # right 2
             else:
-                return 0
+                return 0  # Invalid
         
-        # LC → STREAM: LC [(stream_id-1)*2 : (stream_id+1)*2+1] → [0, 1, 2, 3, 4, 5]
-        elif src_type == "LC" and dst_type == "STREAM":
-            stream_id = dst_phys_id
-            lc_range_start = (stream_id - 1) * 2
-            lc_range = list(range(lc_range_start, (stream_id + 1) * 2 + 2))
-            if src_phys_id in lc_range:
-                return lc_range.index(src_phys_id)
-            return 0
+        # ==================== AG → LC ====================
+        # AG connects to 6 LCs from row 0 (indices 0-5) and 6 from row 1 (indices 6-11)
+        elif src_type == "AG" and dst_type == "LC":
+            ag_idx = src_phys_id
+            dst_lc_idx = dst_phys_id % 8
+            dst_row = self._get_lc_row(self.dst.node_name)
+            
+            # Valid LC range for each AG: [ag_idx*2-1, ag_idx*2, ag_idx*2+1, ag_idx*2+2, ag_idx*2+3]
+            lc_range_start = max(0, ag_idx * 2 - 1)
+            lc_range = list(range(lc_range_start, min(8, ag_idx * 2 + 3)))
+            
+            if dst_lc_idx in lc_range:
+                relative_idx = lc_range.index(dst_lc_idx)
+                return relative_idx if dst_row == 0 else relative_idx + 6
+            return 0  # Invalid
         
-        # PE → STREAM: PE [(stream_id-1)*2 : (stream_id+1)*2+1] → [6, 7, 8, 9, 10, 11]
-        elif src_type == "PE" and dst_type == "STREAM":
-            stream_id = dst_phys_id
-            pe_range_start = (stream_id - 1) * 2
-            pe_range = list(range(pe_range_start, (stream_id + 1) * 2 + 2))
-            if src_phys_id in pe_range:
-                return 6 + pe_range.index(src_phys_id)
-            return 0
+        # ==================== AG → PE ====================
+        # AG connects to 6 PEs: corresponding PE and neighbors → indices 12-17
+        elif src_type == "AG" and dst_type == "PE":
+            ag_idx = src_phys_id
+            pe_idx = dst_phys_id
+            
+            # Valid PE range: [ag_idx*2-1, ag_idx*2, ag_idx*2+1, ag_idx*2+2, ag_idx*2+3]
+            pe_range_start = max(0, ag_idx * 2 - 1)
+            pe_range = list(range(pe_range_start, min(8, ag_idx * 2 + 3)))
+            
+            if pe_idx in pe_range:
+                relative_idx = pe_range.index(pe_idx)
+                return 12 + relative_idx
+            return 0  # Invalid
         
-        # Default: return absolute physical ID for unknown types
-        return src_phys_id
+        # ==================== AG ↔ ROW_LC/COL_LC ====================
+        # Hard-wired connections, not variable - return 0 or special indicator
+        elif (src_type == "AG" and dst_type == "ROW_LC") or \
+             (src_type == "AG" and dst_type == "COL_LC"):
+            return 0  # Hard-wired, no variable index needed
+        
+        # ==================== ROW_LC/COL_LC → AG ====================
+        elif (src_type == "ROW_LC" and dst_type == "AG") or \
+             (src_type == "COL_LC" and dst_type == "AG"):
+            return 0  # Hard-wired, no variable index needed
+        
+        # Default: return 0 for unmapped types
+        return 0
         
     def __int__(self):
         # Ensure resolution before returning value
