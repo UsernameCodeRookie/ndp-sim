@@ -18,11 +18,13 @@ class Mapper:
     """
     def __init__(self):
         # Predefined physical resource pools
+        # New architecture: 2 rows of 8 LCs, 4 ROW_LC, 4 COL_LC, 8 PE, 4 AG
         self.resource_pools = {
-            "LC":         [f"LC{i}" for i in range(8)],           # 8 LC resources
-            "GROUP":      [f"GROUP{i}" for i in range(4)],        # 4 GROUP resources
-            "AG":         [f"AG{i}" for i in range(4)],           # 4 AG (Address Generator) resources
+            "LC":         [f"LC{i}" for i in range(16)],          # 16 LC resources (2 rows of 8)
+            "ROW_LC":     [f"ROW_LC{i}" for i in range(4)],       # 4 ROW_LC resources
+            "COL_LC":     [f"COL_LC{i}" for i in range(4)],       # 4 COL_LC resources
             "PE":         [f"PE{i}" for i in range(8)],           # 8 Processing Elements
+            "AG":         [f"AG{i}" for i in range(4)],           # 4 AG (Address Generator) resources
             "READ_STREAM": [f"READ_STREAM{i}" for i in range(3)], # 3 Read Streams (physical)
             "WRITE_STREAM":[f"WRITE_STREAM{i}" for i in range(1)],# 1 Write Stream (physical)
         }
@@ -46,16 +48,31 @@ class Mapper:
         self.assigned_node: Dict[str, str] = {}
         
     def get_type(self, node: str) -> Optional[str]:
-        """Infer the resource type of a node based on its name prefix."""
-        if node.startswith("DRAM_LC.LC"):
+        """Infer the resource type of a node based on its name prefix.
+        
+        Node naming patterns:
+        - LCs (2 rows): "DRAM_LC.LC{row}{col}" where row is 0-1, col is 0-7
+        - ROW_LC: "ROW_LC.ROW_LC{row}{col}" or "GROUP{n}.ROW_LC"
+        - COL_LC: "COL_LC.COL_LC{row}{col}" or "GROUP{n}.COL_LC"
+        - PE: "PE.PE{idx}" where idx is 0-7
+        - AG: "AG.AG{idx}" where idx is 0-3
+        - STREAM: "STREAM.stream{idx}"
+        """
+        if "DRAM_LC" in node and ".LC" in node:
             return "LC"
-        elif node.startswith("GROUP"):
-            return "GROUP"
+        elif "ROW_LC" in node:
+            # Support both "ROW_LC.ROW_LC{idx}" and "GROUP{n}.ROW_LC"
+            return "ROW_LC"
+        elif "COL_LC" in node:
+            # Support both "COL_LC.COL_LC{idx}" and "GROUP{n}.COL_LC"
+            return "COL_LC"
+        elif "PE" in node and ".PE" in node:
+            return "PE"
+        elif "AG" in node and ".AG" in node:
+            return "AG"
         elif node.startswith("STREAM"):
             # Stream type is determined during allocation based on JSON mode
             return "STREAM"  # Will be refined to READ_STREAM or WRITE_STREAM
-        elif node.startswith("LC_PE"):
-            return "PE"
         else:
             return None
         
@@ -63,14 +80,18 @@ class Mapper:
         """Infer the resource type from a physical resource name."""
         if resource.startswith("LC"):
             return "LC"
-        elif resource.startswith("GROUP"):
-            return "GROUP"
+        elif resource.startswith("ROW_LC"):
+            return "ROW_LC"
+        elif resource.startswith("COL_LC"):
+            return "COL_LC"
+        elif resource.startswith("PE"):
+            return "PE"
+        elif resource.startswith("AG"):
+            return "AG"
         elif resource.startswith("READ_STREAM"):
             return "READ_STREAM"
         elif resource.startswith("WRITE_STREAM"):
             return "WRITE_STREAM"
-        elif resource.startswith("PE"):
-            return "PE"
         else:
             return None
 
@@ -99,35 +120,62 @@ class Mapper:
         return res_type, res_idx
     
     def extract_logical_index(self, node: str) -> Optional[int]:
-        """Extract logical index from node name.
+        """Extract logical index from node name for direct mapping.
         
-        Args:
-            node: Node name like 'DRAM_LC.LC3', 'LC_PE.PE5', 'GROUP2', 'STREAM.stream1'
+        Node name patterns:
+        - LC: 'DRAM_LC.LC{row}{col}' -> linearize to single index
+        - ROW_LC: 'ROW_LC.ROW_LC{row}{col}' -> linearize
+        - COL_LC: 'COL_LC.COL_LC{row}{col}' -> linearize
+        - PE: 'PE.PE{idx}' -> idx
+        - AG: 'AG.AG{idx}' -> idx
+        - STREAM: 'STREAM.stream{idx}' -> idx
             
         Returns:
             Logical index as integer, or None if not found
         """
         import re
-        # Match patterns like LC3, PE5, GROUP2, stream1
-        if node.startswith("DRAM_LC.LC"):
-            match = re.search(r'LC(\d+)$', node)
-        elif node.startswith("LC_PE.PE"):
+        
+        if "DRAM_LC" in node and ".LC" in node:
+            match = re.search(r'LC(\d+)(\d)$', node)  # LCrc where r=row, c=col
+            if match:
+                row = int(match.group(1)[0]) if len(match.group(1)) > 0 else 0
+                col = int(match.group(2)) if match.group(2) else 0
+                return row * 8 + col  # Linearize: first row 0-7, second row 8-15
+        elif "ROW_LC" in node:
+            # Support both "GROUP{n}.ROW_LC" and "ROW_LC.ROW_LC{idx}"
+            match = re.search(r'GROUP(\d+)\.ROW_LC', node)
+            if match:
+                return int(match.group(1))
+            match = re.search(r'ROW_LC(\d+)$', node)
+            if match:
+                return int(match.group(1))
+        elif "COL_LC" in node:
+            # Support both "GROUP{n}.COL_LC" and "COL_LC.COL_LC{idx}"
+            match = re.search(r'GROUP(\d+)\.COL_LC', node)
+            if match:
+                return int(match.group(1))
+            match = re.search(r'COL_LC(\d+)$', node)
+            if match:
+                return int(match.group(1))
+        elif "PE" in node and ".PE" in node:
             match = re.search(r'PE(\d+)$', node)
-        elif node.startswith("GROUP"):
-            match = re.search(r'GROUP(\d+)', node)
+            if match:
+                return int(match.group(1))
+        elif "AG" in node and ".AG" in node:
+            match = re.search(r'AG(\d+)$', node)
+            if match:
+                return int(match.group(1))
         elif node.startswith("STREAM.stream"):
             match = re.search(r'stream(\d+)$', node)
-        else:
-            return None
+            if match:
+                return int(match.group(1))
         
-        return int(match.group(1)) if match else None
+        return None
 
 
     def allocate(self, node: str, stream_type: Optional[str] = None) -> str:
         """
         Allocate a physical resource for a node based on its type.
-        If the node name indicates a special type (ROW_LC), it may reuse
-        its parent GROUP's resource.
         
         Args:
             node: Node name to allocate
@@ -147,14 +195,6 @@ class Mapper:
         if res_type is None:
             self.node_to_resource[node] = "GENERIC"
             return "GENERIC"
-
-        # Special case: ROW_LC shares its parent GROUP's resource
-        if node.endswith("ROW_LC") or node.endswith("COL_LC"):
-            group_prefix = node.split(".")[0]  # e.g., GROUP0 from GROUP0.ROW_LC
-            # Ensure the parent group is allocated and reuse its resource.
-            parent_res = self.allocate(group_prefix)
-            self.node_to_resource[node] = parent_res
-            return parent_res
         
         # Initialize idx to None (will be set later based on mapping mode)
         idx = None
@@ -243,51 +283,167 @@ class Mapper:
             return 0.0 if self.check(src_type, src_idx, dst_type, dst_idx) else 1.0
 
     class LCtoLCConstraint(Constraint):
-        """LC i → LC j constraint: j in [i-2, i-1, i+1, i+2]"""
+        """LC i → LC j constraint: 
+        Within same row: j in [i-2, i-1, i+1, i+2] (distance 1 or 2)
+        Between rows: connect to corresponding LC or ±2 positions in adjacent row
+        """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "LC" and dst_type == "LC":
+                src_row, src_col = divmod(src_idx, 8)
+                dst_row, dst_col = divmod(dst_idx, 8)
+                
+                # Same row: allowed distance is 1 or 2
+                if src_row == dst_row:
+                    return abs(dst_col - src_col) in [1, 2]
+                # Different rows: src can connect to dst row's positions: col, col-2, col-1, col+1, col+2
+                elif abs(src_row - dst_row) == 1:
+                    return abs(dst_col - src_col) <= 2
+                return False
+            return True
+
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "LC" and dst_type == "LC":
+                if self.check(src_type, src_idx, dst_type, dst_idx):
+                    return 0.0
+                src_row, src_col = divmod(src_idx, 8)
+                dst_row, dst_col = divmod(dst_idx, 8)
+                # Penalty based on distance
+                distance = abs(src_row - dst_row) * 8 + abs(src_col - dst_col)
+                return float(distance)
+            return 0.0
+        
+    class LCtoROWLCConstraint(Constraint):
+        """LC i → ROW_LC j constraint:
+        First row (LC 0-7) connects to ROW_LC 0-3 (corresponding upper positions)
+        Second row (LC 8-15) connects to ROW_LC 4-7 (corresponding lower positions)
+        Each ROW_LC connects to 6 LC nodes (2 above left, corresponding, 2 above right, same from below)
+        """
+        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
+            if src_type == "LC" and dst_type == "ROW_LC":
+                src_row, src_col = divmod(src_idx, 8)
+                # For ROW_LC, it connects to specific LCs from both rows
+                # Mapping is flexible for now - just check reasonable distance
+                return abs(dst_idx - (src_col // 2)) <= 2
+            return True
+
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "LC" and dst_type == "ROW_LC":
+                src_row, src_col = divmod(src_idx, 8)
+                # Penalize based on distance
+                d = abs(dst_idx - (src_col // 2))
+                return float(d)
+            return 0.0
+
+    class LCtoAGConstraint(Constraint):
+        """LC i → AG j constraint:
+        First row LC (0-7) connects to AG's first 6 targets
+        Second row LC (8-15) connects to AG's second 6 targets
+        """
+        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
+            if src_type == "LC" and dst_type == "AG":
+                src_row, src_col = divmod(src_idx, 8)
+                # LC from row 0: can map to AG targets 0-5
+                # LC from row 1: can map to AG targets 6-11
+                # Each AG has 12 logical LC targets (6 from each row)
+                return True  # Flexible constraint
+            return True
+
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "LC" and dst_type == "AG":
+                src_row, src_col = divmod(src_idx, 8)
+                # Penalize based on distance from expected position
+                expected_ag = src_col // 2
+                d = abs(dst_idx - expected_ag)
+                return float(d)
+            return 0.0
+
+    class PEtoLCConstraint(Constraint):
+        """PE i ↔ LC j constraint with strict enforcement:
+        
+        Each PE i can only connect to row 0 LCs within column distance ≤1:
+        - LC at column i
+        - LC at column i-1 (left)
+        - LC at column i+1 (right)
+        
+        PE MUST ONLY connect to first row (row 0) LCs. No connections to second row allowed.
+        
+        Handles both PE→LC and LC→PE directions.
+        """
+        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
+            # Handle PE → LC direction
+            if src_type == "PE" and dst_type == "LC":
+                dst_row, dst_col = divmod(dst_idx, 8)
+                # PE can ONLY connect to first row LCs
+                if dst_row != 0:
+                    return False
+                # Must be within distance 1 of the PE column
+                return abs(dst_col - src_idx) <= 1
+            # Handle LC → PE direction (reverse: src=LC, dst=PE)
+            elif src_type == "LC" and dst_type == "PE":
+                src_row, src_col = divmod(src_idx, 8)
+                # LC in row 1 cannot connect to any PE
+                if src_row != 0:
+                    return False
+                # Must be within distance 1 of the PE column (PE index = column for now)
+                return abs(src_col - dst_idx) <= 1
+            return True
+
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            # Handle PE → LC direction
+            if src_type == "PE" and dst_type == "LC":
+                dst_row, dst_col = divmod(dst_idx, 8)
+                # VERY HIGH penalty for second row (should never happen)
+                if dst_row != 0:
+                    return 100.0  # Extreme penalty to disallow second row connections
+                # Penalty for distance within same row
+                d = abs(dst_col - src_idx)
+                if d <= 1:
+                    return 0.0
+                return float(d)
+            # Handle LC → PE direction (reverse: src=LC, dst=PE)
+            elif src_type == "LC" and dst_type == "PE":
+                src_row, src_col = divmod(src_idx, 8)
+                # VERY HIGH penalty for second row LC
+                if src_row != 0:
+                    return 100.0  # Extreme penalty to disallow second row connections
+                # Penalty for distance within row 0
+                d = abs(src_col - dst_idx)
+                if d <= 1:
+                    return 0.0
+                return float(d)
+            return 0.0
+
+    class PEtoPEConstraint(Constraint):
+        """PE i → PE j constraint: j in [i-2, i-1, i+1, i+2] (distance 1 or 2)"""
+        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
+            if src_type == "PE" and dst_type == "PE":
                 return abs(dst_idx - src_idx) in [1, 2]
             return True
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
-            if src_type == "LC" and dst_type == "LC":
+            if src_type == "PE" and dst_type == "PE":
                 d = abs(dst_idx - src_idx)
                 if d in [1, 2]:
                     return 0.0
-                # penalty proportional to distance beyond allowable window
                 return float(max(0, d - 2))
             return 0.0
-        
-    class LCtoPEConstraint(Constraint):
-        """LC i → PE j constraint: j in [i, i+1]"""
+
+    class PEtoAGConstraint(Constraint):
+        """PE i → AG j constraint:
+        PE connects to AG targets (3 positions: above, left-2, right+2)
+        """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "LC" and dst_type == "PE":
-                return abs(dst_idx - src_idx) in [0, 1]
+            if src_type == "PE" and dst_type == "AG":
+                return True  # Flexible for now
             return True
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
-            if src_type == "LC" and dst_type == "PE":
-                d = abs(dst_idx - src_idx)
-                if d in [0, 1]:
-                    return 0.0
-                return float(d - 1)
+            if src_type == "PE" and dst_type == "AG":
+                expected_ag = src_idx // 2
+                d = abs(dst_idx - expected_ag)
+                return float(d)
             return 0.0
 
-    class LCtoGROUPConstraint(Constraint):
-        """LC i → GROUP j constraint: j in [i//2 - 1, i//2 + 1]"""
-        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "LC" and dst_type == "GROUP":
-                return abs(dst_idx - (src_idx // 2)) in [0, 1]
-            return True
-
-        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
-            if src_type == "LC" and dst_type == "GROUP":
-                d = abs(dst_idx - (src_idx // 2))
-                if d in [0, 1]:
-                    return 0.0
-                return float(d - 1)
-            return 0.0
-        
     class LCtoSTREAMConstraint(Constraint):
         """LC i → STREAM j constraint: 
         Unified STREAM indexing: READ_STREAM0,1,2 → 0,1,2; WRITE_STREAM0 → 3
@@ -295,51 +451,103 @@ class Mapper:
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "LC" and dst_type == "STREAM":
                 # LC can connect to streams with reasonable topology constraints
-                return abs(dst_idx - (src_idx // 2)) in [0, 1]
+                src_row, src_col = divmod(src_idx, 8)
+                return abs(dst_idx - (src_col // 2)) in [0, 1]
             return True
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
             if src_type == "LC" and dst_type == "STREAM":
-                d = abs(dst_idx - (src_idx // 2))
+                src_row, src_col = divmod(src_idx, 8)
+                d = abs(dst_idx - (src_col // 2))
                 if d in [0, 1]:
                     return 0.0
                 return float(d - 1)
             return 0.0
-    
-    class PEtoPEConstraint(Constraint):
-        """PE i → PE j constraint: j in [i-2, i-1, i+1, i+2]"""
-        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "PE" and dst_type == "PE":
-                return abs(dst_idx - src_idx) in [1, 2]
-            return True
 
-        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
-            if src_type == "PE" and dst_type == "PE":
-                d = abs(dst_idx - src_idx)
-                if d in [1, 2]:
-                    return 0.0
-                return float(max(0, d - 2))
-            return 0.0
-    
-    
-    class PEtoSTREAMConstraint(Constraint):
-        """PE i → STREAM j constraint:
-        Unified STREAM indexing: READ_STREAM0,1,2 → 0,1,2; WRITE_STREAM0 → 3
+    class ROWLCtoAGConstraint(Constraint):
+        """ROW_LC i → AG j constraint: hard-wired connection
+        
+        ROW_LC i connects to AG i//2 (with no selection).
+        ROW_LC 0,1 → AG 0
+        ROW_LC 2,3 → AG 1
+        Only 4 ROW_LCs total, so each AG connects to 2 ROW_LCs.
         """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "PE" and dst_type == "STREAM":
-                # PE can connect to streams with reasonable topology constraints
-                return abs(dst_idx - (src_idx // 2)) in [0, 1]
+            if src_type == "ROW_LC" and dst_type == "AG":
+                expected_ag = src_idx // 2
+                return dst_idx == expected_ag
             return True
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
-            if src_type == "PE" and dst_type == "STREAM":
-                d = abs(dst_idx - (src_idx // 2))
-                if d in [0, 1]:
+            if src_type == "ROW_LC" and dst_type == "AG":
+                expected_ag = src_idx // 2
+                if dst_idx == expected_ag:
                     return 0.0
-                return float(d - 1)
+                return 10.0  # Heavy penalty for hard-wired constraint violation
+            return 0.0
+
+    class COLLCtoROWLCConstraint(Constraint):
+        """COL_LC i → ROW_LC constraint: hard-wired connection
+        
+        Each COL_LC i connects to its corresponding ROW_LC i (hard-wired at relative index 12).
+        """
+        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
+            if src_type == "COL_LC" and dst_type == "ROW_LC":
+                return dst_idx == src_idx  # COL_LC i connects to ROW_LC i
+            return True
+
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "COL_LC" and dst_type == "ROW_LC":
+                if dst_idx == src_idx:
+                    return 0.0
+                return 10.0  # Heavy penalty for hard-wired constraint violation
+            return 0.0
+
+    class COLLCtoAGConstraint(Constraint):
+        """COL_LC i → AG j constraint: hard-wired connection
+        
+        COL_LC i connects to AG i//2 (with no selection).
+        Same mapping as ROW_LC.
+        """
+        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
+            if src_type == "COL_LC" and dst_type == "AG":
+                expected_ag = src_idx // 2
+                return dst_idx == expected_ag
+            return True
+
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "COL_LC" and dst_type == "AG":
+                expected_ag = src_idx // 2
+                if dst_idx == expected_ag:
+                    return 0.0
+                return 10.0  # Heavy penalty for hard-wired constraint violation
+            return 0.0
+
+    class ROWLCtoColLCConstraint(Constraint):
+        """ROW_LC i → COL_LC i constraint: hard-wired connection
+        
+        Each ROW_LC i connects to its corresponding COL_LC i (hard-wired, same index).
+        When ROW_LC i maps to physical ROW_LC j, then COL_LC i MUST map to physical COL_LC j.
+        """
+        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
+            # Only check ROW_LC→COL_LC connections in the actual connections
+            # The mapping constraint is enforced via penalty in cost calculation
+            if src_type == "ROW_LC" and dst_type == "COL_LC":
+                return src_idx == dst_idx  # ROW_LC i must connect to COL_LC i
+            elif dst_type == "COL_LC" and src_type != "ROW_LC":
+                return False  # COL_LC should only receive from ROW_LC
+            return True
+
+        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
+            if src_type == "ROW_LC" and dst_type == "COL_LC":
+                if src_idx == dst_idx:
+                    return 0.0
+                return 10000.0  # Extremely heavy penalty
+            elif dst_type == "COL_LC" and src_type != "ROW_LC":
+                return 10000.0  # Extremely heavy penalty
             return 0.0
     
+
     def direct_mapping(self) -> Dict[str, str]:
         """
         Directly map each node's logical index to its corresponding physical index.
@@ -381,21 +589,23 @@ class Mapper:
         # Define all structural constraints
         self.constraints: List[Mapper.Constraint] = [
             self.LCtoLCConstraint(),
-            self.LCtoPEConstraint(),
-            self.LCtoGROUPConstraint(),
-            self.LCtoSTREAMConstraint(),
+            self.LCtoROWLCConstraint(),
+            self.LCtoAGConstraint(),
+            self.PEtoLCConstraint(),
             self.PEtoPEConstraint(),
-            self.PEtoSTREAMConstraint()
+            self.PEtoAGConstraint(),
+            self.LCtoSTREAMConstraint(),
+            self.ROWLCtoAGConstraint(),
+            self.COLLCtoROWLCConstraint(),
+            self.ROWLCtoColLCConstraint(),
+            self.COLLCtoAGConstraint()
         ]
         
         # Collect all nodes participating in connections
         nodes_in_connections = set()
         for c in connections:
+            # Keep full node names including .ROW_LC and .COL_LC
             src, dst = c["src"], c["dst"]
-            if src.endswith("ROW_LC") or src.endswith("COL_LC"):
-                src = src.split(".")[0]
-            if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
-                dst = dst.split(".")[0]
             nodes_in_connections.add(src)
             nodes_in_connections.add(dst)
         
@@ -762,6 +972,21 @@ class Mapper:
                                   f"{src_type}{src_idx} -> {dst_type}{dst_idx} violates {constraint.__class__.__name__}")
                             break
         
+        # Post-processing: Enforce ROW_LC ↔ COL_LC correspondence
+        # When GROUP i.ROW_LC maps to ROW_LC j, force GROUP i.COL_LC to map to COL_LC j
+        for node in best_mapping:
+            if ".ROW_LC" in node:
+                group_prefix = node.split(".")[0]
+                col_lc_node = f"{group_prefix}.COL_LC"
+                row_lc_resource = best_mapping[node]  # e.g., "ROW_LC2"
+                if row_lc_resource.startswith("ROW_LC"):
+                    row_lc_idx = int(row_lc_resource[6:])
+                    col_lc_resource = f"COL_LC{row_lc_idx}"
+                    if col_lc_node in best_mapping:
+                        if best_mapping[col_lc_node] != col_lc_resource:
+                            print(f"[Post-processing] Fixing {col_lc_node}: {best_mapping[col_lc_node]} → {col_lc_resource}")
+                            best_mapping[col_lc_node] = col_lc_resource
+        
         self.node_to_resource = best_mapping
         self.last_mapping_cost = best_cost  # Store cost for later access
         return best_mapping
@@ -786,8 +1011,6 @@ class Mapper:
         """Print all node-to-resource mappings."""
         print("=== Resource Mapping Summary ===")
         for node, res in self.node_to_resource.items():
-            if node.endswith("ROW_LC") or node.endswith("COL_LC"):
-                continue
             print(f"{node:25s} -> {res}")
         print("===============================")
 
@@ -831,15 +1054,12 @@ class NodeGraph:
             
     def assign_node(self, node: str, resource: str):
         """Assign a specific physical resource to a logical node."""
-        
-        if resource.startswith("STREAM"):
-            idx = int(resource.replace("STREAM", ""))
-            stream_type = "read" if idx in [0, 1, 2] else "write"
-            resource = f"{'READ_STREAM' if stream_type == 'read' else 'WRITE_STREAM'}{idx if stream_type == 'read' else 0}"
-        
+        # Directly assign the resource without modification
+        # (resource should already be in correct format like GROUP0, ROW_LC0, READ_STREAM0, etc.)
         self.mapping.node_to_resource[node] = resource
-        self.mapping.assigned_node[node] = resource
-        self.mapping.nodes.append(node)
+        self.mapping.assigned_node[node] = resource  # Mark as pre-assigned
+        if node not in self.mapping.nodes:
+            self.mapping.nodes.append(node)
 
     def allocate_resources(self, only_connected_nodes=False):
         """Allocate physical resources for all registered nodes.
@@ -848,16 +1068,12 @@ class NodeGraph:
             only_connected_nodes: If True, only allocate resources for nodes that
                                  appear in connections. Other nodes will be skipped.
         """
-        # Collect nodes that appear in connections
+        # Collect nodes that appear in connections (keep full node names)
         nodes_in_connections = set()
         if only_connected_nodes:
             for c in self.connections:
                 src, dst = c["src"], c["dst"]
-                # Normalize LC suffixes
-                if src.endswith("ROW_LC") or src.endswith("COL_LC"):
-                    src = src.split(".")[0]
-                if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
-                    dst = dst.split(".")[0]
+                # Keep full node names (including .ROW_LC, .COL_LC suffixes)
                 nodes_in_connections.add(src)
                 nodes_in_connections.add(dst)
         
@@ -865,6 +1081,10 @@ class NodeGraph:
         nodes_to_process = nodes_in_connections if only_connected_nodes else self.nodes
         
         for node in nodes_to_process:
+            # Skip nodes that are already assigned (GROUP, ROW_LC, COL_LC, STREAM with region-based binding)
+            if node in self.mapping.node_to_resource:
+                continue
+            
             # Get metadata for this node (e.g., stream_type)
             metadata = self.node_metadata.get(node, {})
             stream_type = metadata.get('stream_type')
@@ -922,38 +1142,57 @@ class NodeGraph:
 
 def visualize_mapping(mapper, connections, save_path="data/placement.png"):
     """
-    Visualize the physical layout of hardware resources (LC, GROUP, PE, STREAM)
-    and draw mapped logical connections between them.
+    Visualize the physical layout of hardware resources with new 5-layer architecture:
+    
+    Row 4: LC (Row 0): LC0-LC7
+    Row 3: LC (Row 1): LC8-LC15
+    Row 2: ROW_LC (left): ROW_LC0-ROW_LC3, COL_LC (right): COL_LC0-COL_LC3
+    Row 1: PE0-PE7
+    Row 0: AG0-AG3
 
-    Each row represents a physical resource layer:
-        Row 3: LC0-LC7
-        Row 2: GROUP0-GROUP3
-        Row 1: PE0-PE7
-        Row 0: READ_STREAM0-2, WRITE_STREAM0
-
-    The function automatically adjusts connection lines to avoid overlapping,
-    especially for same-row (e.g., LC→LC) connections, by drawing smooth curves.
-
+    The function draws mapped logical connections between resources.
     Output is saved to 'data/placement.png'.
     """
+    import matplotlib
+    matplotlib.use('Agg')  # Use non-interactive backend
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import FancyArrowPatch
+    from matplotlib.path import Path
+    import os
+    
     dir_path = os.path.dirname(save_path)
     if dir_path:  # Only create directory if path is not empty
         os.makedirs(dir_path, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(14, 8))
 
-    # Define fixed layout positions
+    # Define fixed layout positions for new 5-row architecture with 4 ROW_LC and 4 COL_LC
+    # AG row now contains STREAM resources (READ_STREAM and WRITE_STREAM)
     layout = {
-        "LC":           [(i, 3) for i in range(8)],               # LC0–LC7
-        "GROUP":        [(i * 2 + 0.5, 2) for i in range(4)],     # between every 2 LCs
-        "PE":           [(i, 1) for i in range(8)],               # aligned with LC
-        "READ_STREAM":  [(i * 2 + 0.5, 0) for i in range(3)],     # READ_STREAM0-2
-        "WRITE_STREAM": [(6.5, 0)],                                  # WRITE_STREAM0
+        "LC":           [(i * 2, 4) for i in range(8)] + [(i * 2, 3) for i in range(8)],   # Row 0: LC0-7, Row 1: LC8-15
+        "ROW_LC":       [(i * 4, 2) for i in range(4)],                            # Row 2 left: ROW_LC0-3 (spaced out)
+        "COL_LC":       [(i * 4 + 2, 2) for i in range(4)],                        # Row 2 right: COL_LC0-3 (spaced out)
+        "PE":           [(i * 2, 1) for i in range(8)],                           # Row 1: PE0-7
+        "READ_STREAM":  [(i * 4 + 1, 0) for i in range(3)],                       # Row 0: READ_STREAM0-2 (positions 1, 5, 9)
+        "WRITE_STREAM": [(13, 0)],                                               # Row 0: WRITE_STREAM0 (position 13)
     }
 
     # Draw resource nodes
     for res_type, positions in layout.items():
         for i, (x, y) in enumerate(positions):
-            res_name = f"{res_type}{i}"
+            if res_type == "LC":
+                res_name = f"LC{i}"
+            elif res_type == "ROW_LC":
+                res_name = f"ROW_LC{i}"
+            elif res_type == "COL_LC":
+                res_name = f"COL_LC{i}"
+            elif res_type == "PE":
+                res_name = f"PE{i}"
+            elif res_type == "READ_STREAM":
+                res_name = f"READ_STREAM{i}"
+            elif res_type == "WRITE_STREAM":
+                res_name = f"WRITE_STREAM{i}"
+            else:
+                res_name = f"{res_type}{i}"
 
             # Reverse lookup: find which node is mapped to this resource
             node_name = next(
@@ -961,60 +1200,61 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
                 ""
             )
 
-            # Use different colors for READ and WRITE streams
-            if res_type == "READ_STREAM":
-                facecolor = "lightblue"
-                label_text = "READ_STREAM" if i == 0 else ""
-            elif res_type == "WRITE_STREAM":
-                facecolor = "lightcoral"
-                label_text = "WRITE_STREAM"
-            else:
-                facecolor = "lightgray"
-                label_text = res_type if i == 0 else ""
+            # Use different colors for each resource type
+            color_map = {
+                "LC": "lightgreen",
+                "ROW_LC": "lightyellow",
+                "COL_LC": "lightyellow",
+                "PE": "lightblue",
+                "READ_STREAM": "lightcoral",
+                "WRITE_STREAM": "salmon"
+            }
+            facecolor = color_map.get(res_type, "lightgray")
+            label_text = res_type if i == 0 else ""
 
             ax.scatter(
-                x, y, s=500, marker="s",
+                x, y, s=400, marker="s",
                 label=label_text,
                 edgecolor="black", facecolor=facecolor, zorder=3
             )
             
-            # Logical node name (e.g., DRAM_LC.LC7)
+            # Logical node name
             if node_name:
                 ax.text(
-                    x, y - 0.25,  # shift text slightly downward
+                    x, y - 0.2,
                     node_name,
                     ha="center", va="center",
-                    fontsize=9, style="normal",
+                    fontsize=6, style="normal",
                     color="darkgreen"
                 )
             else:
                 ax.text(
-                    x, y - 0.25,
+                    x, y - 0.2,
                     "(unused)",
                     ha="center", va="center",
-                    fontsize=9, style="normal",
+                    fontsize=6, style="normal",
                     color="gray"
                 )
 
     # Helper: draw straight or curved connection
-    def draw_connection(x1, y1, x2, y2, color="black"):
+    def draw_connection(x1, y1, x2, y2, color="black", style="solid"):
         if y1 == y2:
-            # Same-row connection → use a small curve above the row
+            # Same-row connection → use a small curve
             mid_x = (x1 + x2) / 2
-            offset = 0.2 + 0.1 * abs(x2 - x1)  # curvature depends on distance
+            offset = 0.15 + 0.08 * abs(x2 - x1)
             verts = [(x1, y1), (mid_x, y1 + offset), (x2, y2)]
             codes = [Path.MOVETO, Path.CURVE3, Path.CURVE3]
             path = Path(verts, codes)
             patch = FancyArrowPatch(
                 path=path, arrowstyle="-|>", color=color,
-                lw=1.2, alpha=0.6, mutation_scale=10, zorder=4
+                lw=1.0, alpha=0.6, mutation_scale=8, zorder=4
             )
             ax.add_patch(patch)
         else:
-            # Different-row connection → draw a straight arrow
+            # Different-row connection
             patch = FancyArrowPatch(
                 (x1, y1), (x2, y2), arrowstyle="-|>",
-                color=color, lw=1.2, alpha=0.6, mutation_scale=10, zorder=4
+                color=color, lw=1.0, alpha=0.6, mutation_scale=8, zorder=4
             )
             ax.add_patch(patch)
 
@@ -1022,54 +1262,82 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
     for c in connections:
         src_node, dst_node = c["src"], c["dst"]
         
-        if src_node.endswith("ROW_LC") or src_node.endswith("COL_LC"):
-            src_node = src_node.split(".")[0]
-        if dst_node.endswith("ROW_LC") or dst_node.endswith("COL_LC"):
-            dst_node = dst_node.split(".")[0]
-        
+        # Keep full node names (including .ROW_LC, .COL_LC) to find their mappings
         src_res = mapper.node_to_resource.get(src_node)
         dst_res = mapper.node_to_resource.get(dst_node)
         
         if not src_res or not dst_res:
             continue
         
-        if src_res is dst_res:
+        if src_res == dst_res:
             continue  # skip self-loops
 
-        # Handle READ_STREAM and WRITE_STREAM specially
-        if src_res.startswith("READ_STREAM"):
-            src_type = "READ_STREAM"
-            src_idx = int(src_res[len("READ_STREAM"):])
-        elif src_res.startswith("WRITE_STREAM"):
-            src_type = "WRITE_STREAM"
-            src_idx = int(src_res[len("WRITE_STREAM"):])
-        else:
-            src_type = ''.join(ch for ch in src_res if ch.isalpha())
-            src_idx = int(''.join(ch for ch in src_res if ch.isdigit()))
-        
-        if dst_res.startswith("READ_STREAM"):
-            dst_type = "READ_STREAM"
-            dst_idx = int(dst_res[len("READ_STREAM"):])
-        elif dst_res.startswith("WRITE_STREAM"):
-            dst_type = "WRITE_STREAM"
-            dst_idx = int(dst_res[len("WRITE_STREAM"):])
-        else:
-            dst_type = ''.join(ch for ch in dst_res if ch.isalpha())
-            dst_idx = int(''.join(ch for ch in dst_res if ch.isdigit()))
+        # Parse resource type and index
+        def parse_res_name(res):
+            if res.startswith("LC"):
+                idx = int(res[2:])
+                return "LC", idx
+            elif res.startswith("ROW_LC"):
+                idx = int(res[6:])
+                return "ROW_LC", idx
+            elif res.startswith("COL_LC"):
+                idx = int(res[6:])
+                return "COL_LC", idx
+            elif res.startswith("READ_STREAM"):
+                idx = int(res[11:])
+                return "READ_STREAM", idx
+            elif res.startswith("WRITE_STREAM"):
+                idx = int(res[12:])
+                return "WRITE_STREAM", idx
+            elif res.startswith("PE"):
+                idx = int(res[2:])
+                return "PE", idx
+            elif res.startswith("AG"):
+                idx = int(res[2:])
+                return "AG", idx
+            else:
+                return None, None
+
+        src_type, src_idx = parse_res_name(src_res)
+        dst_type, dst_idx = parse_res_name(dst_res)
 
         if src_type not in layout or dst_type not in layout:
             continue
-        if src_idx >= len(layout[src_type]) or dst_idx >= len(layout[dst_type]):
-            continue
 
-        x1, y1 = layout[src_type][src_idx]
-        x2, y2 = layout[dst_type][dst_idx]
+        # Calculate position based on current layout
+        if src_type == "LC":
+            src_row, src_col = divmod(src_idx, 8)
+            x1 = src_col * 2  # LC spacing: i * 2
+            y1 = 4 - src_row  # Row 0 at y=4, Row 1 at y=3
+        elif src_type in ["ROW_LC", "COL_LC"]:
+            if src_type == "ROW_LC":
+                x1 = src_idx * 4  # ROW_LC spacing: i * 4
+            else:  # COL_LC
+                x1 = src_idx * 4 + 2  # COL_LC spacing: i * 4 + 2
+            y1 = 2
+        else:
+            x1, y1 = layout[src_type][src_idx]
+
+        if dst_type == "LC":
+            dst_row, dst_col = divmod(dst_idx, 8)
+            x2 = dst_col * 2  # LC spacing: i * 2
+            y2 = 4 - dst_row  # Row 0 at y=4, Row 1 at y=3
+        elif dst_type in ["ROW_LC", "COL_LC"]:
+            if dst_type == "ROW_LC":
+                x2 = dst_idx * 4  # ROW_LC spacing: i * 4
+            else:  # COL_LC
+                x2 = dst_idx * 4 + 2  # COL_LC spacing: i * 4 + 2
+            y2 = 2
+        else:
+            x2, y2 = layout[dst_type][dst_idx]
+
         draw_connection(x1, y1, x2, y2)
 
     # Configure axes and legend
-    ax.set_title("Physical Resource Placement Visualization", fontsize=14, weight="bold")
-    ax.set_xlim(-1, 8)
-    ax.set_ylim(-1, 4)
+    ax.set_title("Physical Resource Placement Visualization (5-Layer Architecture)", 
+                 fontsize=14, weight="bold")
+    ax.set_xlim(-1, 16)  # LC spacing goes from 0 to 14 (8 LCs * 2), ROW/COL_LC up to 14
+    ax.set_ylim(-1, 5)
     ax.set_xticks([])
     ax.set_yticks([])
     plt.legend(loc="upper right", fontsize=9, frameon=True, markerscale=0.5, labelspacing=0.5)

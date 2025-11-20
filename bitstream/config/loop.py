@@ -257,16 +257,20 @@ class BufferLoopControlGroupConfig(BaseConfigModule):
             key = keys[self.idx]
             cfg = cfg.get(key, cfg)
             
-            # Get physical index from configuration (idx may be a letter like 'A'); convert to numeric index
-            idx_char = cfg.get("idx", None)
-            if idx_char is not None:
+            # Get region from configuration and convert to numeric index (A B C D -> 0 1 2 3)
+            region = cfg.get("region", None)
+            if region is not None:
                 try:
-                    idx_val = ord(idx_char) - ord('A')
-                    # self.physical_index = idx_val
+                    region_idx = ord(region) - ord('A')
+                    # Directly assign GROUP nodes to fixed positions based on region
                     node_graph = NodeGraph.get()
-                    node_graph.assign_node(key, f"GROUP{idx_val}")
+                    node_graph.assign_node(key, f"GROUP{region_idx}")
+                    
+                    # Also directly assign ROW_LC and COL_LC nodes (they don't participate in mapping)
+                    node_graph.assign_node(f"{key}.ROW_LC", f"ROW_LC{region_idx}")
+                    node_graph.assign_node(f"{key}.COL_LC", f"COL_LC{region_idx}")
                 except Exception:
-                    # If idx_char is not a single char, gracefully fallback: don't assign
+                    # If region is not a single char, gracefully fallback: don't assign
                     pass
             
             # Check if this group has meaningful data (not just a comment)

@@ -238,16 +238,28 @@ class StreamConfig(BaseConfigModule):
         submodule.from_json(stream_cfg)
         self.submodules = [submodule]
         
-        # Cast idx 'A'..'D' to integer 0..3 and store in self.idx, which is mutable
-        idx_char = stream_cfg.get("idx", None)
-        if idx_char is not None:
+        # Use region field to determine physical assignment (A B C D -> 0 1 2 3)
+        # Region 0,1,2 (A,B,C) map to READ_STREAM0, READ_STREAM1, READ_STREAM2
+        # Region 3 (D) maps to WRITE_STREAM0
+        region = stream_cfg.get("region", None)
+        if region is not None:
             try:
-                computed_idx = ord(idx_char) - ord('A')
-                self.idx = computed_idx
-                # Assign to the fully-qualified node name used elsewhere (e.g., 'STREAM.stream0')
-                NodeGraph.get().assign_node(f"STREAM.{self.stream_key}", f"STREAM{self.idx}")
+                region_idx = ord(region) - ord('A')
+                self.idx = region_idx
+                
+                # Determine stream type from mode field, but also respect the rule:
+                # Regions 0-2 are READ_STREAM, Region 3 is WRITE_STREAM
+                if region_idx <= 2:
+                    # Regions A, B, C -> READ_STREAM 0, 1, 2
+                    resource = f"READ_STREAM{region_idx}"
+                else:
+                    # Region D (3) -> WRITE_STREAM0
+                    resource = "WRITE_STREAM0"
+                
+                # Directly assign to fixed position based on region
+                NodeGraph.get().assign_node(f"STREAM.{self.stream_key}", resource)
             except Exception:
-                # If idx_char is not a single character, skip assigning and leave idx as None
+                # If region is not a single character, skip assigning and leave idx as None
                 pass
         
     
