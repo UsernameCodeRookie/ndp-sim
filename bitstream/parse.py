@@ -10,7 +10,7 @@ import json
 from bitstream.config.mapper import NodeGraph
 from bitstream.config import (
     DramLoopControlConfig, BufferLoopControlGroupConfig, LCPEConfig,
-    NeighborStreamConfig, BufferConfig, SpecialArrayConfig
+    NeighborStreamConfig, BufferConfig, SpecialArrayConfig, GeneralArrayConfig
 )
 from bitstream.config.stream import StreamConfig
 from bitstream.index import NodeIndex
@@ -29,8 +29,8 @@ class ModuleID(IntEnum):
     GA_OUTPORT_GROUP = 10
     GENERAL_ARRAY = 11
 
-MODULE_CFG_CHUNK_SIZES = [1, 1, 1, 1, 8, 6, 1, 1, 1, 1, 1, 4]
-MODULE_ID_TO_MASK = [0, 0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 3]
+MODULE_CFG_CHUNK_SIZES = [1, 1, 1, 1, 8, 6, 1, 1, 1, 1, 1, 4, 4]
+MODULE_ID_TO_MASK = [0, 0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 3, 3]
 
 def split_config(config, max_chunk=63):
     """Split config into equal chunks."""
@@ -78,7 +78,8 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
                 [StreamConfig(i) for i in range(4)] + \
                 [NeighborStreamConfig()] + \
                 [BufferConfig(i) for i in range(6)] + \
-                [SpecialArrayConfig()]
+                [SpecialArrayConfig()] + \
+                [GeneralArrayConfig()]
     
     # Load configurations from JSON for all modules
     # During this process, Connect() objects will populate NodeGraph.connections
@@ -180,6 +181,7 @@ def build_entries(modules):
     buffer_modules = [m for m in modules if isinstance(m, BufferConfig)]
     neighbor_module = next((m for m in modules if isinstance(m, NeighborStreamConfig)), None)
     special_module = next((m for m in modules if isinstance(m, SpecialArrayConfig)), None)
+    general_module = next((m for m in modules if isinstance(m, GeneralArrayConfig)), None)
     
     # Physical resource layout: (module_id, resource_pattern, count, getter_func)
     layout = [
@@ -197,6 +199,8 @@ def build_entries(modules):
         (ModuleID.BUFFER_MANAGER_CLUSTER, "BUFFER", len(buffer_modules), lambda i: buffer_modules[i] if i < len(buffer_modules) else None),
         # Special array
         (ModuleID.SPECIAL_ARRAY, "SPECIAL", 1, lambda i: special_module),
+        # General array
+        (ModuleID.GENERAL_ARRAY, "GENERAL", 1, lambda i: general_module),
     ]
     
     # Build all entries from unified layout
