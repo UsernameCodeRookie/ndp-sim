@@ -10,42 +10,41 @@ class ReadStreamEngineConfig(BaseConfigModule):
     """
     Read stream engine configuration with padding and tailing fields.
     This is a submodule of StreamConfig.
+    FIELD_MAP uses JSON field names directly from stream_engine format.
     """
     
     FIELD_MAP = [
         # Padding (4 bits, not used but needed for alignment)
         ("_padding", 4),  
         # Memory AG fields
-        ("idx_mode", 6, lambda x: [StreamConfig.inport_mode_map()[i] for i in x]),                        # mse_mem_idx_keep_mode
-        ("idx_keep_last_index", 9),              # mse_mem_idx_keep_last_index
-        ("idx", 12, lambda self, x: ReadStreamEngineConfig._encode_idx(self, x)),  # mem_inport_src_id
-        ("idx_constant", 24),                    # mse_mem_idx_constant
+        ("mem_idx_mode", 6, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
+        ("mem_idx_keep_last_index", 9),
+        ("idx", 12),
+        ("mem_idx_constant", 24),
         # Buffer AG fields
-        ("buf_idx_mode", 2, lambda x: [StreamConfig.inport_mode_map()[i] for i in x]),                     # mse_buf_idx_keep_mode
-        ("buf_idx_keep_last_index", 6),          # mse_buf_idx_keep_last_index
+        ("buf_idx_mode", 2, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
+        ("buf_idx_keep_last_index", 6),
         # Stream fields
-        ("pingpong", 1),                         # mse_pingpong_enable
-        ("pingpong_last_index", 3),              # mse_pingpong_last_index
+        ("ping_pong", 1),
+        ("pingpong_last_index", 3),
         # Address and size fields
-        ("base_addr", 29),                       # mse_stream_base_addr
-        ("idx_size", 24),                        # mse_transaciton_layout_size
-        ("idx_size_log", 9),                     # mse_transaciton_layout_size_log
-        ("total_size", 8),                       # mse_transaciton_total_size
-        ("dim_stride", 60),                      # mse_transaciton_mult
+        ("base_addr", 29),
+        ("idx_size", 24),
+        ("idx_size_log", 9),
+        ("total_size", 8),
+        ("dim_stride", 60),
         # Remapping
-        ("address_remapping", 64),               # mse_map_matrix_b
+        ("address_remapping", 64),
         # Padding fields
-        ("padding_reg_value", 8),                # mse_padding_reg_value
-        ("padding_enable", 3),                   # mse_padding_valid
-        ("idx_padding_range_low_bound", 36),     # mse_padding_low_bound
-        ("idx_padding_range_up_bound", 36),      # mse_padding_up_bound
+        ("padding_reg_value", 8),
+        ("padding_enable", 3),
+        ("idx_padding_range", 72),
         # Tailing (branch) fields
-        ("tailing_enable", 3),                   # mse_branch_valid
-        ("idx_tailing_range_low", 36),           # mse_branch_low_bound
-        ("idx_tailing_range_up", 36),            # mse_branch_up_bound
+        ("tailing_enable", 3),
+        ("idx_tailing_range", 72),
         # Spatial fields
-        ("spatial_stride", 80),                  # mse_buf_spatial_stride
-        ("spatial_size", 5),                     # mse_buf_spatial_size
+        ("buf_spatial_stride", 80),
+        ("buf_spatial_size", 5),
     ]
     
     def __init__(self, stream_key: str):
@@ -60,24 +59,29 @@ class ReadStreamEngineConfig(BaseConfigModule):
             return self.id.physical_id
         return 0
     
-    @staticmethod
-    def _encode_idx(self, x):
-        """Encode idx field, converting string node names to Connect objects."""
-        if isinstance(x, list):
-            result = []
-            for item in x:
-                if isinstance(item, str):
-                    result.append(Connect(item, self.id))
-                elif item is None:
-                    result.append(0)
-                else:
-                    result.append(item)
-            return result
-        return x
-    
     def from_json(self, cfg: dict):
         """Load read stream configuration from JSON."""
         self.id = NodeIndex(f"STREAM.{self.stream_key}", stream_type="read")
+        
+        # Pre-process nested dict fields into lists
+        if "idx_padding_range" in cfg and isinstance(cfg["idx_padding_range"], dict):
+            padding_range = cfg["idx_padding_range"]
+            cfg = {**cfg, "idx_padding_range": padding_range.get("low_bound", []) + padding_range.get("up_bound", [])}
+        
+        if "idx_tailing_range" in cfg and isinstance(cfg["idx_tailing_range"], dict):
+            tailing_range = cfg["idx_tailing_range"]
+            cfg = {**cfg, "idx_tailing_range": tailing_range.get("low", []) + tailing_range.get("up", [])}
+        
+        # Pre-process idx field to convert string node names to Connect objects
+        if "idx" in cfg and isinstance(cfg["idx"], list):
+            idx_list = []
+            for item in cfg["idx"]:
+                if isinstance(item, str):
+                    idx_list.append(Connect(item, self.id))
+                else:
+                    idx_list.append(item)
+            cfg = {**cfg, "idx": idx_list}
+        
         super().from_json(cfg)
 
     def set_empty(self):
@@ -88,31 +92,32 @@ class WriteStreamEngineConfig(BaseConfigModule):
     """
     Write stream engine configuration without padding and tailing fields.
     This is a submodule of StreamConfig.
+    FIELD_MAP uses JSON field names directly from stream_engine format.
     """
     
     FIELD_MAP = [
         # Memory AG fields
-        ("idx_mode", 6, lambda x: [StreamConfig.inport_mode_map()[i] for i in x]),                         # mse_mem_idx_keep_mode
-        ("idx_keep_last_index", 9),               # mse_mem_idx_keep_last_index
-        ("idx", 12, lambda self, x: WriteStreamEngineConfig._encode_idx(self, x)),  # mem_inport_src_id
-        ("mse_mem_idx_constant", 24),             # mse_mem_idx_constant
+        ("mem_idx_mode", 6, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
+        ("mem_idx_keep_last_index", 9),
+        ("idx", 12),
+        ("mem_idx_constant", 24),
         # Buffer AG fields
-        ("buf_idx_mode", 2, lambda x: [StreamConfig.inport_mode_map()[i] for i in x]),                      # mse_buf_idx_keep_mode
-        ("buf_idx_keep_last_index", 6),           # mse_buf_idx_keep_last_index
+        ("buf_idx_mode", 2, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
+        ("buf_idx_keep_last_index", 6),
         # Stream fields
-        ("ping_pong", 1),                         # mse_pingpong_enable
-        ("pingpong_last_index", 3),               # mse_pingpong_last_index
+        ("ping_pong", 1),
+        ("pingpong_last_index", 3),
         # Address and size fields
-        ("base_addr", 29),                        # mse_stream_base_addr
-        ("idx_size", 24),                         # mse_transaciton_layout_size
-        ("idx_size_log", 9),                      # mse_transaciton_layout_size_log
-        ("total_size", 8),                        # mse_transaciton_total_size
-        ("dim_stride", 60),                       # mse_transaciton_mult
+        ("base_addr", 29),
+        ("idx_size", 24),
+        ("idx_size_log", 9),
+        ("total_size", 8),
+        ("dim_stride", 60),
         # Remapping
-        ("address_remapping", 64),                # mse_map_matrix_b
+        ("address_remapping", 64),
         # Spatial fields
-        ("spatial_stride", 80),                   # mse_buf_spatial_stride
-        ("spatial_size", 5),                      # mse_buf_spatial_size
+        ("buf_spatial_stride", 80),
+        ("buf_spatial_size", 5),
     ]
     
     def __init__(self, stream_key: str):
@@ -127,24 +132,20 @@ class WriteStreamEngineConfig(BaseConfigModule):
             return self.id.physical_id
         return 0
     
-    @staticmethod
-    def _encode_idx(self, x):
-        """Encode idx field, converting string node names to Connect objects."""
-        if isinstance(x, list):
-            result = []
-            for item in x:
-                if isinstance(item, str):
-                    result.append(Connect(item, self.id))
-                elif item is None:
-                    result.append(0)
-                else:
-                    result.append(item)
-            return result
-        return x
-    
     def from_json(self, cfg: dict):
         """Load write stream configuration from JSON."""
         self.id = NodeIndex(f"STREAM.{self.stream_key}", stream_type="write")
+        
+        # Pre-process idx field to convert string node names to Connect objects
+        if "idx" in cfg and isinstance(cfg["idx"], list):
+            idx_list = []
+            for item in cfg["idx"]:
+                if isinstance(item, str):
+                    idx_list.append(Connect(item, self.id))
+                else:
+                    idx_list.append(item)
+            cfg = {**cfg, "idx": idx_list}
+        
         super().from_json(cfg)
 
 
@@ -203,7 +204,7 @@ class StreamConfig(BaseConfigModule):
         """
         Load stream configuration from JSON.
         If initialized with index, finds the idx-th stream from stream_engine.
-        Determines type from memory_AG.mode and creates appropriate submodule.
+        Determines type from mode field and creates appropriate submodule.
         """
         # Get stream_engine from config
         stream_engine = cfg.get('stream_engine', cfg)
@@ -228,13 +229,17 @@ class StreamConfig(BaseConfigModule):
         
         stream_cfg = stream_engine[self.stream_key]
         
+        # Determine stream type from 'mode' field in JSON
+        mode = stream_cfg.get('mode', 'read')
+        self._stream_type = mode
+        
         # Create appropriate submodule based on stream type
-        if self.stream_type == "write":
+        if mode == "write":
             submodule = WriteStreamEngineConfig(self.stream_key)
         else:
             submodule = ReadStreamEngineConfig(self.stream_key)
         
-        # Load configuration into submodule
+        # Load configuration into submodule - pass stream_cfg directly
         submodule.from_json(stream_cfg)
         self.submodules = [submodule]
         
@@ -247,8 +252,7 @@ class StreamConfig(BaseConfigModule):
                 target_idx = ord(target) - ord('A')
                 self.idx = target_idx
                 
-                # Determine stream type from mode field, but also respect the rule:
-                # targets 0-2 are READ_STREAM, target 3 is WRITE_STREAM
+                # Determine resource based on target
                 if target_idx <= 2:
                     # targets A, B, C -> READ_STREAM 0, 1, 2
                     resource = f"READ_STREAM{target_idx}"
