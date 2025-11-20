@@ -238,28 +238,28 @@ class StreamConfig(BaseConfigModule):
         submodule.from_json(stream_cfg)
         self.submodules = [submodule]
         
-        # Use region field to determine physical assignment (A B C D -> 0 1 2 3)
-        # Region 0,1,2 (A,B,C) map to READ_STREAM0, READ_STREAM1, READ_STREAM2
-        # Region 3 (D) maps to WRITE_STREAM0
-        region = stream_cfg.get("region", None)
-        if region is not None:
+        # Use target field to determine physical assignment (A B C D -> 0 1 2 3)
+        # target 0,1,2 (A,B,C) map to READ_STREAM0, READ_STREAM1, READ_STREAM2
+        # target 3 (D) maps to WRITE_STREAM0
+        target = stream_cfg.get("target", None)
+        if target is not None:
             try:
-                region_idx = ord(region) - ord('A')
-                self.idx = region_idx
+                target_idx = ord(target) - ord('A')
+                self.idx = target_idx
                 
                 # Determine stream type from mode field, but also respect the rule:
-                # Regions 0-2 are READ_STREAM, Region 3 is WRITE_STREAM
-                if region_idx <= 2:
-                    # Regions A, B, C -> READ_STREAM 0, 1, 2
-                    resource = f"READ_STREAM{region_idx}"
+                # targets 0-2 are READ_STREAM, target 3 is WRITE_STREAM
+                if target_idx <= 2:
+                    # targets A, B, C -> READ_STREAM 0, 1, 2
+                    resource = f"READ_STREAM{target_idx}"
                 else:
-                    # Region D (3) -> WRITE_STREAM0
+                    # target D (3) -> WRITE_STREAM0
                     resource = "WRITE_STREAM0"
                 
-                # Directly assign to fixed position based on region
+                # Directly assign to fixed position based on target
                 NodeGraph.get().assign_node(f"STREAM.{self.stream_key}", resource)
             except Exception:
-                # If region is not a single character, skip assigning and leave idx as None
+                # If target is not a single character, skip assigning and leave idx as None
                 pass
         
     

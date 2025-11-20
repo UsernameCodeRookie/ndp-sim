@@ -434,14 +434,20 @@ class Mapper:
         """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "PE" and dst_type == "AG":
-                return True  # Flexible for now
+                d = abs(dst_idx - (src_idx // 2))  # AG index is src_idx // 2
+                if d in [0, 1, 2]:
+                    return True  # Flexible for now
+                # Disallow other connections
+                return False
             return True
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
             if src_type == "PE" and dst_type == "AG":
                 expected_ag = src_idx // 2
                 d = abs(dst_idx - expected_ag)
-                return float(d)
+                if d in [0, 1, 2]:
+                    return 0.0
+                return float(d - 2)  # Penalize for distance beyond 2
             return 0.0
 
     class LCtoSTREAMConstraint(Constraint):
@@ -1081,7 +1087,7 @@ class NodeGraph:
         nodes_to_process = nodes_in_connections if only_connected_nodes else self.nodes
         
         for node in nodes_to_process:
-            # Skip nodes that are already assigned (GROUP, ROW_LC, COL_LC, STREAM with region-based binding)
+            # Skip nodes that are already assigned (GROUP, ROW_LC, COL_LC, STREAM with target-based binding)
             if node in self.mapping.node_to_resource:
                 continue
             
