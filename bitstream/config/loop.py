@@ -13,7 +13,7 @@ class DramLoopControlConfig(BaseConfigModule):
         ("start", 13),  # initial_value in config
         ("stride", 13),
         ("end", 13),
-        ("last_index", 3),
+        ("last_index", 4),
     ]
 
     def __init__(self, idx : int):
@@ -185,11 +185,11 @@ class BufferRowLCConfig(BaseConfigModule):
     """Represents a buffer row loop control configuration (ROW_LC)."""
 
     FIELD_MAP = [
-        ("src_id", 3, lambda self, x: x if isinstance(x, int) else (Connect(x, self.id) if x else None)),
+        ("src_id", 4, lambda self, x: x if isinstance(x, int) else (Connect(x, self.id) if x else None)),
         ("start", 3),
         ("stride", 3),
         ("end", 3),
-        ("last_index", 3),
+        ("last_index", 4),
     ]
 
     def __init__(self, group: str):
@@ -214,11 +214,11 @@ class BufferColLCConfig(BaseConfigModule):
     """Represents a buffer column loop control configuration (COL_LC)."""
 
     FIELD_MAP = [
-        ("src_id", 3, lambda self, x: x if isinstance(x, int) else (Connect(x, self.id) if x else None)),
+        ("src_id", 4, lambda self, x: x if isinstance(x, int) else (Connect(x, self.id) if x else None)),
         ("start", 6),
         ("stride", 6),
         ("end", 6),
-        ("last_index", 3),
+        ("last_index", 4),
     ]
 
     def __init__(self, group: str):

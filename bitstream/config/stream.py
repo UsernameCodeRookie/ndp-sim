@@ -17,7 +17,7 @@ class ReadStreamEngineConfig(BaseConfigModule):
         # Memory AG fields
         ("mem_idx_mode", 6, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
         ("mem_idx_keep_last_index", 9),
-        ("idx", 12),
+        ("idx", 15),
         ("mem_idx_constant", 24),
         # Buffer AG fields
         ("buf_idx_mode", 2, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
@@ -99,7 +99,7 @@ class WriteStreamEngineConfig(BaseConfigModule):
         # Memory AG fields
         ("mem_idx_mode", 6, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
         ("mem_idx_keep_last_index", 9),
-        ("idx", 12),
+        ("idx", 15),
         ("mem_idx_constant", 24),
         # Buffer AG fields
         ("buf_idx_mode", 4, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
