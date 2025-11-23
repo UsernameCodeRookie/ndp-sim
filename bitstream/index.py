@@ -260,24 +260,24 @@ class Connect:
         elif src_type == "ROW_LC" and dst_type == "COL_LC":
             return 12
         
-        # ==================== PE → LC ====================
-        # Each PE connects to 3 LCs: corresponding LC, left 1, right 1 → indices 0-5
-        # But since ROW_LC/COL_LC is above PE, this refers to row above
-        elif src_type == "PE" and dst_type == "LC":
-            src_pe_idx = src_phys_id
-            dst_lc_idx = dst_phys_id % 8
+        # ==================== LC → PE ====================
+        # Each LC connects to 3 PEs: corresponding PE, left 1, right 1 → indices 0-5
+        # LCs from rows 0-1 connect to PEs below
+        elif src_type == "LC" and dst_type == "PE":
+            src_lc_idx = src_phys_id % 8
+            dst_pe_idx = dst_phys_id
             
-            # PE connects to LCs from rows 0-1
+            # LC connects to PEs below
             # Map: [i-1, i, i+1] → [0, 1, 2] for row 0, [3, 4, 5] for row 1
-            dst_row = self._get_lc_row(self.dst.node_name)
-            diff = dst_lc_idx - src_pe_idx
+            src_row = self._get_lc_row(self.src.node_name)
+            diff = src_lc_idx - dst_pe_idx
             
             if diff == -1:
-                return 0 if dst_row == 0 else 3
+                return 0 if src_row == 0 else 3
             elif diff == 0:
-                return 1 if dst_row == 0 else 4
+                return 1 if src_row == 0 else 4
             elif diff == 1:
-                return 2 if dst_row == 0 else 5
+                return 2 if src_row == 0 else 5
             else:
                 return 0  # Invalid
         
