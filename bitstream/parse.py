@@ -68,7 +68,7 @@ def load_config(config_file='./data/gemm_config_reference_aligned.json'):
     with open(config_file) as f:
         return json.load(f)
 
-def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuristic_iterations=5000, heuristic_restarts=1):
+def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuristic_iterations=5000, heuristic_restarts=1, seed=None):
     """Initialize all hardware modules from config and perform resource mapping.
     
     Args:
@@ -77,6 +77,7 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
         use_heuristic_search: If True, use simulated annealing heuristic search for large graphs
         heuristic_iterations: Maximum iterations for heuristic search (default: 5000)
         heuristic_restarts: Number of restart attempts if heuristic search fails (default: 1)
+        seed: Random seed for reproducibility in heuristic search (default: None)
     """
     # Reset NodeIndex state for clean initialization
     NodeIndex._queue = []
@@ -106,6 +107,11 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
     
     # Perform resource allocation and mapping
     print("\n=== Resource Allocation & Mapping ===")
+    
+    # Initialize NodeGraph with seed if provided
+    if seed is not None:
+        print(f"[Seed] Using random seed: {seed}")
+        NodeGraph._instance = NodeGraph(seed=seed)
     
     # Set direct mapping mode before allocation if requested
     if use_direct_mapping:
@@ -138,10 +144,14 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
                 # Reload modules
                 for module in modules:
                     module.from_json(cfg)
+                # Reinitialize NodeGraph with seed if provided
+                if seed is not None:
+                    NodeGraph._instance = NodeGraph(seed=seed)
                 NodeGraph.get().allocate_resources(only_connected_nodes=True)
             
             # Perform heuristic search and get the cost of the best mapping found
-            mapping_cost = NodeGraph.get().heuristic_search_mapping(max_iterations=heuristic_iterations)
+            # Pass seed to search for reproducibility
+            mapping_cost = NodeGraph.get().heuristic_search_mapping(max_iterations=heuristic_iterations, seed=seed)
             
             # Check if mapping is valid (cost == 0 means no constraint violations)
             if mapping_cost == 0:

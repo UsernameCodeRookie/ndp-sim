@@ -16,7 +16,7 @@ class Mapper:
     physical instances. This class allocates them on demand and maintains
     a node → resource mapping.
     """
-    def __init__(self):
+    def __init__(self, seed: Optional[int] = None):
         # Predefined physical resource pools
         # New architecture: 2 rows of 8 LCs, 4 ROW_LC, 4 COL_LC, 8 PE, 4 AG
         self.resource_pools = {
@@ -46,6 +46,12 @@ class Mapper:
         
         # Assigned node
         self.assigned_node: Dict[str, str] = {}
+        
+        # Random seed for reproducibility
+        self.seed = seed
+        if seed is not None:
+            import random
+            random.seed(seed)
         
     def get_type(self, node: str) -> Optional[str]:
         """Infer the resource type of a node based on its name prefix.
@@ -569,7 +575,7 @@ class Mapper:
     def search(self, connections: List[Dict[str, str]], max_iterations: int = 5000, 
                         initial_temp: float = 100.0, cooling_rate: float = 0.995,
                         node_metadata: Optional[Dict[str, Dict]] = None,
-                        repair_prob: float = 0.2) -> Optional[Dict[str, str]]:
+                        repair_prob: float = 0.2, seed: Optional[int] = None) -> Optional[Dict[str, str]]:
         """
         Perform simulated annealing search to find a valid mapping for large graphs.
         Uses probabilistic optimization to escape local minima and find better solutions.
@@ -580,6 +586,8 @@ class Mapper:
             initial_temp: Initial temperature for simulated annealing (default: 100.0)
             cooling_rate: Temperature cooling rate per iteration (default: 0.995)
             node_metadata: Dictionary containing node metadata like stream_type (default: None)
+            repair_prob: Probability of repair moves during search (default: 0.2)
+            seed: Random seed for reproducibility (default: None - uses current random state)
         
         Returns:
             Dict[str, str]: Valid node→resource mapping if found; otherwise None
@@ -588,6 +596,12 @@ class Mapper:
             node_metadata = {}
         import random
         import math
+        
+        # Set random seed if provided
+        if seed is not None:
+            random.seed(seed)
+        elif self.seed is not None:
+            random.seed(self.seed)
         
         print(f"[Simulated Annealing] Starting search with {len(connections)} connections")
         print(f"[Simulated Annealing] Parameters: iterations={max_iterations}, T0={initial_temp}, cooling={cooling_rate}, repair_prob={repair_prob}")
@@ -1030,11 +1044,12 @@ class NodeGraph:
     """
     _instance: Optional["NodeGraph"] = None
 
-    def __init__(self):
+    def __init__(self, seed: Optional[int] = None):
         self.nodes: List[str] = []
         self.connections: List[Dict[str, str]] = []
-        self.mapping = Mapper()  # Replaces node_to_resource
+        self.mapping = Mapper(seed=seed)  # Replaces node_to_resource
         self.node_metadata: Dict[str, Dict] = {}  # Store metadata like stream_type
+        self.seed = seed
 
     @staticmethod
     def get() -> "NodeGraph":
@@ -1111,8 +1126,12 @@ class NodeGraph:
         result = self.mapping.direct_mapping()
         print(f"[Success] Direct mapping completed with {len(result)} nodes")
     
-    def heuristic_search_mapping(self, max_iterations: int = 5000):
+    def heuristic_search_mapping(self, max_iterations: int = 5000, seed: Optional[int] = None):
         """Use simulated annealing to find a valid mapping for large graphs.
+        
+        Args:
+            max_iterations: Maximum iterations for simulated annealing
+            seed: Random seed for reproducibility (optional)
         
         Returns:
             float: The cost (penalty) of the best mapping found, or inf if search failed.
@@ -1121,7 +1140,7 @@ class NodeGraph:
         for c in self.connections:
             print(f"  Connection: {c['src']} -> {c['dst']}")
         result = self.mapping.search(self.connections, max_iterations=max_iterations, 
-                                              node_metadata=self.node_metadata)
+                                              node_metadata=self.node_metadata, seed=seed)
         if result is None or len(result) == 0:
             print("[Warning] Heuristic search failed, keeping initial allocation")
             return float('inf')

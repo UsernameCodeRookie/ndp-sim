@@ -40,6 +40,9 @@ Examples:
   # Use heuristic search (simulated annealing) for large graphs
   python -m bitstream.main --heuristic-search --heuristic-iterations 10000
   
+  # Use heuristic search with reproducible results (fixed seed)
+  python -m bitstream.main --heuristic-search --seed 42
+  
   # Skip dumps for faster execution
   python -m bitstream.main --no-dump-binary --no-dump-detailed
   
@@ -170,7 +173,12 @@ Examples:
         help='Number of restart attempts for heuristic search if initial attempt fails (default: 10)'
     )
     
-    # Output control
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=None,
+        help='Random seed for reproducible heuristic search results (default: None - uses current random state)'
+    )
     parser.add_argument(
         '-q', '--quiet',
         action='store_true',
@@ -216,6 +224,8 @@ Examples:
         else:
             mapping_mode = "Heuristic (simulated annealing - fallback)"
         print(f"Mapping mode:     {mapping_mode}")
+        if args.seed is not None:
+            print(f"Random seed:      {args.seed}")
         print(f"Binary dump:      {'No' if args.no_dump_binary else 'Yes'}")
         print(f"Detailed dump:    {'No' if args.no_dump_detailed else 'Yes'}")
         print(f"Parsed dump:      {'No' if args.no_dump_parsed else 'Yes'}")
@@ -236,7 +246,8 @@ Examples:
                              use_direct_mapping=args.direct_mapping,
                              use_heuristic_search=args.heuristic_search,
                              heuristic_iterations=args.heuristic_iterations,
-                             heuristic_restarts=args.heuristic_restarts)
+                             heuristic_restarts=args.heuristic_restarts,
+                             seed=args.seed)
         
         # Step 3: Generate placement visualization (if requested)
         if args.visualize_placement:
