@@ -8,7 +8,7 @@ class DramLoopControlConfig(BaseConfigModule):
     """Represents a single DRAM loop configuration."""
 
     FIELD_MAP = [
-        ("src_id", 2, lambda self, x: Connect(x, self.id) if x else None),  # source node ID, resolved later
+        ("src_id", 3, lambda self, x: Connect(x, self.id) if x else None),  # source node ID, resolved later
         ("outmost_loop", 1),
         ("start", 13),  # initial_value in config
         ("stride", 13),
