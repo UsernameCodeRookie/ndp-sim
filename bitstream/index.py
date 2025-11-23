@@ -149,8 +149,6 @@ class Connect:
             return "COL_LC"
         elif node_name.startswith("STREAM."):
             return "STREAM"
-        elif node_name.startswith("AG"):
-            return "AG"
         else:
             return "UNKNOWN"
     
@@ -247,10 +245,10 @@ class Connect:
             src_row = self._get_lc_row(self.src.node_name)
             src_lc_idx = src_phys_id % 8
             
-            # Valid LC range: [group_id*2-1, group_id*2, group_id*2+1, group_id*2+2, group_id*2+3]
+            # Valid LC range: [group_id*2-2, group_id*2-1, group_id*2, group_id*2+1, group_id*2+2, group_id*2+3]
             # This gives left 2, corresponding 2, right 2 LCs
-            lc_range_start = max(0, group_id * 2 - 1)
-            lc_range = list(range(lc_range_start, min(8, group_id * 2 + 3)))
+            lc_range_start = group_id * 2 - 2
+            lc_range = list(range(lc_range_start, group_id * 2 + 4))
             
             if src_lc_idx in lc_range:
                 relative_idx = lc_range.index(src_lc_idx)
@@ -259,7 +257,7 @@ class Connect:
             return 0  # Invalid
         
         # ==================== COL_LC → ROW_LC ====================
-        elif src_type == "COL_LC" and dst_type == "ROW_LC":
+        elif src_type == "ROW_LC" and dst_type == "COL_LC":
             return 12
         
         # ==================== PE → LC ====================
@@ -298,46 +296,46 @@ class Connect:
             else:
                 return 0  # Invalid
         
-        # ==================== AG → LC ====================
-        # AG connects to 6 LCs from row 0 (indices 0-5) and 6 from row 1 (indices 6-11)
-        elif src_type == "AG" and dst_type == "LC":
-            ag_idx = src_phys_id
-            dst_lc_idx = dst_phys_id % 8
-            dst_row = self._get_lc_row(self.dst.node_name)
+        # ==================== LC → AG ====================
+        # LC connects to AGs via specific patterns → indices 0-5 for row 0, 6-11 for row 1
+        elif src_type == "LC" and dst_type == "STREAM":
+            src_lc_idx = src_phys_id % 8
+            src_row = self._get_lc_row(self.src.node_name)
+            ag_idx = dst_phys_id
             
             # Valid LC range for each AG: [ag_idx*2-1, ag_idx*2, ag_idx*2+1, ag_idx*2+2, ag_idx*2+3]
             lc_range_start = max(0, ag_idx * 2 - 1)
             lc_range = list(range(lc_range_start, min(8, ag_idx * 2 + 3)))
             
-            if dst_lc_idx in lc_range:
-                relative_idx = lc_range.index(dst_lc_idx)
-                return relative_idx if dst_row == 0 else relative_idx + 6
-            return 0  # Invalid
+            if src_lc_idx in lc_range:
+                relative_idx = lc_range.index(src_lc_idx)
+                return relative_idx if src_row == 0 else relative_idx + 6
+            return 0 # Invalid
         
-        # ==================== AG → PE ====================
-        # AG connects to 6 PEs: corresponding PE and neighbors → indices 12-17
-        elif src_type == "AG" and dst_type == "PE":
-            ag_idx = src_phys_id
-            pe_idx = dst_phys_id
+        # ==================== PE → AG ====================
+        # PE connects to AGs via specific patterns → indices 12-17
+        elif src_type == "PE" and dst_type == "STREAM":
+            src_pe_idx = src_phys_id
+            ag_idx = dst_phys_id
             
             # Valid PE range: [ag_idx*2-1, ag_idx*2, ag_idx*2+1, ag_idx*2+2, ag_idx*2+3]
             pe_range_start = max(0, ag_idx * 2 - 1)
             pe_range = list(range(pe_range_start, min(8, ag_idx * 2 + 3)))
             
-            if pe_idx in pe_range:
-                relative_idx = pe_range.index(pe_idx)
+            if src_pe_idx in pe_range:
+                relative_idx = pe_range.index(src_pe_idx)
                 return 12 + relative_idx
             return 0  # Invalid
         
         # ==================== AG ↔ ROW_LC/COL_LC ====================
         # Hard-wired connections, not variable - return 0 or special indicator
-        elif (src_type == "AG" and dst_type == "ROW_LC") or \
-             (src_type == "AG" and dst_type == "COL_LC"):
+        elif (src_type == "STREAM" and dst_type == "ROW_LC") or \
+             (src_type == "STREAM" and dst_type == "COL_LC"):
             return 0  # Hard-wired, no variable index needed
         
         # ==================== ROW_LC/COL_LC → AG ====================
-        elif (src_type == "ROW_LC" and dst_type == "AG") or \
-             (src_type == "COL_LC" and dst_type == "AG"):
+        elif (src_type == "ROW_LC" and dst_type == "STREAM") or \
+             (src_type == "COL_LC" and dst_type == "STREAM"):
             return 0  # Hard-wired, no variable index needed
         
         # Default: return 0 for unmapped types
