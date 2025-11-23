@@ -95,15 +95,16 @@ class NodeIndex:
                 if resource:
                     mapper.register_module(resource, module)
             
-            # Handle BufferLoopControlGroupConfig - register parent module
+            # Handle BufferLoopControlGroupConfig - register parent module and submodules
             if isinstance(module, BufferLoopControlGroupConfig):
                 if hasattr(module, 'submodules') and len(module.submodules) > 0:
-                    first_sub = module.submodules[0]
-                    if hasattr(first_sub, 'id') and first_sub.id:
-                        node_name = first_sub.id.node_name
-                        resource = mapper.get(node_name)  # Gets GROUP resource
-                        if resource:
-                            mapper.register_module(resource, module)
+                    # Register each submodule (ROW_LC and COL_LC) separately
+                    for submodule in module.submodules:
+                        if hasattr(submodule, 'id') and submodule.id:
+                            node_name = submodule.id.node_name
+                            resource = mapper.get(node_name)
+                            if resource:
+                                mapper.register_module(resource, submodule)
 
     @property
     def index(self) -> int:

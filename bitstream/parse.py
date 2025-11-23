@@ -186,26 +186,21 @@ def build_entries(modules):
         else:
             entries.append((module_id, ''))
     
-    def get_submodule(group_idx, suffix):
-        """Helper to get ROW_LC or COL_LC submodule from a GROUP."""
-        parent = mapper.get_module(f"GROUP{group_idx}")
-        if parent and hasattr(parent, 'submodules'):
-            return next((sub for sub in parent.submodules 
-                        if hasattr(sub, 'id') and sub.id.node_name.endswith(suffix)), None)
-        return None
-    
     # Get fixed-position modules from module list
     buffer_modules = [m for m in modules if isinstance(m, BufferConfig)]
     neighbor_module = next((m for m in modules if isinstance(m, NeighborStreamConfig)), None)
     special_module = next((m for m in modules if isinstance(m, SpecialArrayConfig)), None)
     general_module = next((m for m in modules if isinstance(m, GeneralArrayConfig)), None)
     
-    # Physical resource layout: (module_id, resource_pattern, count, getter_func)
+    # Physical resource layout: (module_id, resource_name_pattern, count, getter_func)
+    # For ROW_LC and COL_LC, we need to look them up by their physical resource names (ROW_LC0-3, COL_LC0-3)
     layout = [
         # IGA resources
         (ModuleID.IGA_LC, "LC", 8, lambda i: mapper.get_module(f"LC{i}")),
-        (ModuleID.IGA_ROW_LC, "GROUP", 4, lambda i: get_submodule(i, 'ROW_LC')),
-        (ModuleID.IGA_COL_LC, "GROUP", 4, lambda i: get_submodule(i, 'COL_LC')),
+        # ROW_LC: These are accessed as ROW_LC0, ROW_LC1, ROW_LC3 (not all 4 may be used)
+        (ModuleID.IGA_ROW_LC, "ROW_LC", 4, lambda i: mapper.get_module(f"ROW_LC{i}")),
+        # COL_LC: These are accessed as COL_LC0, COL_LC1, COL_LC3 (not all 4 may be used)
+        (ModuleID.IGA_COL_LC, "COL_LC", 4, lambda i: mapper.get_module(f"COL_LC{i}")),
         (ModuleID.IGA_PE, "PE", 8, lambda i: mapper.get_module(f"PE{i}")),
         # Stream Engine resources
         (ModuleID.SE_RD_MSE, "READ_STREAM", 3, lambda i: mapper.get_module(f"READ_STREAM{i}")),
