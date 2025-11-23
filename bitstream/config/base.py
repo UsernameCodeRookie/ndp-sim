@@ -210,7 +210,7 @@ class BaseConfigModule(ConfigModule):
                 encoded_parts = self._encode_field_for_dump(val, mapper, width)
 
                 encoded = [
-                    bin(value)[2:].zfill(part_width) if part_width <= 64 else hex(value)
+                    bin(value)[2:].zfill(part_width) if part_width <= 128 else hex(value)
                     for value, part_width in encoded_parts
                 ]
                 print(f"{prefix}{name:<30} | value={display_val:<35} | encoded={encoded}")
