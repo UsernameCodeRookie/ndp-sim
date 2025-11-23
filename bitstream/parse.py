@@ -33,14 +33,31 @@ MODULE_CFG_CHUNK_SIZES = [1, 1, 1, 1, 8, 6, 1, 1, 1, 1, 1, 4, 4]
 MODULE_ID_TO_MASK = [0, 0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 3, 3]
 
 def split_config(config, max_chunk=63):
-    """Split config into equal chunks."""
+    """Split config into chunks intelligently.
+    
+    Strategy:
+    1. Try to find a divisor from max_chunk down to a reasonable minimum (8)
+       This splits into equal-sized chunks without excessive fragmentation
+    2. If no divisor >= 8 exists, use max_chunk and split into variable-sized chunks
+       This avoids creating too many tiny chunks (which would require many enable bits)
+    """
     if not config:
         return []
     total = len(config)
-    for size in range(min(max_chunk, total), 0, -1):
+    min_reasonable_chunk = 8
+    
+    # Try to find a divisor from max_chunk down to min_reasonable_chunk
+    for size in range(min(max_chunk, total), min_reasonable_chunk - 1, -1):
         if total % size == 0:
+            # Found a good divisor, use it
             return [config[i:i+size] for i in range(0, total, size)]
-    return [config]
+    
+    # No good equal-sized divisor found
+    # Use max_chunk to split, which gives larger chunks at the cost of being non-uniform
+    chunks = []
+    for i in range(0, total, max_chunk):
+        chunks.append(config[i:i+max_chunk])
+    return chunks
 
 def bitstring(bits):
     """Convert Bit objects to binary string."""

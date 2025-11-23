@@ -75,9 +75,9 @@ class GAPEConfig(BaseConfigModule):
         ("inport2_src_id", 3),  # ga_pe_src_id[2]
         
         # Input modes (2 bits each, 6 bits total)
-        ("inport0_mode", 2, lambda x: GAPEConfig.inport_mode_map()[x] if x is not None else 0),
-        ("inport1_mode", 2, lambda x: GAPEConfig.inport_mode_map()[x] if x is not None else 0),
-        ("inport2_mode", 2, lambda x: GAPEConfig.inport_mode_map()[x] if x is not None else 0),
+        ("inport0_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
+        ("inport1_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
+        ("inport2_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
         
         # Keep last indices (3 bits each, 9 bits total)
         ("inport0_keep_last_index", 3),  # ga_pe_keep_last_index[0]
@@ -85,7 +85,7 @@ class GAPEConfig(BaseConfigModule):
         ("inport2_keep_last_index", 3),  # ga_pe_keep_last_index[2]
         
         # ALU opcode (2 bits)
-        ("alu_opcode", 2, lambda x: GAPEConfig.opcode_map()[x] if x is not None else 0),
+        ("alu_opcode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.opcode_map().get(x, 0) if x is not None else 0)),
         
         # Constants (12 bits each, 36 bits total)
         ("constant0", 12),  # ga_pe_constant_value[0]
