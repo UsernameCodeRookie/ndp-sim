@@ -14,8 +14,6 @@ class ReadStreamEngineConfig(BaseConfigModule):
     """
     
     FIELD_MAP = [
-        # Padding (4 bits, not used but needed for alignment)
-        ("_padding", 4),  
         # Memory AG fields
         ("mem_idx_mode", 6, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
         ("mem_idx_keep_last_index", 9),
@@ -97,6 +95,7 @@ class WriteStreamEngineConfig(BaseConfigModule):
     """
     
     FIELD_MAP = [
+        ("_padding", 3),
         # Memory AG fields
         ("mem_idx_mode", 6, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
         ("mem_idx_keep_last_index", 9),

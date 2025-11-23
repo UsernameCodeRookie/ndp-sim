@@ -68,6 +68,7 @@ class LCPEConfig(BaseConfigModule):
     # Field order matches iga_pe.py: ALU_OPCODE | PORT2(SRC,KEEP,MODE) | PORT1 | PORT0 | CONST2 | CONST1 | CONST0
     # Total: 2 + 8*3 + 12*3 = 62 bits
     FIELD_MAP = [
+        ("_padding", 4),  # Padding to align to 4 bits (not used)
         # ALU opcode (2 bits)
         ("opcode", 2, lambda x: LCPEConfig.opcode_map()[x] if x is not None else 0),
         
