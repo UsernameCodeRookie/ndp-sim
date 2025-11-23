@@ -303,9 +303,9 @@ class Connect:
             src_row = self._get_lc_row(self.src.node_name)
             ag_idx = dst_phys_id
             
-            # Valid LC range for each AG: [ag_idx*2-1, ag_idx*2, ag_idx*2+1, ag_idx*2+2, ag_idx*2+3]
-            lc_range_start = max(0, ag_idx * 2 - 1)
-            lc_range = list(range(lc_range_start, min(8, ag_idx * 2 + 3)))
+            # Valid LC range for each AG: [ag_idx*2-2, ag_idx*2-1, ag_idx*2, ag_idx*2+1, ag_idx*2+2, ag_idx*2+3]
+            lc_range_start = ag_idx * 2 - 2
+            lc_range = list(range(lc_range_start, ag_idx * 2 + 4))
             
             if src_lc_idx in lc_range:
                 relative_idx = lc_range.index(src_lc_idx)
@@ -318,9 +318,9 @@ class Connect:
             src_pe_idx = src_phys_id
             ag_idx = dst_phys_id
             
-            # Valid PE range: [ag_idx*2-1, ag_idx*2, ag_idx*2+1, ag_idx*2+2, ag_idx*2+3]
-            pe_range_start = max(0, ag_idx * 2 - 1)
-            pe_range = list(range(pe_range_start, min(8, ag_idx * 2 + 3)))
+            # Valid PE range: [ag_idx*2-2, ag_idx*2-1, ag_idx*2, ag_idx*2+1, ag_idx*2+2, ag_idx*2+3]
+            pe_range_start = ag_idx * 2 - 2
+            pe_range = list(range(pe_range_start, ag_idx * 2 + 4))
             
             if src_pe_idx in pe_range:
                 relative_idx = pe_range.index(src_pe_idx)
