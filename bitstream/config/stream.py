@@ -45,6 +45,7 @@ class ReadStreamEngineConfig(BaseConfigModule):
         # Spatial fields
         ("buf_spatial_stride", 80),
         ("buf_spatial_size", 5),
+        ("buf_full_last_index", 4),
     ]
     
     def __init__(self, stream_key: str):
@@ -118,7 +119,6 @@ class WriteStreamEngineConfig(BaseConfigModule):
         # Spatial fields
         ("buf_spatial_stride", 80),
         ("buf_spatial_size", 5),
-        ("buf_full_last_index", 4),
     ]
     
     def __init__(self, stream_key: str):
