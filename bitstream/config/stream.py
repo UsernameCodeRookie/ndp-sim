@@ -102,7 +102,7 @@ class WriteStreamEngineConfig(BaseConfigModule):
         ("idx", 12),
         ("mem_idx_constant", 24),
         # Buffer AG fields
-        ("buf_idx_mode", 2, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
+        ("buf_idx_mode", 4, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
         ("buf_idx_keep_last_index", 6),
         # Stream fields
         ("ping_pong", 1),

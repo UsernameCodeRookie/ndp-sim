@@ -24,7 +24,6 @@ class Mapper:
             "ROW_LC":     [f"ROW_LC{i}" for i in range(4)],       # 4 ROW_LC resources
             "COL_LC":     [f"COL_LC{i}" for i in range(4)],       # 4 COL_LC resources
             "PE":         [f"PE{i}" for i in range(8)],           # 8 Processing Elements
-            "AG":         [f"AG{i}" for i in range(4)],           # 4 AG (Address Generator) resources
             "READ_STREAM": [f"READ_STREAM{i}" for i in range(3)], # 3 Read Streams (physical)
             "WRITE_STREAM":[f"WRITE_STREAM{i}" for i in range(1)],# 1 Write Stream (physical)
         }
@@ -61,7 +60,6 @@ class Mapper:
         - ROW_LC: "ROW_LC.ROW_LC{row}{col}" or "GROUP{n}.ROW_LC"
         - COL_LC: "COL_LC.COL_LC{row}{col}" or "GROUP{n}.COL_LC"
         - PE: "PE.PE{idx}" where idx is 0-7
-        - AG: "AG.AG{idx}" where idx is 0-3
         - STREAM: "STREAM.stream{idx}"
         """
         if "DRAM_LC" in node and ".LC" in node:
@@ -74,8 +72,6 @@ class Mapper:
             return "COL_LC"
         elif "PE" in node and ".PE" in node:
             return "PE"
-        elif "AG" in node and ".AG" in node:
-            return "AG"
         elif node.startswith("STREAM"):
             # Stream type is determined during allocation based on JSON mode
             return "STREAM"  # Will be refined to READ_STREAM or WRITE_STREAM
@@ -92,8 +88,6 @@ class Mapper:
             return "COL_LC"
         elif resource.startswith("PE"):
             return "PE"
-        elif resource.startswith("AG"):
-            return "AG"
         elif resource.startswith("READ_STREAM"):
             return "READ_STREAM"
         elif resource.startswith("WRITE_STREAM"):
@@ -133,7 +127,6 @@ class Mapper:
         - ROW_LC: 'ROW_LC.ROW_LC{row}{col}' -> linearize
         - COL_LC: 'COL_LC.COL_LC{row}{col}' -> linearize
         - PE: 'PE.PE{idx}' -> idx
-        - AG: 'AG.AG{idx}' -> idx
         - STREAM: 'STREAM.stream{idx}' -> idx
             
         Returns:
@@ -165,10 +158,6 @@ class Mapper:
                 return int(match.group(1))
         elif "PE" in node and ".PE" in node:
             match = re.search(r'PE(\d+)$', node)
-            if match:
-                return int(match.group(1))
-        elif "AG" in node and ".AG" in node:
-            match = re.search(r'AG(\d+)$', node)
             if match:
                 return int(match.group(1))
         elif node.startswith("STREAM.stream"):
@@ -350,13 +339,13 @@ class Mapper:
                 return float(d)
             return 0.0
 
-    class LCtoAGConstraint(Constraint):
+    class LCtoStreamConstraint(Constraint):
         """LC i → AG j constraint:
         First row LC (0-7) connects to AG's first 6 targets
         Second row LC (8-15) connects to AG's second 6 targets
         """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "LC" and dst_type == "AG":
+            if src_type == "LC" and dst_type == "STREAM":
                 src_row, src_col = divmod(src_idx, 8)
                 # LC from row 0: can map to AG targets 0-5
                 # LC from row 1: can map to AG targets 6-11
@@ -365,7 +354,7 @@ class Mapper:
             return True
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
-            if src_type == "LC" and dst_type == "AG":
+            if src_type == "LC" and dst_type == "STREAM":
                 src_row, src_col = divmod(src_idx, 8)
                 # Penalize based on distance from expected position
                 expected_ag = src_col // 2
@@ -445,11 +434,12 @@ class Mapper:
             return 0.0
 
     class PEtoAGConstraint(Constraint):
-        """PE i → AG j constraint:
-        PE connects to AG targets (3 positions: above, left-2, right+2)
+        """PE i → AG/STREAM j constraint:
+        PE connects to AG/STREAM targets (3 positions: above, left-2, right+2)
+        Since AG and STREAM are equivalent, this also applies to STREAM connections.
         """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "PE" and dst_type == "AG":
+            if src_type == "PE" and dst_type == "STREAM":
                 d = abs(dst_idx - (src_idx // 2))  # AG index is src_idx // 2
                 if d in [0, 1]:
                     return True  # Flexible for now
@@ -458,7 +448,7 @@ class Mapper:
             return True
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
-            if src_type == "PE" and dst_type == "AG":
+            if src_type == "PE" and dst_type == "STREAM":
                 expected_ag = src_idx // 2
                 d = abs(dst_idx - expected_ag)
                 if d in [0, 1]:
@@ -466,7 +456,7 @@ class Mapper:
                 return float(d - 1)  # Penalize for distance beyond 1
             return 0.0
 
-    class LCtoSTREAMConstraint(Constraint):
+    class LCtoStreamConstraint(Constraint):
         """LC i → STREAM j constraint: 
         Unified STREAM indexing: READ_STREAM0,1,2 → 0,1,2; WRITE_STREAM0 → 3
         """
@@ -486,28 +476,6 @@ class Mapper:
                 return float(d - 1)
             return 0.0
 
-    class ROWLCtoAGConstraint(Constraint):
-        """ROW_LC i → AG j constraint: hard-wired connection
-        
-        ROW_LC i connects to AG i//2 (with no selection).
-        ROW_LC 0,1 → AG 0
-        ROW_LC 2,3 → AG 1
-        Only 4 ROW_LCs total, so each AG connects to 2 ROW_LCs.
-        """
-        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "ROW_LC" and dst_type == "AG":
-                expected_ag = src_idx // 2
-                return dst_idx == expected_ag
-            return True
-
-        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
-            if src_type == "ROW_LC" and dst_type == "AG":
-                expected_ag = src_idx // 2
-                if dst_idx == expected_ag:
-                    return 0.0
-                return 10.0  # Heavy penalty for hard-wired constraint violation
-            return 0.0
-
     class COLLCtoROWLCConstraint(Constraint):
         """COL_LC i → ROW_LC constraint: hard-wired connection
         
@@ -521,26 +489,6 @@ class Mapper:
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
             if src_type == "COL_LC" and dst_type == "ROW_LC":
                 if dst_idx == src_idx:
-                    return 0.0
-                return 10.0  # Heavy penalty for hard-wired constraint violation
-            return 0.0
-
-    class COLLCtoAGConstraint(Constraint):
-        """COL_LC i → AG j constraint: hard-wired connection
-        
-        COL_LC i connects to AG i//2 (with no selection).
-        Same mapping as ROW_LC.
-        """
-        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "COL_LC" and dst_type == "AG":
-                expected_ag = src_idx // 2
-                return dst_idx == expected_ag
-            return True
-
-        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
-            if src_type == "COL_LC" and dst_type == "AG":
-                expected_ag = src_idx // 2
-                if dst_idx == expected_ag:
                     return 0.0
                 return 10.0  # Heavy penalty for hard-wired constraint violation
             return 0.0
@@ -620,15 +568,13 @@ class Mapper:
         self.constraints: List[Mapper.Constraint] = [
             self.LCtoLCConstraint(),
             self.LCtoROWLCConstraint(),
-            self.LCtoAGConstraint(),
+            self.LCtoStreamConstraint(),
             self.PEtoLCConstraint(),
             self.PEtoPEConstraint(),
             self.PEtoAGConstraint(),
-            self.LCtoSTREAMConstraint(),
-            self.ROWLCtoAGConstraint(),
+            self.LCtoStreamConstraint(),
             self.COLLCtoROWLCConstraint(),
-            self.ROWLCtoColLCConstraint(),
-            self.COLLCtoAGConstraint()
+            self.ROWLCtoColLCConstraint()
         ]
         
         # Collect all nodes participating in connections
@@ -984,10 +930,16 @@ class Mapper:
             # Print which connections are violated
             print(f"[Simulated Annealing] Constraint violations:")
             for c in connections:
-                src, dst = c["src"], c["dst"]
-                if src.endswith("ROW_LC") or src.endswith("COL_LC"):
+                src_orig, dst_orig = c["src"], c["dst"]
+                
+                # Try to find the mapping for the original node names first (with suffix)
+                # If not found, try without suffix for ROW_LC/COL_LC nodes
+                src = src_orig
+                dst = dst_orig
+                
+                if src not in best_mapping and (src.endswith("ROW_LC") or src.endswith("COL_LC")):
                     src = src.split(".")[0]
-                if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
+                if dst not in best_mapping and (dst.endswith("ROW_LC") or dst.endswith("COL_LC")):
                     dst = dst.split(".")[0]
                 
                 if src in best_mapping and dst in best_mapping:
@@ -998,7 +950,7 @@ class Mapper:
                     
                     for constraint in self.constraints:
                         if not constraint.check(src_type, src_idx, dst_type, dst_idx):
-                            print(f"  ✗ {src} ({src_res}) -> {dst} ({dst_res}): "
+                            print(f"  ✗ {src_orig} ({src_res}) -> {dst_orig} ({dst_res}): "
                                   f"{src_type}{src_idx} -> {dst_type}{dst_idx} violates {constraint.__class__.__name__}")
                             break
         
@@ -1327,9 +1279,6 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
             elif res.startswith("PE"):
                 idx = int(res[2:])
                 return "PE", idx
-            elif res.startswith("AG"):
-                idx = int(res[2:])
-                return "AG", idx
             else:
                 return None, None
 
