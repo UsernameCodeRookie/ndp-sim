@@ -20,7 +20,7 @@ class ReadStreamEngineConfig(BaseConfigModule):
         ("idx", 15),
         ("mem_idx_constant", 24),
         # Buffer AG fields
-        ("buf_idx_mode", 2, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
+        ("buf_idx_mode", 2, lambda x: [StreamConfig.buffer_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
         ("buf_idx_keep_last_index", 6),
         # Stream fields
         ("ping_pong", 1),
@@ -102,7 +102,7 @@ class WriteStreamEngineConfig(BaseConfigModule):
         ("idx", 15),
         ("mem_idx_constant", 24),
         # Buffer AG fields
-        ("buf_idx_mode", 4, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
+        ("buf_idx_mode", 2, lambda x: [StreamConfig.buffer_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
         ("buf_idx_keep_last_index", 6),
         # Stream fields
         ("ping_pong", 1),
@@ -281,6 +281,14 @@ class StreamConfig(BaseConfigModule):
             "buffer": 1,
             "keep": 2,
             "constant": 3,
+        }
+        
+    @staticmethod
+    def buffer_mode_map():
+        """Map string buffer modes to integers. Also accepts integers directly."""
+        return {
+            "buffer": 0,
+            "keep": 1,
         }
 
 

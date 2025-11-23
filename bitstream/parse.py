@@ -29,34 +29,25 @@ class ModuleID(IntEnum):
     GA_OUTPORT_GROUP = 10
     GENERAL_ARRAY = 11
 
-MODULE_CFG_CHUNK_SIZES = [1, 1, 1, 1, 8, 6, 1, 1, 1, 1, 1, 4, 4]
-MODULE_ID_TO_MASK = [0, 0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 3, 3]
+MODULE_CFG_CHUNK_SIZES = [1, 1, 1, 2, 9, 6, 1, 1, 1, 1, 1, 4]
+MODULE_ID_TO_MASK = [0, 0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 3]
 
-def split_config(config, max_chunk=63):
-    """Split config into chunks intelligently.
-    
-    Strategy:
-    1. Try to find a divisor from max_chunk down to a reasonable minimum (8)
-       This splits into equal-sized chunks without excessive fragmentation
-    2. If no divisor >= 8 exists, use max_chunk and split into variable-sized chunks
-       This avoids creating too many tiny chunks (which would require many enable bits)
+def split_config(config):
+    """Split configuration into chunks of size determined by total length.
+    The chunk size is the largest divisor of the total length that is <= 63.
+    This ensures that we can fit the configuration into 64-bit words.
+    If the total length is 0, return an empty list.
     """
-    if not config:
+    total_len = len(config)
+    if total_len == 0:
         return []
-    total = len(config)
-    min_reasonable_chunk = 8
-    
-    # Try to find a divisor from max_chunk down to min_reasonable_chunk
-    for size in range(min(max_chunk, total), min_reasonable_chunk - 1, -1):
-        if total % size == 0:
-            # Found a good divisor, use it
-            return [config[i:i+size] for i in range(0, total, size)]
-    
-    # No good equal-sized divisor found
-    # Use max_chunk to split, which gives larger chunks at the cost of being non-uniform
-    chunks = []
-    for i in range(0, total, max_chunk):
-        chunks.append(config[i:i+max_chunk])
+
+    for i in range(min(63, total_len), 0, -1):
+        if total_len % i == 0:
+            chunk_size = i
+            break
+
+    chunks = [config[i:i + chunk_size] for i in range(0, total_len, chunk_size)]
     return chunks
 
 def bitstring(bits):
