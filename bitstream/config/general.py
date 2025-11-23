@@ -11,8 +11,8 @@ class GAInportConfig(BaseConfigModule):
       fp16to32(1) + int32tofp(1) = 13 bits
     """
     FIELD_MAP = [
-        ("enable", 1),  # ga_inport_enable
-        ("src_id", 3, lambda self, x: Connect(x, self.id) if x else None),  # ga_inport_src_id (will be resolved)
+        ("enable", 8),  # ga_inport_enable
+        ("src_id", 1, lambda self, x: Connect(x, self.id) if x else None),  # ga_inport_src_id (will be resolved)
         ("pingpong_en", 1),  # ga_inport_pingpong_en
         ("pingpong_last_index", 4),  # ga_inport_pingpong_last_index
         ("fp16to32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_fp16to32
@@ -44,8 +44,8 @@ class GAOutportConfig(BaseConfigModule):
     - enable(1) + src_id(3) + fp32to16(1) + int32to8(1) = 6 bits
     """
     FIELD_MAP = [
-        ("enable", 1),  # ga_outport_enable
-        ("src_id", 3),  # ga_outport_src_id (direct index, not a node)
+        ("enable", 8),  # ga_outport_enable
+        ("src_id", 1),  # ga_outport_src_id (direct index, not a node)
         ("fp32to16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_fp32to16
         ("int32to8", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_int32to8
     ]
@@ -64,38 +64,29 @@ class GAPEConfig(BaseConfigModule):
       constant_valid[0:3](3) = 68 bits
     """
     FIELD_MAP = [
-        # Input port enables (3 bits total)
-        ("inport0_enable", 1),  # ga_pe_inport_enable[0]
-        ("inport1_enable", 1),  # ga_pe_inport_enable[1]
-        ("inport2_enable", 1),  # ga_pe_inport_enable[2]
-        
+        ("_padding", 2),  # Padding bits for alignment        
         # Source IDs (3 bits each, 9 bits total)
-        ("inport0_src_id", 3),  # ga_pe_src_id[0]
+        ("inport2_src_id", 3),  # ga_pe_src_id[0]
         ("inport1_src_id", 3),  # ga_pe_src_id[1]
-        ("inport2_src_id", 3),  # ga_pe_src_id[2]
+        ("inport0_src_id", 3),  # ga_pe_src_id[2]
         
         # Input modes (2 bits each, 6 bits total)
-        ("inport0_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
-        ("inport1_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
         ("inport2_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
+        ("inport1_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
+        ("inport0_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
         
         # Keep last indices (3 bits each, 9 bits total)
-        ("inport0_keep_last_index", 4),  # ga_pe_keep_last_index[0]
+        ("inport2_keep_last_index", 4),  # ga_pe_keep_last_index[0]
         ("inport1_keep_last_index", 4),  # ga_pe_keep_last_index[1]
-        ("inport2_keep_last_index", 4),  # ga_pe_keep_last_index[2]
+        ("inport0_keep_last_index", 4),  # ga_pe_keep_last_index[2]
         
-        # ALU opcode (2 bits)
-        ("alu_opcode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.opcode_map().get(x, 0) if x is not None else 0)),
+        # ALU opcode (3 bits)
+        ("alu_opcode", 3, lambda x: x if isinstance(x, int) else (GAPEConfig.opcode_map().get(x, 0) if x is not None else 0)),
         
         # Constants (12 bits each, 36 bits total)
-        ("constant0", 12),  # ga_pe_constant_value[0]
-        ("constant1", 12),  # ga_pe_constant_value[1]
-        ("constant2", 12),  # ga_pe_constant_value[2]
-        
-        # Constant valid flags (1 bit each, 3 bits total)
-        ("constant0_valid", 1),  # ga_pe_constant_valid[0]
-        ("constant1_valid", 1),  # ga_pe_constant_valid[1]
-        ("constant2_valid", 1),  # ga_pe_constant_valid[2]
+        ("constant2", 32),  # ga_pe_constant_value[0]
+        ("constant1", 32),  # ga_pe_constant_value[1]
+        ("constant0", 32),  # ga_pe_constant_value[2]
     ]
     
     @classmethod
@@ -176,65 +167,3 @@ class GAPEConfig(BaseConfigModule):
                     self.values["constant2_valid"] = valids[0] if len(valids) > 0 else 0
                     self.values["constant1_valid"] = valids[1] if len(valids) > 1 else 0
                     self.values["constant0_valid"] = valids[2] if len(valids) > 2 else 0
-
-class GeneralArrayConfig(BaseConfigModule):
-    """General Array configuration with inports, outport, and PE array.
-    
-    Structure:
-    - inport0, inport1, inport2 (13 bits each)
-    - outport (6 bits)
-    - PE array (8 PEs × 68 bits)
-    Total: 3*13 + 6 + 8*68 = 635 bits
-    """
-    
-    # PE names in the array
-    PE_NAMES = ["PE00", "PE02", "PE10", "PE12", "PE20", "PE22", "PE30", "PE32"]
-    
-    def __init__(self):
-        super().__init__()
-        # Inports
-        self.inports = [GAInportConfig(i) for i in range(3)]
-        # Outport
-        self.outport = GAOutportConfig()
-        # PE array
-        self.pes = [GAPEConfig(pe_name) for pe_name in self.PE_NAMES]
-        
-        # Group all submodules for processing
-        self.submodules = self.inports + [self.outport] + self.pes
-    
-    def from_json(self, cfg: dict):
-        """Load from general_array config section"""
-        cfg = cfg.get("general_array", cfg)
-        
-        # Load inports
-        for inport in self.inports:
-            inport.from_json(cfg)
-        
-        # Load outport
-        self.outport.from_json(cfg)
-        
-        # Load PE array
-        if "PE_array" in cfg:
-            pe_array_cfg = cfg["PE_array"]
-            for pe in self.pes:
-                pe.from_json(pe_array_cfg)
-    
-    def to_bits(self) -> List[Bit]:
-        """Concatenate all sub-config bitstreams in fixed order.
-        
-        Order: inport0, inport1, inport2, outport, PE0, PE1, ..., PE7
-        """
-        bits = []
-        
-        # Add inports
-        for inport in self.inports:
-            bits.extend(inport.to_bits())
-        
-        # Add outport
-        bits.extend(self.outport.to_bits())
-        
-        # Add PEs
-        for pe in self.pes:
-            bits.extend(pe.to_bits())
-        
-        return bits

@@ -10,7 +10,7 @@ import json
 from bitstream.config.mapper import NodeGraph
 from bitstream.config import (
     DramLoopControlConfig, BufferLoopControlGroupConfig, LCPEConfig,
-    NeighborStreamConfig, BufferConfig, SpecialArrayConfig, GeneralArrayConfig
+    NeighborStreamConfig, BufferConfig, SpecialArrayConfig, GAInportConfig, GAOutportConfig, GAPEConfig
 )
 from bitstream.config.stream import StreamConfig
 from bitstream.index import NodeIndex
@@ -27,7 +27,7 @@ class ModuleID(IntEnum):
     SPECIAL_ARRAY = 8
     GA_INPORT_GROUP = 9
     GA_OUTPORT_GROUP = 10
-    GENERAL_ARRAY = 11
+    GENERAL_PE = 11
 
 MODULE_CFG_CHUNK_SIZES = [1, 1, 1, 2, 9, 6, 1, 1, 1, 1, 1, 4]
 MODULE_ID_TO_MASK = [0, 0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 3]
@@ -94,7 +94,9 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
                 [NeighborStreamConfig()] + \
                 [BufferConfig(i) for i in range(6)] + \
                 [SpecialArrayConfig()] + \
-                [GeneralArrayConfig()]
+                [GAInportConfig(i) for i in range(3)] + \
+                [GAOutportConfig()] + \
+                [GAPEConfig(f"PE{row}{col}") for row in range(4) for col in range(4)]
     
     # Load configurations from JSON for all modules
     # During this process, Connect() objects will populate NodeGraph.connections
@@ -217,7 +219,9 @@ def build_entries(modules):
     buffer_modules = [m for m in modules if isinstance(m, BufferConfig)]
     neighbor_module = next((m for m in modules if isinstance(m, NeighborStreamConfig)), None)
     special_module = next((m for m in modules if isinstance(m, SpecialArrayConfig)), None)
-    general_module = next((m for m in modules if isinstance(m, GeneralArrayConfig)), None)
+    ga_inport_modules = [m for m in modules if isinstance(m, GAInportConfig)]
+    ga_outport_module = next((m for m in modules if isinstance(m, GAOutportConfig)), None)
+    ga_pe_modules = [m for m in modules if isinstance(m, GAPEConfig)]
     
     # Physical resource layout: (module_id, resource_name_pattern, count, getter_func)
     # For ROW_LC and COL_LC, we need to look them up by their physical resource names (ROW_LC0-3, COL_LC0-3)
@@ -239,7 +243,9 @@ def build_entries(modules):
         # Special array
         (ModuleID.SPECIAL_ARRAY, "SPECIAL", 1, lambda i: special_module),
         # General array
-        (ModuleID.GENERAL_ARRAY, "GENERAL", 1, lambda i: general_module),
+        (ModuleID.GA_INPORT_GROUP, "GA_INPORT", len(ga_inport_modules), lambda i: ga_inport_modules[i] if i < len(ga_inport_modules) else None),
+        (ModuleID.GA_OUTPORT_GROUP, "GA_OUTPORT", 1, lambda i: ga_outport_module if i == 0 else None),
+        (ModuleID.GENERAL_PE, "GA_PE", len(ga_pe_modules), lambda i: ga_pe_modules[i] if i < len(ga_pe_modules) else None),
     ]
     
     # Build all entries from unified layout
@@ -291,7 +297,7 @@ def write_bitstream(entries, output_file='./data/parsed_bitstream.txt'):
         ModuleID.SPECIAL_ARRAY: "special_array",
         ModuleID.GA_INPORT_GROUP: "ga_inport_group",
         ModuleID.GA_OUTPORT_GROUP: "ga_outport_group",
-        ModuleID.GENERAL_ARRAY: "general_array",
+        ModuleID.GENERAL_PE: "ga_pe",
     }
     
     # Group entries by module type
@@ -322,6 +328,8 @@ def write_bitstream(entries, output_file='./data/parsed_bitstream.txt'):
             for config in configs:
                 lines = get_config_output_lines(config)
                 max_lines = max(max_lines, len(lines))
+                
+            print(f"Processing {module_name} with {len(configs)} entries, max lines: {max_lines}, config bits: {max(len(c) for c in configs if c)}")
             
             # Write module header
             f.write(f"{module_name}:\n")

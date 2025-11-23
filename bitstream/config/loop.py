@@ -73,17 +73,17 @@ class LCPEConfig(BaseConfigModule):
         ("opcode", 2, lambda x: LCPEConfig.opcode_map()[x] if x is not None else 0),
         
         # Port 2: src_id(3) + keep_last_index(3) + mode(2) = 8 bits
-        ("inport2_src", 3),
+        ("inport2_src", 4),
         ("inport2_last_index", 4),
         ("inport2_mode", 2, lambda x: LCPEConfig.inport_mode_map()[x] if x is not None else 0),
         
         # Port 1: src_id(3) + keep_last_index(3) + mode(2) = 8 bits
-        ("inport1_src", 3),
+        ("inport1_src", 4),
         ("inport1_last_index", 4),
         ("inport1_mode", 2, lambda x: LCPEConfig.inport_mode_map()[x] if x is not None else 0),
         
         # Port 0: src_id(3) + keep_last_index(3) + mode(2) = 8 bits
-        ("inport0_src", 3),
+        ("inport0_src", 4),
         ("inport0_last_index", 4),
         ("inport0_mode", 2, lambda x: LCPEConfig.inport_mode_map()[x] if x is not None else 0),
         

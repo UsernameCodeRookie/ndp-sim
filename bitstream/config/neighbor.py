@@ -5,8 +5,7 @@ class NeighborStreamConfig(BaseConfigModule):
 
     FIELD_MAP = [
         ("mem_loop", 4),
-        ("mode", 1),
-        ("stream_id", 2),
+        ("ping_pong", 1),
         ("src_slice_sel", 1),
         ("dst_slice_sel", 1),
         # ("src_buf_ping_idx", 3),

@@ -4,5 +4,5 @@ from .neighbor import NeighborStreamConfig
 from .special import SpecialArrayConfig
 from .stream import StreamConfig
 from .loop import DramLoopControlConfig, LCPEConfig, BufferLoopControlGroupConfig
-from .general import GeneralArrayConfig, GAInportConfig, GAOutportConfig, GAPEConfig
+from .general import GAInportConfig, GAOutportConfig, GAPEConfig
 from .mapper import NodeGraph
