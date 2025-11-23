@@ -85,6 +85,12 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
     NodeIndex._counter = 0
     NodeIndex._resolved = False
     
+    # Set random seed BEFORE any random operations (including module initialization)
+    # if seed is not None:
+    #     import random
+    #     print(f"[Seed] Using random seed: {seed}")
+    #     random.seed(seed)
+    
     # Reset NodeGraph singleton BEFORE creating modules
     # This must happen before from_json is called, as Connect() will populate it
     NodeGraph._instance = None
@@ -109,9 +115,16 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
     print("\n=== Resource Allocation & Mapping ===")
     
     # Initialize NodeGraph with seed if provided
+    # We need to preserve connections that were populated during from_json()
     if seed is not None:
-        print(f"[Seed] Using random seed: {seed}")
+        old_graph = NodeGraph.get()
+        saved_connections = old_graph.connections.copy()
+        saved_nodes = old_graph.nodes.copy()
+        saved_metadata = old_graph.node_metadata.copy()
         NodeGraph._instance = NodeGraph(seed=seed)
+        NodeGraph.get().connections = saved_connections
+        NodeGraph.get().nodes = saved_nodes
+        NodeGraph.get().node_metadata = saved_metadata
     
     # Set direct mapping mode before allocation if requested
     if use_direct_mapping:
@@ -141,12 +154,25 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
                 NodeIndex._counter = 0
                 NodeIndex._resolved = False
                 
+                # Reset random seed before reloading (for reproducibility)
+                if seed is not None:
+                    import random
+                    random.seed(seed)
+                
                 # Reload modules
                 for module in modules:
                     module.from_json(cfg)
                 # Reinitialize NodeGraph with seed if provided
+                # Preserve connections that were populated during from_json()
                 if seed is not None:
+                    old_graph = NodeGraph.get()
+                    saved_connections = old_graph.connections.copy()
+                    saved_nodes = old_graph.nodes.copy()
+                    saved_metadata = old_graph.node_metadata.copy()
                     NodeGraph._instance = NodeGraph(seed=seed)
+                    NodeGraph.get().connections = saved_connections
+                    NodeGraph.get().nodes = saved_nodes
+                    NodeGraph.get().node_metadata = saved_metadata
                 NodeGraph.get().allocate_resources(only_connected_nodes=True)
             
             # Perform heuristic search and get the cost of the best mapping found

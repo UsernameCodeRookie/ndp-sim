@@ -48,10 +48,10 @@ class Mapper:
         self.assigned_node: Dict[str, str] = {}
         
         # Random seed for reproducibility
-        self.seed = seed
-        if seed is not None:
-            import random
-            random.seed(seed)
+        # self.seed = seed
+        # if seed is not None:
+        #     import random
+        #     random.seed(seed)
         
     def get_type(self, node: str) -> Optional[str]:
         """Infer the resource type of a node based on its name prefix.
@@ -298,6 +298,11 @@ class Mapper:
                 src_row, src_col = divmod(src_idx, 8)
                 dst_row, dst_col = divmod(dst_idx, 8)
                 
+                # LC in row 1 cannot connect to row 0 LCs
+                if dst_row == 0 and src_row == 1:
+                    # LC in row 0 cannot connect to row 1 LCs
+                    return False
+                
                 # Same row: allowed distance is 1 or 2
                 if src_row == dst_row:
                     return abs(dst_col - src_col) in [1, 2]
@@ -313,6 +318,11 @@ class Mapper:
                     return 0.0
                 src_row, src_col = divmod(src_idx, 8)
                 dst_row, dst_col = divmod(dst_idx, 8)
+                
+                # if dst_row == 0 and src_row == 1:
+                #     # LC in row 0 cannot connect to row 1 LCs
+                #     return 100.0  # Extreme penalty for invalid connection
+                
                 # Penalty based on distance
                 distance = abs(src_row - dst_row) * 8 + abs(src_col - dst_col)
                 return float(distance)
@@ -598,10 +608,10 @@ class Mapper:
         import math
         
         # Set random seed if provided
-        if seed is not None:
-            random.seed(seed)
-        elif self.seed is not None:
-            random.seed(self.seed)
+        # if seed is not None:
+        #     random.seed(seed)
+        # elif self.seed is not None:
+        #     random.seed(self.seed)
         
         print(f"[Simulated Annealing] Starting search with {len(connections)} connections")
         print(f"[Simulated Annealing] Parameters: iterations={max_iterations}, T0={initial_temp}, cooling={cooling_rate}, repair_prob={repair_prob}")

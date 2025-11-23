@@ -238,6 +238,12 @@ Examples:
             print(f"\n[1/6] Loading configuration from {args.config}...")
         cfg = load_config(args.config)
         
+        if args.seed is not None:
+            # Set random seed before initializing modules
+            import random
+            print(f"[Seed] Using random seed: {args.seed}")
+            random.seed(args.seed)
+        
         # Step 2: Initialize modules
         if args.verbose:
             print("[2/6] Initializing modules and performing resource mapping...")
