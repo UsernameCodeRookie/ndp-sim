@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bitstream.parse import (
     load_config, init_modules, build_entries, generate_bitstream,
-    write_bitstream, dump_modules_to_binary, dump_modules_detailed, compare_bitstreams
+    write_bitstream, dump_modules_detailed, compare_bitstreams
 )
 
 
@@ -130,14 +130,6 @@ Examples:
         help='Compare generated bitstream with reference file (e.g., --compare data/bitstream.txt)'
     )
     
-    # Config mask
-    parser.add_argument(
-        '--config-mask',
-        type=str,
-        default='11101110',
-        help='8-bit config mask (default: 11101110 - IGA, SE, Buffer, Special enabled)'
-    )
-    
     # Mapping mode
     parser.add_argument(
         '--direct-mapping',
@@ -151,12 +143,6 @@ Examples:
         action='store_true',
         dest='heuristic_search',
         help='Enable heuristic search (simulated annealing) for large graphs (enabled by default)',
-    )
-    parser.add_argument(
-        '--no-heuristic-search',
-        action='store_false',
-        dest='heuristic_search',
-        help='Disable heuristic search (use when you want direct mapping or custom behavior)'
     )
     
     parser.add_argument(
@@ -202,12 +188,12 @@ Examples:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Validate config mask
-    if len(args.config_mask) != 8 or not all(c in '01' for c in args.config_mask):
-        print(f"Error: Config mask must be 8 binary digits, got: {args.config_mask}")
-        sys.exit(1)
-    
-    config_mask = [int(b) for b in args.config_mask]
+    # Load config early to get config_mask for display
+    try:
+        cfg = load_config(args.config)
+        config_mask_str = cfg.get('CONFIG', '11010110')
+    except Exception:
+        config_mask_str = 'N/A'
     
     # Print configuration (unless quiet)
     if not args.quiet:
@@ -216,7 +202,7 @@ Examples:
         print("="*80)
         print(f"Config file:      {args.config}")
         print(f"Output directory: {args.output_dir}")
-        print(f"Config mask:      {args.config_mask}")
+        print(f"Config mask:      {config_mask_str}")
         if args.direct_mapping:
             mapping_mode = "Direct (no search)"
         elif args.heuristic_search:
@@ -237,6 +223,10 @@ Examples:
         if args.verbose:
             print(f"\n[1/6] Loading configuration from {args.config}...")
         cfg = load_config(args.config)
+        
+        # Extract config_mask from JSON
+        config_mask_str = cfg.get('CONFIG', None)
+        config_mask = [int(b) for b in config_mask_str]
         
         if args.seed is not None:
             # Set random seed before initializing modules
@@ -267,37 +257,33 @@ Examples:
         elif args.verbose:
             print("[3/6] Skipping placement visualization")
         
-        # Step 4: Generate binary dump (default enabled)
-        if not args.no_dump_binary:
-            if args.verbose:
-                print(f"[4/6] Generating binary dump to {args.binary_name}...")
-            binary_path = output_dir / args.binary_name
-            dump_modules_to_binary(modules, output_file=str(binary_path))
-        elif args.verbose:
-            print("[4/6] Skipping binary dump")
-        
-        # Step 4.5: Generate detailed dump (default enabled)
+        # Step 4: Generate detailed dump (default enabled)
         if not args.no_dump_detailed:
             if args.verbose:
-                print(f"[4.5/6] Generating detailed field dump to {args.detailed_dump_output}...")
+                print(f"[4/6] Generating detailed field dump to {args.detailed_dump_output}...")
             detailed_path = output_dir / args.detailed_dump_output
             dump_modules_detailed(modules, output_file=str(detailed_path))
         elif args.verbose:
-            print("[4.5/6] Skipping detailed dump")
+            print("[4/6] Skipping detailed dump")
         
         # Step 5: Build bitstream entries and generate bitstream
         if args.verbose:
             print("[5/6] Building bitstream entries and generating bitstream...")
         entries = build_entries(modules)
-        config_mask = [int(b) for b in args.config_mask]
         bitstream = generate_bitstream(entries, config_mask)
         
-        # Step 5.5: Generate parsed bitstream (default enabled)
+        # Step 5.5: Generate parsed bitstream and binary dump (default enabled)
         if not args.no_dump_parsed:
             if args.verbose:
                 print(f"[5.5/6] Generating parsed bitstream to {args.parsed_name}...")
             parsed_path = output_dir / args.parsed_name
-            write_bitstream(entries, output_file=str(parsed_path))
+            
+            # Determine binary output path if binary dump is enabled
+            binary_output_path = None
+            if not args.no_dump_binary:
+                binary_output_path = str(output_dir / args.binary_name)
+            
+            write_bitstream(entries, config_mask=config_mask, output_file=str(parsed_path), binary_output_file=binary_output_path)
         elif args.verbose:
             print("[5.5/6] Skipping parsed bitstream")
         

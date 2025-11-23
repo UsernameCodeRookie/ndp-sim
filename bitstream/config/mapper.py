@@ -433,7 +433,7 @@ class Mapper:
                 return float(max(0, d - 2))
             return 0.0
 
-    class PEtoAGConstraint(Constraint):
+    class PEtoStreamConstraint(Constraint):
         """PE i → AG/STREAM j constraint:
         PE connects to AG/STREAM targets (3 positions: above, left-2, right+2)
         Since AG and STREAM are equivalent, this also applies to STREAM connections.
@@ -474,23 +474,6 @@ class Mapper:
                 if d in [0, 1]:
                     return 0.0
                 return float(d - 1)
-            return 0.0
-
-    class COLLCtoROWLCConstraint(Constraint):
-        """COL_LC i → ROW_LC constraint: hard-wired connection
-        
-        Each COL_LC i connects to its corresponding ROW_LC i (hard-wired at relative index 12).
-        """
-        def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            if src_type == "COL_LC" and dst_type == "ROW_LC":
-                return dst_idx == src_idx  # COL_LC i connects to ROW_LC i
-            return True
-
-        def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
-            if src_type == "COL_LC" and dst_type == "ROW_LC":
-                if dst_idx == src_idx:
-                    return 0.0
-                return 10.0  # Heavy penalty for hard-wired constraint violation
             return 0.0
 
     class ROWLCtoColLCConstraint(Constraint):
@@ -571,9 +554,8 @@ class Mapper:
             self.LCtoStreamConstraint(),
             self.PEtoLCConstraint(),
             self.PEtoPEConstraint(),
-            self.PEtoAGConstraint(),
+            self.PEtoStreamConstraint(),
             self.LCtoStreamConstraint(),
-            self.COLLCtoROWLCConstraint(),
             self.ROWLCtoColLCConstraint()
         ]
         

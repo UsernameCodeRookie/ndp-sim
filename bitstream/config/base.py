@@ -106,10 +106,10 @@ class BaseConfigModule(ConfigModule):
         bits_per_elem = max(1, width // len(val_ints))
         bin_str = "".join(format(v, f"0{bits_per_elem}b") for v in val_ints)
 
-        # Split into 64-bit words
+        # Split into 128-bit words
         chunks: list[tuple[int, int]] = []
-        for i in range(0, len(bin_str), 64):
-            sub = bin_str[i:i+64]
+        for i in range(0, len(bin_str), 128):
+            sub = bin_str[i:i+128]
             chunks.append((int(sub, 2), len(sub)))
         return chunks
 

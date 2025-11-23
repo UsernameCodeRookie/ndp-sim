@@ -273,14 +273,17 @@ def generate_bitstream(entries, config_mask):
     bitstream += '0' * ((64 - len(bitstream) % 64) % 64)
     return bitstream
 
-def write_bitstream(entries, output_file='./data/parsed_bitstream.txt'):
+def write_bitstream(entries, config_mask, output_file='./data/parsed_bitstream.txt', binary_output_file=None):
     """
-    Write bitstream in human-readable format.
+    Write bitstream in human-readable format (to output_file).
     Groups entries by module type and shows each configuration.
     Uses same chunking logic as generate_bitstream.
     
     For each module type, ensures all entries have consistent bitstream length
     by padding empty entries with '0' lines to match the maximum length of non-empty entries.
+    
+    If binary_output_file is provided, also writes concatenated binary data (without module headers)
+    to that file as 64-bit lines.
     """
     from collections import defaultdict
     
@@ -316,6 +319,10 @@ def write_bitstream(entries, output_file='./data/parsed_bitstream.txt'):
                 lines.append(f"1 {chunk}")
             return lines
     
+    # Collect all binary data if binary output is requested
+    binary_data = []
+    binary_data.append(''.join(str(bit) for bit in config_mask))  # Start with config mask
+    
     # Write to file
     with open(output_file, 'w') as f:
         # Process each module type in order
@@ -341,16 +348,43 @@ def write_bitstream(entries, output_file='./data/parsed_bitstream.txt'):
                 # Write the actual bitstream lines
                 for line in lines:
                     f.write(f"{line}\n")
+                    # Collect binary data
+                    if binary_output_file is not None:
+                        binary_data.append(line)
                 
                 # Pad with '0' lines to reach max_lines
                 padding_count = max_lines - len(lines)
                 for _ in range(padding_count):
                     f.write("0\n")
+                    if binary_output_file is not None:
+                        binary_data.append("0")
             
             # Add blank line after each module group
             f.write("\n")
     
     print(f'Bitstream written to {output_file}')
+    
+    # Write binary output if requested
+    if binary_output_file:
+        # Extract just the binary values (without '1 ' prefix for non-zero lines)
+        binary_string = ''
+        for line in binary_data:
+            if line == '0':
+                binary_string += '0'
+            elif line.startswith('1 '):
+                binary_string += '1' + line[2:]
+            else:
+                binary_string += line
+        
+        # Pad to 64-bit boundary
+        binary_string += '0' * ((64 - len(binary_string) % 64) % 64)
+        
+        with open(binary_output_file, 'w') as f:
+            for i in range(0, len(binary_string), 64):
+                chunk = binary_string[i:i+64]
+                f.write(chunk + '\n')
+        
+        print(f'Binary dump written to {binary_output_file}')
 
 def dump_modules_detailed(modules, output_file=None):
     """
@@ -387,71 +421,6 @@ def dump_modules_detailed(modules, output_file=None):
             f.write(captured_output.getvalue())
         
         print(f"Detailed dump written to {output_file}")
-
-def dump_modules_to_binary(modules, output_file='./data/modules_dump.bin'):
-    """
-    Unified function to dump all modules to binary format.
-    Processes all modules in the unified list, calls to_bits() on each,
-    and writes the result to a binary file.
-    Skips empty modules (all None or 0).
-    """
-    print("\n=== Dumping All Modules to Binary ===")
-    all_bits = []
-    
-    for module in modules:
-        # Skip empty modules
-        if hasattr(module, 'is_empty') and module.is_empty():
-            continue
-        
-        module_name = type(module).__name__
-        bits = module.to_bits()
-        bit_count = len(bits)
-        
-        if bit_count > 0:
-            print(f"{module_name:30s}: {bit_count:4d} bits")
-            all_bits.extend(bits)
-    
-    # Convert bits to binary string
-    binary_string = bitstring(all_bits)
-    
-    # Write to file
-    with open(output_file, 'w') as f:
-        # Write as hex for readability
-        for i in range(0, len(binary_string), 64):
-            chunk = binary_string[i:i+64]
-            f.write(chunk + '\n')
-    
-    print(f"\nTotal: {len(all_bits)} bits written to {output_file}")
-    return binary_string
-
-def main():
-    """Main entry point."""
-    cfg = load_config()
-    modules = init_modules(cfg)
-    
-    # TODO: Visualize the resource mapping (currently disabled due to performance issues)
-    # from bitstream.config.mapper import visualize_mapping
-    # print("\n=== Generating Placement Visualization ===")
-    # mapper = NodeGraph.get().mapping
-    # connections = NodeGraph.get().connections
-    # visualize_mapping(mapper, connections)
-    
-    # Option 1: Unified dump of all modules (new approach)
-    unified_binary = dump_modules_to_binary(modules)
-    
-    # Option 2: Traditional bitstream generation (for comparison with reference)
-    entries = build_entries(modules)
-    config_mask = [1, 1, 1, 0, 1, 1, 1, 0]  # Enable: IGA, SE, Buffer, Special
-    bitstream = generate_bitstream(entries, config_mask)
-    write_bitstream(entries)
-    
-    return {
-        'bitstream': bitstream, 
-        'entries': entries, 
-        'config_mask': config_mask,
-        'unified_binary': unified_binary,
-        'modules': modules
-    }
 
 def compare_bitstreams(generated_info, reference_file=None):
     """Compare generated bitstream with reference section by section."""

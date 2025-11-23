@@ -32,7 +32,7 @@ class ReadStreamEngineConfig(BaseConfigModule):
         ("total_size", 8),
         ("dim_stride", 60),
         # Remapping
-        ("address_remapping", 64),
+        ("address_remapping", 64, lambda lst: lst[::-1] if isinstance(lst, list) else None),
         # Padding fields
         ("padding_reg_value", 8),
         ("padding_enable", 3),
@@ -41,7 +41,7 @@ class ReadStreamEngineConfig(BaseConfigModule):
         ("tailing_enable", 3),
         ("idx_tailing_range", 72),
         # Spatial fields
-        ("buf_spatial_stride", 80),
+        ("buf_spatial_stride", 80, lambda lst: lst[::-1] if isinstance(lst, list) else None),
         ("buf_spatial_size", 5),
         ("buf_full_last_index", 4),
     ]
