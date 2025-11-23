@@ -77,10 +77,10 @@ def get_config_bits(params, idx):
     # ========================
     bit_fields = [
         # pack_field_decimal(params["nse_enable"],            E_nse_enable,            N_nse_enable),
-        pack_field_decimal(params["nse_in_src_slice_sel"],  E_nse_in_src_slice_sel,  N_nse_in_src_slice_sel),
-        pack_field_decimal(params["nse_out_dst_slice_sel"], E_nse_out_dst_slice_sel, N_nse_out_dst_slice_sel),
-        pack_field_decimal(params["nse_pingpong_enable"],   E_nse_pingpong_enable,   N_nse_pingpong_enable),
-        pack_field_decimal(params["nse_cnt_size"],          E_nse_cnt_size,          N_nse_cnt_size),
+        pack_field_decimal(params["nse_in_src_slice_sel"],    E_nse_in_src_slice_sel,  N_nse_in_src_slice_sel),
+        pack_field_decimal(params["nse_out_dst_slice_sel"],   E_nse_out_dst_slice_sel, N_nse_out_dst_slice_sel),
+        pack_field_decimal(params["nse_pingpong_enable"],     E_nse_pingpong_enable,   N_nse_pingpong_enable),
+        pack_field_decimal(params["nse_cnt_size"],            E_nse_cnt_size,          N_nse_cnt_size),
     ]
 
     # ========================
@@ -91,6 +91,7 @@ def get_config_bits(params, idx):
     config_int  = int(_config_bits, 2)
 
     config_bits[idx][1] = _config_bits
+    pass
 
     # ========================
     # 打印结果

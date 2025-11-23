@@ -4,9 +4,6 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 import math
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from config.utils.config_parameters import *
 
 # ===================== 1) 位段描述与自动排布 =====================
@@ -294,7 +291,7 @@ groups = [
                     # 配置点
                     BitField("",                                                            width=1,                    port="mse_enable",           meaning="配置了就为1没配就为0",               remark=""),
                     BitField("stream_engine.stream.memory_AG.mode",                         width=1,                    meaning="read: 需要配padding和tailing  write: 不需要配",               remark=""),
-                    BitField("stream_engine.stream.memory_AG.base_addr",                    width=MSE_STREAM_BASE_ADDR_WIDTH,           port="mse_stream_base_addr",        meaning="基地址",                      remark="" ),
+                    BitField("stream_engine.stream.memory_AG.base_addr",                    width=ADDR_WIDTH,           port="mse_stream_base_addr",        meaning="基地址",                      remark="" ),
                     BitField("stream_engine.stream.memory_AG.idx_size",                     width=IDX_SIZE_WIDTH,       port="mse_transaciton_layout_size",meaning="idx0_size、idx1_size、idx2_size 真实值减1"  ),
                     BitField("stream_engine.stream.memory_AG.dim_stride",                   width=STRIDE_WIDTH,         port="mse_transaciton_mult",        meaning="idx0_stride、idx1_stride、idx2_stride"    ),
                     BitField("stream_engine.stream.memory_AG.padding_enable",               width=AG_PORT_NUM,          port="mse_padding_valid",          meaning="idx_padding使能,置为1的话使能的输入端口padding"         ,remark=""),
@@ -332,7 +329,7 @@ groups = [
                     # 配置点
                     BitField("",                                                            width=1,                    port="mse_enable",           meaning="配置了就为1没配就为0",               remark=""),
                     BitField("stream_engine.stream.memory_AG.mode",                         width=1,                    meaning="read: 需要配padding和tailing  write: 不需要配",               remark=""),
-                    BitField("stream_engine.stream.memory_AG.base_addr",                    width=MSE_STREAM_BASE_ADDR_WIDTH,           port="mse_stream_base_addr",        meaning="基地址",                      remark="" ),
+                    BitField("stream_engine.stream.memory_AG.base_addr",                    width=ADDR_WIDTH,           port="mse_stream_base_addr",        meaning="基地址",                      remark="" ),
                     BitField("stream_engine.stream.memory_AG.idx_size",                     width=IDX_SIZE_WIDTH,       port="mse_transaciton_layout_size",meaning="idx0_size、idx1_size、idx2_size，实际值减1"  ),
                     BitField("stream_engine.stream.memory_AG.dim_stride",                   width=STRIDE_WIDTH,         port="mse_transaciton_mult",        meaning="idx0_stride、idx1_stride、idx2_stride"    ),
                     BitField("stream_engine.stream.memory_AG.address_remapping",            width=REMAP_WIDTH,          port="mse_map_matrix_b",            meaning="地址重映射表/掩码"     ,remark="[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]" ),

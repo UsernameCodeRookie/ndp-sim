@@ -7,7 +7,8 @@ from config.utils.module_idx import *
 
 # config_bits = [[ModuleID.BUFFER_MANAGER_CLUSTER, None]] * BUFFER_NUM
 config_bits = [[ModuleID.BUFFER_MANAGER_CLUSTER, None] for _ in range(BUFFER_NUM)]
-config_bits_len = BUFFER_LIFE_TIME_WIDTH + BUFFER_BANK_NUM + 2
+config_bits_len = BUFFER_LIFE_TIME_WIDTH + BUFFER_BANK_NUM + 2 + PORT_LAST_INDEX * 1 \
+    + 1    # 1 is nbr_enable
 
 config_chunk_size = find_factor(config_bits_len)
 config_chunk_cnt = config_bits_len // config_chunk_size
@@ -33,18 +34,24 @@ def get_config_bits(params, idx):
     E_buffer_life_time  = BUFFER_LIFE_TIME_WIDTH # 3 means 4
     E_buffer_mode       = 1
     E_buffer_mask       = BUFFER_BANK_NUM
+    E_buf_full_last_index = PORT_LAST_INDEX
+    N_buf_full_last_index = 1
+    E_buf_nbr_enable = 1
 
     
 
     # =========================
+
     # 打包 bit_fields，高位在前
     # bmc_configure_reg = {buffer_enable, buf_wr_src_id, buffer_life_time, buffer_mode, buffer_mask}
     bit_fields = [
-        # pack_field_decimal(params["buffer_enable"],    E_buffer_enable,    1),
-        pack_field_decimal(params["buf_wr_src_id"],    E_buf_wr_src_id,    1),
-        pack_field_decimal(params["buffer_life_time"], E_buffer_life_time, 1),
-        pack_field_decimal(params["buffer_mode"],      E_buffer_mode,      1),
-        pack_field_decimal(params["buffer_mask"],      E_buffer_mask,      1),
+        # pack_field_decimal(params["buffer_enable"],       E_buffer_enable,    1),
+        pack_field_decimal(params["buf_wr_src_id"],         E_buf_wr_src_id,    1),
+        pack_field_decimal(params["buf_full_last_index"], E_buf_full_last_index,    1),
+        pack_field_decimal(params["buf_nbr_enable"],            E_buf_nbr_enable,    1),
+        pack_field_decimal(params["buffer_life_time"],      E_buffer_life_time, 1),
+        pack_field_decimal(params["buffer_mode"],           E_buffer_mode,      1),
+        pack_field_decimal(params["buffer_mask"],           E_buffer_mask,      1),
     ]
 
     # =========================

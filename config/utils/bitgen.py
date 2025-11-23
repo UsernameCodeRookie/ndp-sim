@@ -32,6 +32,7 @@ def pack_field_decimal(values, elem_width, total_elems=None):
     if total_elems is not None and len(elems) != total_elems:
         raise ValueError(f"expect {total_elems} elements, got {len(elems)}")
     bits = [dec_to_bin(v, elem_width) for v in elems]
+    # print(elem_width*total_elems)
     return "".join(bits)  # 高位在前顺序拼接
 
 def pack_scalar_decimal(value, width):

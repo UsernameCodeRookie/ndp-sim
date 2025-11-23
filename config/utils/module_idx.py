@@ -36,7 +36,7 @@ class ModuleID(IntEnum):
 # IGA_PE_CFG_CHUNK_SIZE                              62  1
 # SE_RD_MSE_CFG_CHUNK_SIZE                           63  8
 # SE_WR_MSE_CFG_CHUNK_SIZE                           57  6
-# SE_NSE_CFG_CHUNK_SIZE                              8  1
+# SE_NSE_CFG_CHUNK_SIZE                              8   1
 # BUFFER_MANAGER_CLUSTER_CFG_CHUNK_SIZE              13  1
 # SPECIAL_ARRAY_CFG_CHUNK_SIZE                       22  1
 # GA_INPORT_GROUP_CFG_CHUNK_SIZE                     15  1
@@ -44,9 +44,10 @@ class ModuleID(IntEnum):
 # GENERAL_ARRAY_CFG_CHUNK_SIZE                       32  4
 
 MODULE_CFG_CHUNK_SIZES = [1] * 12
-MODULE_CFG_CHUNK_SIZES[ModuleID.SE_RD_MSE] = 8
+MODULE_CFG_CHUNK_SIZES[ModuleID.SE_RD_MSE] = 9
 MODULE_CFG_CHUNK_SIZES[ModuleID.SE_WR_MSE] = 6
 MODULE_CFG_CHUNK_SIZES[ModuleID.GENERAL_ARRAY] = 4
+MODULE_CFG_CHUNK_SIZES[ModuleID.IGA_PE] = 2
 
 ModuleID2Mask = [0]*12
 
@@ -60,4 +61,5 @@ ModuleID2Mask[ModuleID.SE_NSE] = 1
 ModuleID2Mask[ModuleID.BUFFER_MANAGER_CLUSTER] = 1 
 ModuleID2Mask[ModuleID.SPECIAL_ARRAY] = 2
 ModuleID2Mask[ModuleID.GA_INPORT_GROUP] = 3
-
+ModuleID2Mask[ModuleID.GA_OUTPORT_GROUP] = 3
+ModuleID2Mask[ModuleID.GENERAL_ARRAY] = 3

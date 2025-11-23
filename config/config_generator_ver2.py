@@ -91,9 +91,9 @@ def split_config(config):
 
 
 def reset_file():
-    with open('./data/bitstream.txt', 'w') as file:
+    with open('/cluster/home/zhaohc/NDP_DL/results/bitstream.txt', 'w') as file:
         pass
-    with open('./data/parsed_bitsream.txt', 'w') as file:
+    with open('/cluster/home/zhaohc/NDP_DL/results/parsed_bitsream.txt', 'w') as file:
         pass
 
 if __name__ == "__main__":
@@ -110,10 +110,11 @@ if __name__ == "__main__":
     # config components
     # ========================
 
+
     # iga_lc
     sheet1_data = []
     lc_params_0 = {
-        "iga_lc_src_id": 1,              # 例如 src id = 2。若多个： [2,1,0]
+        "iga_lc_src_id": 6,              # 例如 src id = 2。若多个： [2,1,0]
         "iga_lc_outmost_loop": 0,        # 是否作为最外层循环（或宽度值）
         "iga_lc_initial_value": 0,       # 初始值
         "iga_lc_stride_value": 1,        # stride
@@ -121,10 +122,10 @@ if __name__ == "__main__":
         "iga_lc_index": 1,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_0)
-    cc.iga_lc.get_config_bits(lc_params_0,6)
+    cc.iga_lc.get_config_bits(lc_params_0,14)
 
     lc_params_10 = {
-        "iga_lc_src_id": 1,              # 例如 src id = 2。若多个： [2,1,0]
+        "iga_lc_src_id": 6,              # 例如 src id = 2。若多个： [2,1,0]
         "iga_lc_outmost_loop": 0,        # 是否作为最外层循环（或宽度值）
         "iga_lc_initial_value": 0,       # 初始值
         "iga_lc_stride_value": 128,        # stride
@@ -132,7 +133,7 @@ if __name__ == "__main__":
         "iga_lc_index": 2,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_10)
-    cc.iga_lc.get_config_bits(lc_params_10,7)
+    cc.iga_lc.get_config_bits(lc_params_10,15)
 
     lc_params_1 = {
         "iga_lc_src_id": 0,              # 例如 src id = 2。若多个： [2,1,0]
@@ -143,10 +144,10 @@ if __name__ == "__main__":
         "iga_lc_index": 0,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_1)
-    cc.iga_lc.get_config_bits(lc_params_1,5)
+    cc.iga_lc.get_config_bits(lc_params_1,13)
 
     lc_params_2 = {
-        "iga_lc_src_id": 3,              # 例如 src id = 2。若多个： [2,1,0]
+        "iga_lc_src_id": 8,              # 例如 src id = 2。若多个： [2,1,0]
         "iga_lc_outmost_loop": 0,        # 是否作为最外层循环（或宽度值）
         "iga_lc_initial_value": 0,       # 初始值
         "iga_lc_stride_value": 4,        # stride
@@ -154,10 +155,10 @@ if __name__ == "__main__":
         "iga_lc_index": 1,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_2)
-    cc.iga_lc.get_config_bits(lc_params_2,3)
+    cc.iga_lc.get_config_bits(lc_params_2,11)
 
     lc_params_3 = {
-        "iga_lc_src_id": 2,              # 例如 src id = 2。若多个： [2,1,0]
+        "iga_lc_src_id": 7,              # 例如 src id = 2。若多个： [2,1,0]
         "iga_lc_outmost_loop": 0,        # 是否作为最外层循环（或宽度值）
         "iga_lc_initial_value": 0,       # 初始值
         "iga_lc_stride_value": 1,        # stride
@@ -165,10 +166,10 @@ if __name__ == "__main__":
         "iga_lc_index": 2,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_3)
-    cc.iga_lc.get_config_bits(lc_params_3, 2)
+    cc.iga_lc.get_config_bits(lc_params_3, 10)
 
     lc_params_4 = {
-        "iga_lc_src_id": 2,              # 例如 src id = 2。若多个： [2,1,0]
+        "iga_lc_src_id": 7,              # 例如 src id = 2。若多个： [2,1,0]
         "iga_lc_outmost_loop": 0,        # 是否作为最外层循环（或宽度值）
         "iga_lc_initial_value": 0,       # 初始值
         "iga_lc_stride_value": 1,        # stride
@@ -176,10 +177,10 @@ if __name__ == "__main__":
         "iga_lc_index": 3,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_4)
-    cc.iga_lc.get_config_bits(lc_params_4, 1)
+    cc.iga_lc.get_config_bits(lc_params_4, 9)
 
     lc_params_5 = {
-        "iga_lc_src_id": 2,              # 例如 src id = 2。若多个： [2,1,0]
+        "iga_lc_src_id": 7,              # 例如 src id = 2。若多个： [2,1,0]
         "iga_lc_outmost_loop": 0,        # 是否作为最外层循环（或宽度值）
         "iga_lc_initial_value": 0,       # 初始值
         "iga_lc_stride_value": 1,        # stride
@@ -187,7 +188,7 @@ if __name__ == "__main__":
         "iga_lc_index": 4,               # last index（PORT_LAST_INDEX 宽度内的值）
     }
     sheet1_data.append(lc_params_5)
-    cc.iga_lc.get_config_bits(lc_params_5, 0)
+    cc.iga_lc.get_config_bits(lc_params_5, 8)
 
 
 
@@ -208,8 +209,10 @@ if __name__ == "__main__":
     iga_pe_params_0 = {
         "iga_pe_alu_opcode" : 0,
         # port0 port1 port2
-        "iga_pe_src_id" : [0, 1, 0],
-        "iga_pe_keep_last_index" : [0, 4, 0],
+        # RIGHT: "iga_pe_src_id" : [3, 4, 0],
+        "iga_pe_src_id" : [3, 4, 0],
+        # RIGHT: "iga_pe_keep_last_index" : [5, 4, 0],
+        "iga_pe_keep_last_index" : [5, 4, 0],
         # NULL:0 BUFFER:1 KEEP:2 CONSTANT:3
         "iga_pe_inport_mode" : [1, 2, 0],
         "iga_pe_cfg_constant_pos" : [0, 0, 0],
@@ -220,7 +223,7 @@ if __name__ == "__main__":
     iga_pe_params_1 = {
         "iga_pe_alu_opcode" : 2,
         # port0 port1 port2
-        "iga_pe_src_id" : [1, 0, 4],
+        "iga_pe_src_id" : [4, 7, 7],
         "iga_pe_keep_last_index" : [3, 0, 0],
         # NULL:0 BUFFER:1 KEEP:2 CONSTANT:3
         "iga_pe_inport_mode" : [2, 3, 1],
@@ -236,17 +239,17 @@ if __name__ == "__main__":
     # iga_row
     sheet3_data = []
     row_lc_params_0 = {
-        "iga_row_lc_src_id": 2,         # 例如通道号 / src id
+        "iga_row_lc_src_id": 8,         # 例如通道号 / src id
         "iga_row_lc_initial_value": 0,  # 初始值
         "iga_row_lc_stride_value": 1,   # 步长
-        "iga_row_lc_end_value": 4,     # 结束值
-        "iga_row_lc_index":5,          # index
+        "iga_row_lc_end_value": 4,      # 结束值
+        "iga_row_lc_index":5,           # index
     }
     sheet3_data.append(row_lc_params_0)
     cc.iga_row_lc.get_config_bits(row_lc_params_0, 0)
 
     row_lc_params_1 = {
-        "iga_row_lc_src_id": 0,         # 例如通道号 / src id
+        "iga_row_lc_src_id": 6,         # 例如通道号 / src id
         "iga_row_lc_initial_value": 0,  # 初始值
         "iga_row_lc_stride_value": 1,   # 步长
         "iga_row_lc_end_value": 4,     # 结束值
@@ -256,7 +259,7 @@ if __name__ == "__main__":
     cc.iga_row_lc.get_config_bits(row_lc_params_1, 1)
  
     row_lc_params_2 = {
-        "iga_row_lc_src_id": 3,         # 例如通道号 / src id
+        "iga_row_lc_src_id": 9,         # 例如通道号 / src id
         "iga_row_lc_initial_value": 0,  # 初始值
         "iga_row_lc_stride_value": 1,   # 步长
         "iga_row_lc_end_value": 4,     # 结束值
@@ -271,7 +274,7 @@ if __name__ == "__main__":
     # iga_col
     sheet4_data = []
     col_lc_params_0 = {
-        "iga_col_lc_src_id": 6,
+        "iga_col_lc_src_id": 12,
         "iga_col_lc_initial_value": 0,
         "iga_col_lc_stride_value": 16,
         "iga_col_lc_end_value": 32,
@@ -281,7 +284,7 @@ if __name__ == "__main__":
     cc.iga_col_lc.get_config_bits(col_lc_params_0, 0)
 
     col_lc_params_1 = {
-        "iga_col_lc_src_id": 6,
+        "iga_col_lc_src_id": 12,
         "iga_col_lc_initial_value": 0,
         "iga_col_lc_stride_value": 16,
         "iga_col_lc_end_value": 32,
@@ -291,7 +294,7 @@ if __name__ == "__main__":
     cc.iga_col_lc.get_config_bits(col_lc_params_1, 1)
 
     col_lc_params_2 = {
-        "iga_col_lc_src_id": 6,
+        "iga_col_lc_src_id": 12,
         "iga_col_lc_initial_value": 0,
         "iga_col_lc_stride_value": 16,
         "iga_col_lc_end_value": 32,
@@ -315,7 +318,7 @@ if __name__ == "__main__":
         # "mse_mem_idx_enable": [1]*MSE_MEM_AG_INPORT_NUM,
         # "mse_mem_idx_mode": [0]*MSE_MEM_AG_INPORT_NUM,
         "mse_mem_idx_keep_last_index": [3,2,0],
-        "mem_inport_src_id": [3, 2, 0],
+        "mem_inport_src_id": [9, 8, 0],
         "mse_mem_idx_constant" : [0, 0, 0],
         # "mse_buf_idx_enable": [1]*MSE_BUF_AG_INPORT_NUM,
         # [row, col]
@@ -346,8 +349,8 @@ if __name__ == "__main__":
         #port2 port1 port0
         "mse_mem_idx_mode" : [AGMode.KEEP, AGMode.BUFFER, AGMode.KEEP],
          # keep_last_index：有 NUM 个，每个占 WIDTH_xxx_each 位
-        "mse_mem_idx_keep_last_index": [2, 5, 3],  # 3个元素，每个3bit
-        "mem_inport_src_id": [3, 7, 2],  # 举例：3,1,0
+        "mse_mem_idx_keep_last_index": [2, 0, 3],  # 3个元素，每个3bit
+        "mem_inport_src_id": [9, 13, 8],  # 举例：3,1,0
         "mse_mem_idx_constant" : [0, 0, 0],
         "mse_buf_idx_mode": [BAGMode.KEEP, BAGMode.BUFFER],   # [row, col]
         "mse_buf_idx_keep_last_index": [6,0],   # [row, col]
@@ -374,6 +377,7 @@ if __name__ == "__main__":
 
         "mse_buf_spatial_stride": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15][::-1],
         "mse_buf_spatial_size": 16, # 0 base
+        "mse_buf_full_last_index": 5,
     }
     sheet6_data.append(rd_mse_params_0)
     cc.se_rd_mse.get_config_bits(rd_mse_params_0, 1)
@@ -389,7 +393,7 @@ if __name__ == "__main__":
         "mse_mem_idx_mode" : [AGMode.KEEP, AGMode.CONSTANT, AGMode.BUFFER],
          # keep_last_index：有 NUM 个，每个占 WIDTH_xxx_each 位
         "mse_mem_idx_keep_last_index": [2, 0, 5],  # 3个元素，每个3bit
-        "mem_inport_src_id": [5, 10, 10],  # 举例：3,1,0
+        "mem_inport_src_id": [11, 0, 16],  # 举例：3,1,0
         "mse_mem_idx_constant" : [0, 0, 0],
         "mse_buf_idx_mode": [BAGMode.KEEP, BAGMode.BUFFER],        # [row, col]
         "mse_buf_idx_keep_last_index": [6,0],   # [row, col]
@@ -414,6 +418,7 @@ if __name__ == "__main__":
 
         "mse_buf_spatial_stride": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15][::-1],
         "mse_buf_spatial_size": 16, # 0 base
+        "mse_buf_full_last_index": 5,
     }
     sheet6_data.append(rd_mse_params_1)
     cc.se_rd_mse.get_config_bits(rd_mse_params_1, 0)
@@ -430,6 +435,8 @@ if __name__ == "__main__":
         "buffer_life_time": 3,  # 示例
         "buffer_mode": 0,
         "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
+        "buf_full_last_index": 5,
+        "buf_nbr_enable": 1,
     }
     sheet7_data.append(bmc_params_0)
     cc.buffer_manager_cluster.get_config_bits(bmc_params_0, 0)
@@ -440,6 +447,8 @@ if __name__ == "__main__":
         "buffer_life_time": 3,  # 示例
         "buffer_mode": 0,
         "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
+        "buf_full_last_index": 5,
+        "buf_nbr_enable": 1,
     }
     sheet7_data.append(bmc_params_1)
     cc.buffer_manager_cluster.get_config_bits(bmc_params_1, 1)
@@ -450,6 +459,8 @@ if __name__ == "__main__":
         "buffer_life_time": 3,  # 示例
         "buffer_mode": 1,
         "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
+        "buf_full_last_index": 5,
+        "buf_nbr_enable": 1,
     }
     cc.buffer_manager_cluster.get_config_bits(bmc_params_2, 2)
 
@@ -459,6 +470,8 @@ if __name__ == "__main__":
         "buffer_life_time": 3,  # 示例
         "buffer_mode": 1,
         "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
+        "buf_full_last_index": 5,
+        "buf_nbr_enable": 1,
     }
     sheet7_data.append(bmc_params_3)
     cc.buffer_manager_cluster.get_config_bits(bmc_params_3, 3)
@@ -479,6 +492,8 @@ if __name__ == "__main__":
         "buffer_life_time": 0,  # 示例
         "buffer_mode": 0,
         "buffer_mask": 0b1111_1111,  # 假设 BUFFER_BANK_NUM = 4
+        "buf_full_last_index": 5,
+        "buf_nbr_enable": 0,
     }
     sheet7_data.append(bmc_params_5)
     cc.buffer_manager_cluster.get_config_bits(bmc_params_5, 5)
@@ -509,9 +524,31 @@ if __name__ == "__main__":
 
     all_data["Special_Array_Config"] = sheet8_data
 
+    # ================================
+    # neighbor
+    # ================================
+    # sheet9_data = []
+    # nse_params = {
+    #     # "nse_enable": 1,
+    #     "nse_in_src_slice_sel": 0,
+    #     "nse_out_dst_slice_sel": 0,
+    #     "nse_pingpong_enable": 1,
+    #     "nse_cnt_size": 15,
+    # }
+    # cc.se_nse.get_config_bits(nse_params, 0)
+    # sheet9_data.append(nse_params)  
+
+
+
+
+
+
 
     # generator Excel
     multiple_dicts_to_excel(all_data, file_name="NDP_DL_Config_Parameters.xlsx")
+
+
+
 
 
 
@@ -582,12 +619,12 @@ if __name__ == "__main__":
     # ===========================
     # print bitstream
     # ===========================
-    with open('./data/bitstream.txt', 'a') as file:
+    with open('/cluster/home/zhaohc/NDP_DL/results/bitstream.txt', 'a') as file:
         for entry in bitstream:
             file.write(entry + '\n')
         # file.write(bitstream[-1])
 
-    with open('./data/parsed_bitsream.txt', 'a') as file:
+    with open('/cluster/home/zhaohc/NDP_DL/results/parsed_bitsream.txt', 'a') as file:
         print_mask = [1 for _ in range(len(ModuleID2Mask))]
         for mid, config in check_file:
             if print_mask[mid]:
@@ -598,6 +635,10 @@ if __name__ == "__main__":
                 continue
             if config is None:
                 file.write('0\n'* MODULE_CFG_CHUNK_SIZES[mid])
+                # if mid == ModuleID.IGA_PE:
+                #     print( '0\n'* MODULE_CFG_CHUNK_SIZES[mid] )
             else:
                 for chunk in config:
                     file.write(chunk + '\n')
+                    # if mid == ModuleID.IGA_PE:
+                    #     print(''.join(config) + '\n')

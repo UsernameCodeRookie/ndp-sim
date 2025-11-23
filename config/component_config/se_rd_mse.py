@@ -86,10 +86,13 @@ N_mse_buf_spatial_size           = 1
 E_mse_mem_idx_constant           = MEM_INPORT_CONSTANT_WIDTH
 N_mse_mem_idx_constant           = MSE_MEM_AG_INPORT_NUM
 
+E_mse_buf_full_last_index = PORT_LAST_INDEX
+N_mse_buf_full_last_index = 1
+
 def _compute_total_len():
     total = 0
     for e, n in [
-        (4,1),
+        (0,1),
         (E_mse_enable, N_mse_enable),
         (E_mse_mem_idx_keep_mode, N_mse_mem_idx_keep_mode),
         (E_mse_mem_idx_keep_last_index, N_mse_mem_idx_keep_last_index),
@@ -114,6 +117,7 @@ def _compute_total_len():
         (E_mse_branch_up_bound, N_mse_branch_up_bound),
         (E_mse_buf_spatial_stride, N_mse_buf_spatial_stride),
         (E_mse_buf_spatial_size, N_mse_buf_spatial_size),
+        (E_mse_buf_full_last_index, N_mse_buf_full_last_index),
     ]:
         # print(f"e:{e}, n:{n}, e*n:{e*n}")
         total += e * n
@@ -209,6 +213,9 @@ def get_config_bits(params, idx):
 
     N_mse_mem_idx_constant = MSE_MEM_AG_INPORT_NUM
 
+    E_mse_buf_full_last_index = PORT_LAST_INDEX
+    N_mse_buf_full_last_index = 1
+
     # params = {
     #     # "mse_enable": 1,
 
@@ -266,7 +273,7 @@ def get_config_bits(params, idx):
 
     bit_fields = [
         # mse_enable
-        '0' * 4,
+        # '0' * 4,
         pack_field_decimal(params["mse_mem_idx_mode"], E_mse_mem_idx_keep_mode, N_mse_mem_idx_keep_mode),
         pack_field_decimal(params["mse_mem_idx_keep_last_index"], E_mse_mem_idx_keep_last_index, N_mse_mem_idx_keep_last_index),
         # mem_inport_src_id
@@ -324,6 +331,8 @@ def get_config_bits(params, idx):
 
         pack_field_decimal(params["mse_buf_spatial_size"], E_mse_buf_spatial_size, N_mse_buf_spatial_size),
 
+        pack_field_decimal(params["mse_buf_full_last_index"], E_mse_buf_full_last_index, N_mse_buf_full_last_index),
+
         # pack_field_decimal(params["mse_mem_idx_constant"][::-1], E_mse_mem_idx_constant, N_mse_mem_idx_constant),
 
 
@@ -336,5 +345,54 @@ def get_config_bits(params, idx):
 
     config_bits[idx][1] = _config_bits
 
-# if __name__ == "__main__":
-#     get_config_bits()
+if __name__ == "__main__":
+    params = {
+        # "mse_enable": 1,
+
+        # mem_inport_src_id：假设有 NUM_mem_inport_src_id 个，每个占 WIDTH_mem_inport_src_id_each bit
+        # 输入十进制数组（左边元素将放在更高位）
+        # ??????????????????????
+        #port2 port1 port0
+        "mse_mem_idx_mode" : [1, 0, 1],
+         # keep_last_index：有 NUM 个，每个占 WIDTH_xxx_each 位
+        "mse_mem_idx_keep_last_index": [1, 3, 2],  # 3个元素，每个3bit
+        "mem_inport_src_id": [6, 2, 1],  # 举例：3,1,0
+        # port 2  port 1 port 0
+        "mse_mem_idx_constant" : [0, 0, 0],
+        "mse_buf_idx_mode": [1, 0],        # [row, col]
+        "mse_buf_idx_keep_last_index": [4,0],   # [row, col]
+
+        # "mse_mem_idx_enable": [1, 1, 1],     # 也可以直接十进制：5
+        # "mse_mem_idx_keep_mode": [1, 0, 1], # ?????????????????
+
+        # keep_last_index：有 NUM 个，每个占 WIDTH_xxx_each 位
+
+        # buf idx
+        # "mse_buf_idx_enable": [1, 1],           # 总共2bit（两个通道各1bit
+        # "mse_buf_idx_keep_mode": [1, 0],        # [row, col]
+        # "mse_buf_idx_keep_last_index": [4,0],   # [row, col]
+
+        "mse_pingpong_enable": 1,
+        "mse_pingpong_last_index": 2, 
+
+        "mse_stream_base_addr": 0x10_0000,
+        "mse_transaciton_layout_size": [4,32,1],
+
+        "mse_transaciton_layout_size_log": [2, 5+2, 0],
+        "mse_transaciton_total_size": 1*4*32,
+        "mse_transaciton_mult": [4, 2, 1], # [56*4, 4, 4*56*56]
+
+        "mse_map_matrix_b": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15][::-1],  # 十进制/十六进制都可
+        "mse_padding_reg_value": 0,
+        "mse_padding_valid": [0,1,1],
+        "mse_padding_low_bound": [0,1,1],
+        "mse_padding_up_bound": [63, 56, 56],
+
+        "mse_branch_valid": [0,1,1],
+        "mse_branch_low_bound": [0,0,0],
+        "mse_branch_up_bound": [63,57,67],
+
+        "mse_buf_spatial_stride": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15][::-1],
+        "mse_buf_spatial_size": 16, # 0 base
+    }
+    get_config_bits(params,0)

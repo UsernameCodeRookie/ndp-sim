@@ -4,7 +4,7 @@ from config.utils.module_idx import *
 # config_bits = [[ModuleID.GENERAL_ARRAY, None]] * GA_PE_NUM
 config_bits = [[ModuleID.GENERAL_ARRAY, None] for _ in range(GA_PE_NUM)]
 
-config_bits_len = GA_PE_ALU_OPCODE_WIDTH + (GA_PE_SRC_ID_WIDTH + PORT_LAST_INDEX + GA_PE_INPORT_MODE_WIDTH) * 3 + GA_PE_CONSTANT_VALUE_WIDTH * 3 + 5 # 5 is config padding length
+config_bits_len = GA_PE_ALU_OPCODE_WIDTH + (GA_PE_SRC_ID_WIDTH + PORT_LAST_INDEX + GA_PE_INPORT_MODE_WIDTH) * 3 + GA_PE_CONSTANT_VALUE_WIDTH * 3 + 2 # 1 is config padding length
 config_chunk_size = find_factor(config_bits_len)
 config_chunk_cnt = config_bits_len // config_chunk_size
 def get_config_bits(params, idx):
@@ -36,7 +36,7 @@ def get_config_bits(params, idx):
     # 高位 → ALU opcode → CONSTANT2 → CONSTANT1 → CONSTANT0 → SRC2 → KEEP2 → MODE2 → SRC1 → KEEP1 → MODE1 → SRC0 → KEEP0 → MODE0
     # 注意：pack_field_decimal 最后一个参数 1 用于调试打印
     bit_fields_ga = [
-        '0'*5,
+        '0'*2,
         pack_field_decimal(params["ga_pe_alu_opcode"],      E_ga_pe_alu_opcode, 1),
 
         pack_field_decimal(params["ga_pe_src_id"][2],       E_ga_pe_src_id, 1),

@@ -8,7 +8,8 @@ from config.utils.module_idx import *
 # config_bits = [[ModuleID.IGA_PE, None]] * IGA_PE_NUM
 config_bits = [[ModuleID.IGA_PE, None] for _ in range(IGA_PE_NUM)]
 config_bits_len = IGA_PE_ALU_OPCODE_WIDTH + (IGA_PE_SRC_ID_WIDTH + PORT_LAST_INDEX + \
-    IGA_PE_INPORT_MODE_WIDTH)*3 + IGA_PE_CONSTANT_VALUE_WIDTH*3
+    IGA_PE_INPORT_MODE_WIDTH)*3 + IGA_PE_CONSTANT_VALUE_WIDTH*3 \
+          + 4 # 4 bits padding
 config_chunk_size = find_factor(config_bits_len)
 config_chunk_cnt = config_bits_len // config_chunk_size
 def get_config_bits(params, idx):
@@ -49,6 +50,7 @@ def get_config_bits(params, idx):
     # 高位在前，对应 Verilog: [ALU_OPCODE | SRC2 | KEEP2 | MODE2 | SRC1 | KEEP1 | MODE1 | SRC0 | KEEP0 | MODE0]
     # =========================
     bit_fields = [
+        '0'*4,
         pack_field_decimal(params["iga_pe_alu_opcode"],        E_iga_pe_alu_opcode,       1),
         pack_field_decimal(params["iga_pe_src_id"][2],         E_iga_pe_src_id,           1),
         pack_field_decimal(params["iga_pe_keep_last_index"][2],E_iga_pe_keep_last_index,1),

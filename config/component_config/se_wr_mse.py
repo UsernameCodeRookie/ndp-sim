@@ -87,7 +87,7 @@ N_mse_mem_idx_constant           = MSE_MEM_AG_INPORT_NUM
 #    顺序要与 bit_fields 拼接顺序一致
 # ===================================================
 FIELD_SPECS = [
-    ("config_padding",                0,          1),  # 填充位，凑齐342位
+    ("config_padding",                3,          1),  # 填充位，凑齐342位
     ("mse_enable",                   E_mse_enable,                   N_mse_enable),
     ("mse_mem_idx_mode",             E_mse_mem_idx_keep_mode,        N_mse_mem_idx_keep_mode),
     ("mse_mem_idx_keep_last_index",  E_mse_mem_idx_keep_last_index,  N_mse_mem_idx_keep_last_index),
@@ -216,7 +216,7 @@ def get_config_bits(params, idx):
     # ========================
     bit_fields = []
 
-    # bit_fields.append('0'* 1 )
+    bit_fields.append('0'* 3 )
     # bit_fields.append(pack_field_decimal(params["mse_enable"], E_mse_enable, N_mse_enable))
     bit_fields.append(pack_field_decimal(params["mse_mem_idx_mode"], E_mse_mem_idx_keep_mode, N_mse_mem_idx_keep_mode))
     bit_fields.append(pack_field_decimal(params["mse_mem_idx_keep_last_index"], E_mse_mem_idx_keep_last_index, N_mse_mem_idx_keep_last_index))
@@ -265,3 +265,28 @@ def get_config_bits(params, idx):
 
 # def get_config_bits():
 #     return config_bits
+if __name__ == "__main__":
+    params = {
+        # "mse_enable": 1,
+        "mse_mem_idx_mode": [0]*MSE_MEM_AG_INPORT_NUM,
+        # "mem_inport_src_id": [0]*MSE_MEM_AG_INPORT_NUM,
+        # "mse_mem_idx_enable": [1]*MSE_MEM_AG_INPORT_NUM,
+        # "mse_mem_idx_mode": [0]*MSE_MEM_AG_INPORT_NUM,
+        "mse_mem_idx_keep_last_index": [7]*MSE_MEM_AG_INPORT_NUM,
+        "mem_inport_src_id": [0]*MSE_MEM_AG_INPORT_NUM,
+        "mse_mem_idx_constant" : [0]*MSE_MEM_AG_INPORT_NUM,
+        # "mse_buf_idx_enable": [1]*MSE_BUF_AG_INPORT_NUM,
+        "mse_buf_idx_mode": [0]*MSE_BUF_AG_INPORT_NUM,
+        "mse_buf_idx_keep_last_index": [7]*MSE_BUF_AG_INPORT_NUM,
+        "mse_pingpong_enable": 1,
+        "mse_pingpong_last_index": 7,
+        "mse_stream_base_addr": 0x1000,
+        "mse_transaciton_layout_size": [16]*MSE_MEM_AG_INPORT_NUM,
+        "mse_transaciton_layout_size_log": [4]*MSE_MEM_AG_INPORT_NUM,
+        "mse_transaciton_total_size": 64,
+        "mse_transaciton_mult": [2]*MSE_MEM_AG_INPORT_NUM,
+        "mse_map_matrix_b": [ 0 for _ in range(N_mse_map_matrix_b)],
+        "mse_buf_spatial_stride": [1]*MSE_BUF_REQ_NUM,
+        "mse_buf_spatial_size": 8,
+    }
+    get_config_bits(params,0)
