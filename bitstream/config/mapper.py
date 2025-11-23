@@ -435,7 +435,7 @@ class Mapper:
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "PE" and dst_type == "AG":
                 d = abs(dst_idx - (src_idx // 2))  # AG index is src_idx // 2
-                if d in [0, 1, 2]:
+                if d in [0, 1]:
                     return True  # Flexible for now
                 # Disallow other connections
                 return False
@@ -445,9 +445,9 @@ class Mapper:
             if src_type == "PE" and dst_type == "AG":
                 expected_ag = src_idx // 2
                 d = abs(dst_idx - expected_ag)
-                if d in [0, 1, 2]:
+                if d in [0, 1]:
                     return 0.0
-                return float(d - 2)  # Penalize for distance beyond 2
+                return float(d - 1)  # Penalize for distance beyond 1
             return 0.0
 
     class LCtoSTREAMConstraint(Constraint):

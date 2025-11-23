@@ -89,7 +89,7 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
     NodeGraph._instance = None
     
     # Create all modules in a unified list
-    modules =   [DramLoopControlConfig(i) for i in range(8)] + \
+    modules =   [DramLoopControlConfig(i) for i in range(16)] + \
                 [BufferLoopControlGroupConfig(i) for i in range(4)] + \
                 [LCPEConfig(i) for i in range(8)] + \
                 [StreamConfig(i) for i in range(4)] + \
@@ -196,7 +196,7 @@ def build_entries(modules):
     # For ROW_LC and COL_LC, we need to look them up by their physical resource names (ROW_LC0-3, COL_LC0-3)
     layout = [
         # IGA resources
-        (ModuleID.IGA_LC, "LC", 8, lambda i: mapper.get_module(f"LC{i}")),
+        (ModuleID.IGA_LC, "LC", 16, lambda i: mapper.get_module(f"LC{i}")),  # 16 LC resources (2 rows of 8)
         # ROW_LC: These are accessed as ROW_LC0, ROW_LC1, ROW_LC3 (not all 4 may be used)
         (ModuleID.IGA_ROW_LC, "ROW_LC", 4, lambda i: mapper.get_module(f"ROW_LC{i}")),
         # COL_LC: These are accessed as COL_LC0, COL_LC1, COL_LC3 (not all 4 may be used)
@@ -245,6 +245,9 @@ def write_bitstream(entries, output_file='./data/parsed_bitstream.txt'):
     Write bitstream in human-readable format.
     Groups entries by module type and shows each configuration.
     Uses same chunking logic as generate_bitstream.
+    
+    For each module type, ensures all entries have consistent bitstream length
+    by padding empty entries with '0' lines to match the maximum length of non-empty entries.
     """
     from collections import defaultdict
     
@@ -269,6 +272,17 @@ def write_bitstream(entries, output_file='./data/parsed_bitstream.txt'):
     for mid, config in entries:
         module_groups[mid].append(config)
     
+    # Helper function to get output lines for a single config entry
+    def get_config_output_lines(config):
+        """Returns list of output lines for a config entry."""
+        if not config or set(config) == {'0'}:
+            return ["0"]
+        else:
+            lines = []
+            for chunk in split_config(config):
+                lines.append(f"1 {chunk}")
+            return lines
+    
     # Write to file
     with open(output_file, 'w') as f:
         # Process each module type in order
@@ -276,19 +290,27 @@ def write_bitstream(entries, output_file='./data/parsed_bitstream.txt'):
             configs = module_groups[mid]
             module_name = module_names.get(mid, f"module_{mid}")
             
+            # Calculate max number of output lines for this module type
+            max_lines = 0
+            for config in configs:
+                lines = get_config_output_lines(config)
+                max_lines = max(max_lines, len(lines))
+            
             # Write module header
             f.write(f"{module_name}:\n")
             
-            # Write each configuration entry
+            # Write each configuration entry with padding
             for config in configs:
-                if not config or set(config) == {'0'}:
-                    # Empty configuration
-                    f.write(f"0\n")
-                else:
-                    # Valid configuration with data
-                    # Use same chunking logic as generate_bitstream
-                    for chunk in split_config(config):
-                        f.write(f"1 {chunk}\n")
+                lines = get_config_output_lines(config)
+                
+                # Write the actual bitstream lines
+                for line in lines:
+                    f.write(f"{line}\n")
+                
+                # Pad with '0' lines to reach max_lines
+                padding_count = max_lines - len(lines)
+                for _ in range(padding_count):
+                    f.write("0\n")
             
             # Add blank line after each module group
             f.write("\n")
