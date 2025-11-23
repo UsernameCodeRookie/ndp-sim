@@ -9,7 +9,8 @@ class BufferConfig(BaseConfigModule):
     # the config is empty or not (handled by the bitstream generation logic)
     FIELD_MAP = [
         ("dst_port", 1),  # buf_wr_src_id in hardware: 0=SpecArray, 1=GeneArray
-        ("buffer_life_time", 2),
+        ("nbr_enable", 1),  # buf_wr_src_id in hardware: 0=disabled, 1=enabled
+        ("buffer_life_time", 2, lambda x : x-1),
         ("mode", 1),
         # "mask": List[int] -> Bit integer
         ("mask", 8, lambda x: int("".join(str(v) for v in x), 2) if isinstance(x, list) else x),

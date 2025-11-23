@@ -21,11 +21,9 @@ class InportConfig(BaseConfigModule):
         super().from_json(cfg)
 
 class PEConfig(BaseConfigModule):
-    # Based on component_config/special_array.py:
-    # data_type(2) + transout_last_index(3) + bias_enable(1) = 6 bits
     FIELD_MAP = [
-        ("data_type", 2, lambda x: PEConfig.data_type_map()[x] if x is not None else 0),
-        ("index_end", 3),  # sa_pe_transout_last_index in hardware
+        ("data_type", 2, lambda x: PEConfig.data_type_map()[x] if x is not None else 0),  # sa_pe_data_type
+        ("transout_last_index", 3),  # sa_pe_transout_last_index in hardware
         ("bias_enable", 1),  # sa_pe_bias_enable (default 0)
     ]
     
@@ -38,16 +36,13 @@ class PEConfig(BaseConfigModule):
     
     def from_json(self, cfg: dict):
         super().from_json(cfg)
-        # Default bias_enable to 0 if not provided
-        if "bias_enable" not in self.values:
-            self.values["bias_enable"] = 0
 
 class OutportConfig(BaseConfigModule):
     # Based on component_config/special_array.py:
     # outport_major(1) + fp32to16(1) = 2 bits
     FIELD_MAP = [
-        ("mode", 1, lambda x: 0 if x == "col" else 1),  # sa_outport_major: col=0, row=1
-        ("fp32to16", 1, lambda x: 1 if str(x).lower() == "true" else 0),  # sa_outport_fp32to16
+        ("mode", 1, lambda x: 0 if x == "col" else (1 if x == "row" else x)),  # sa_outport_major: col=0, row=1, or pass through int
+        ("fp32to16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # sa_outport_fp32to16
     ]
     
     def from_json(self, cfg: dict):

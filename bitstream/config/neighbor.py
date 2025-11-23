@@ -9,10 +9,10 @@ class NeighborStreamConfig(BaseConfigModule):
         ("stream_id", 2),
         ("src_slice_sel", 1),
         ("dst_slice_sel", 1),
-        ("src_buf_ping_idx", 3),
-        ("src_buf_pong_idx", 3),
-        ("dst_buf_ping_idx", 3),
-        ("dst_buf_pong_idx", 3),
+        # ("src_buf_ping_idx", 3),
+        # ("src_buf_pong_idx", 3),
+        # ("dst_buf_ping_idx", 3),
+        # ("dst_buf_pong_idx", 3),
     ]
 
     def from_json(self, cfg: dict):
