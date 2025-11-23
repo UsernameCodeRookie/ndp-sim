@@ -80,9 +80,9 @@ class GAPEConfig(BaseConfigModule):
         ("inport2_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
         
         # Keep last indices (3 bits each, 9 bits total)
-        ("inport0_keep_last_index", 3),  # ga_pe_keep_last_index[0]
-        ("inport1_keep_last_index", 3),  # ga_pe_keep_last_index[1]
-        ("inport2_keep_last_index", 3),  # ga_pe_keep_last_index[2]
+        ("inport0_keep_last_index", 4),  # ga_pe_keep_last_index[0]
+        ("inport1_keep_last_index", 4),  # ga_pe_keep_last_index[1]
+        ("inport2_keep_last_index", 4),  # ga_pe_keep_last_index[2]
         
         # ALU opcode (2 bits)
         ("alu_opcode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.opcode_map().get(x, 0) if x is not None else 0)),

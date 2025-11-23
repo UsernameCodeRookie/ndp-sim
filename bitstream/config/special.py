@@ -8,7 +8,7 @@ class InportConfig(BaseConfigModule):
     FIELD_MAP = [
         ("enable", 1),  # sa_inport_enable
         ("pingpong_en", 1),  # sa_inport_pingpong_en
-        ("pingpong_last_index", 3),  # sa_inport_pingpong_last_index
+        ("pingpong_last_index", 4),  # sa_inport_pingpong_last_index
     ]
     
     def __init__(self, idx: int):
