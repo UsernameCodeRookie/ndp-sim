@@ -16,15 +16,15 @@ class ReadStreamEngineConfig(BaseConfigModule):
     FIELD_MAP = [
         # Memory AG fields
         ("mem_idx_mode", 6, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
-        ("mem_idx_keep_last_index", 9),
+        ("mem_idx_keep_last_index", 12),
         ("idx", 15),
         ("mem_idx_constant", 24),
         # Buffer AG fields
         ("buf_idx_mode", 2, lambda x: [StreamConfig.buffer_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
-        ("buf_idx_keep_last_index", 6),
+        ("buf_idx_keep_last_index", 8),
         # Stream fields
         ("ping_pong", 1),
-        ("pingpong_last_index", 3),
+        ("pingpong_last_index", 4),
         # Address and size fields
         ("base_addr", 29),
         ("idx_size", 24),
@@ -98,15 +98,15 @@ class WriteStreamEngineConfig(BaseConfigModule):
         ("_padding", 3),
         # Memory AG fields
         ("mem_idx_mode", 6, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
-        ("mem_idx_keep_last_index", 9),
+        ("mem_idx_keep_last_index", 12),
         ("idx", 15),
         ("mem_idx_constant", 24),
         # Buffer AG fields
         ("buf_idx_mode", 2, lambda x: [StreamConfig.buffer_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
-        ("buf_idx_keep_last_index", 6),
+        ("buf_idx_keep_last_index", 8),
         # Stream fields
         ("ping_pong", 1),
-        ("pingpong_last_index", 3),
+        ("pingpong_last_index", 4),
         # Address and size fields
         ("base_addr", 29),
         ("idx_size", 24),
