@@ -114,10 +114,14 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
         saved_connections = old_graph.connections.copy()
         saved_nodes = old_graph.nodes.copy()
         saved_metadata = old_graph.node_metadata.copy()
+        saved_assigned = old_graph.mapping.assigned_node.copy()  # Save pre-assigned nodes
+        saved_mapping = old_graph.mapping.node_to_resource.copy()  # Save mappings
         NodeGraph._instance = NodeGraph(seed=seed)
         NodeGraph.get().connections = saved_connections
         NodeGraph.get().nodes = saved_nodes
         NodeGraph.get().node_metadata = saved_metadata
+        NodeGraph.get().mapping.assigned_node = saved_assigned  # Restore pre-assigned
+        NodeGraph.get().mapping.node_to_resource = saved_mapping  # Restore mappings
     
     # Set direct mapping mode before allocation if requested
     if use_direct_mapping:
@@ -148,9 +152,9 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
                 NodeIndex._resolved = False
                 
                 # Reset random seed before reloading (for reproducibility)
-                if seed is not None:
-                    import random
-                    random.seed(seed)
+                # if seed is not None:
+                #     import random
+                #     random.seed(seed)
                 
                 # Reload modules
                 for module in modules:
@@ -162,10 +166,14 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
                     saved_connections = old_graph.connections.copy()
                     saved_nodes = old_graph.nodes.copy()
                     saved_metadata = old_graph.node_metadata.copy()
+                    saved_assigned = old_graph.mapping.assigned_node.copy()  # Save pre-assigned nodes
+                    saved_mapping = old_graph.mapping.node_to_resource.copy()  # Save existing mappings
                     NodeGraph._instance = NodeGraph(seed=seed)
                     NodeGraph.get().connections = saved_connections
                     NodeGraph.get().nodes = saved_nodes
                     NodeGraph.get().node_metadata = saved_metadata
+                    NodeGraph.get().mapping.assigned_node = saved_assigned  # Restore pre-assigned
+                    NodeGraph.get().mapping.node_to_resource = saved_mapping  # Restore mappings
                 NodeGraph.get().allocate_resources(only_connected_nodes=True)
             
             # Perform heuristic search and get the cost of the best mapping found

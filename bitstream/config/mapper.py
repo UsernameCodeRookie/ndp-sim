@@ -328,7 +328,7 @@ class Mapper:
                 src_row, src_col = divmod(src_idx, 8)
                 # For ROW_LC, it connects to specific LCs from both rows
                 # Mapping is flexible for now - just check reasonable distance
-                return abs(dst_idx - (src_col // 2)) <= 2
+                return abs(dst_idx - (src_col // 2)) <= 1
             return True
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
@@ -569,10 +569,11 @@ class Mapper:
         
         unique_nodes = [node for node in self.nodes if node in nodes_in_connections]
         print(f"[Simulated Annealing] Processing {len(unique_nodes)} nodes")
+        print(f"[Simulated Annealing] Nodes in connections: {sorted(nodes_in_connections)}")
         # Skip nodes that were explicitly assigned via assign_node() from the search, but keep them for cost checks
         assigned_nodes = [n for n in unique_nodes if n in set(self.assigned_node.keys())]
         if assigned_nodes:
-            print(f"[Simulated Annealing] Skipping {len(assigned_nodes)} pre-assigned nodes: {assigned_nodes}")
+            print(f"[Simulated Annealing] Protecting {len(assigned_nodes)} pre-assigned nodes from search")
         unique_search_nodes = [n for n in unique_nodes if n not in set(self.assigned_node.keys())]
         print(f"[Simulated Annealing] Nodes being searched: {len(unique_search_nodes)}")
         
@@ -607,19 +608,47 @@ class Mapper:
             full_mapping.update(mapping)
             for c in connections:
                 src, dst = c["src"], c["dst"]
-                if src.endswith("ROW_LC") or src.endswith("COL_LC"):
-                    src = src.split(".")[0]
-                if dst.endswith("ROW_LC") or dst.endswith("COL_LC"):
-                    dst = dst.split(".")[0]
+                # Use original node names directly - DO NOT strip suffixes
+                # The mapping table stores full node names like "GROUP0.ROW_LC"
+                
+                # CRITICAL: If either endpoint is missing, add a HUGE penalty
+                # This ensures all nodes must be properly allocated
+                if src not in full_mapping or dst not in full_mapping:
+                    # Missing mapping = severe violation
+                    missing_nodes = [n for n in [src, dst] if n not in full_mapping]
+                    cost += 10000.0 * len(missing_nodes)  # Extreme penalty
+                    continue
+                
+                src_res = full_mapping[src]
+                dst_res = full_mapping[dst]
+                src_type, src_idx = self.parse_resource(src_res)
+                dst_type, dst_idx = self.parse_resource(dst_res)
 
-                if src in full_mapping and dst in full_mapping:
-                    src_res = full_mapping[src]
-                    dst_res = full_mapping[dst]
-                    src_type, src_idx = self.parse_resource(src_res)
-                    dst_type, dst_idx = self.parse_resource(dst_res)
-
-                    for constraint in self.constraints:
-                        cost += constraint.penalty(src_type, src_idx, dst_type, dst_idx)
+                for constraint in self.constraints:
+                    cost += constraint.penalty(src_type, src_idx, dst_type, dst_idx)
+            
+            # ADDITIONAL CONSTRAINT: ROW_LC and COL_LC hardwired correspondence
+            # For each GROUP i: ROW_LC i and COL_LC i must map to same physical index
+            for node in full_mapping:
+                if ".ROW_LC" in node:
+                    group_prefix = node.split(".")[0]
+                    col_lc_node = f"{group_prefix}.COL_LC"
+                    if col_lc_node in full_mapping:
+                        row_lc_res = full_mapping[node]
+                        col_lc_res = full_mapping[col_lc_node]
+                        # Extract indices from resources
+                        if row_lc_res.startswith("ROW_LC"):
+                            row_idx = int(row_lc_res[6:])
+                        else:
+                            row_idx = -1
+                        if col_lc_res.startswith("COL_LC"):
+                            col_idx = int(col_lc_res[6:])
+                        else:
+                            col_idx = -1
+                        # They MUST have the same index
+                        if row_idx != col_idx:
+                            cost += 10000.0  # Extreme penalty for mismatch
+            
             return cost
         
         # Initialize with current allocation - allow randomized start to better explore
@@ -653,6 +682,29 @@ class Mapper:
                             m[n] = existing_res
                         else:
                             m[n] = shuffled.pop(0)
+            
+            # IMPORTANT: Verify all nodes in connections are mapped
+            unmapped = [n for n in nodes_in_connections if n not in m]
+            if unmapped:
+                print(f"[Warning] Unmapped nodes in initial mapping: {unmapped}")
+                # Force allocate unmapped nodes, BUT SKIP PRE-ASSIGNED NODES
+                for n in unmapped:
+                    # Skip pre-assigned nodes - they should already be in self.node_to_resource
+                    if n in self.assigned_node:
+                        m[n] = self.node_to_resource[n]
+                        print(f"[Info] Adding pre-assigned node {n} → {m[n]}")
+                        continue
+                    
+                    node_type = self.get_type(n)
+                    if node_type:
+                        pool = self.resource_pools.get(node_type, [])
+                        used = set(m.values())
+                        free_res = [r for r in pool if r not in used]
+                        if free_res:
+                            m[n] = free_res[0]
+                        else:
+                            print(f"[Error] No free resources for node {n} (type {node_type})")
+            
             return m
 
         # Use a randomized initial mapping to overcome initial bias of sequential allocation
@@ -687,14 +739,20 @@ class Mapper:
 
             if len(type_nodes) == 0:
                 continue
-
+            
+            # SAFETY CHECK: Ensure no pre-assigned nodes are in type_nodes
+            # Pre-assigned nodes should never be modified
+            type_nodes_filtered = [n for n in type_nodes if n not in self.assigned_node]
+            if not type_nodes_filtered:
+                continue  # Skip if all nodes in this type are pre-assigned
+            
             pool = self.resource_pools.get(res_type, [])
 
             # With some probability, choose between reassigning to unused resources, doing a repair move,
             # or swapping two nodes of the same type. repair_prob biases towards targeted repairs.
             r = random.random()
             if r < 0.4:
-                node = random.choice(type_nodes)
+                node = random.choice(type_nodes_filtered)
                 # Find resources not yet used in the current mapping
                 used_resources = set(current_mapping.values())
                 unused_resources = [r for r in pool if r not in used_resources]
@@ -709,9 +767,9 @@ class Mapper:
                         print(f"[Simulated Annealing] Reassigning {node} -> {new_res} (unused resource) at iter {iteration}")
                 else:
                     # Fallback to swap when no unused resources are available
-                    if len(type_nodes) < 2:
+                    if len(type_nodes_filtered) < 2:
                         continue
-                    node1, node2 = random.sample(type_nodes, 2)
+                    node1, node2 = random.sample(type_nodes_filtered, 2)
                     new_mapping = current_mapping.copy()
                     new_mapping[node1], new_mapping[node2] = new_mapping[node2], new_mapping[node1]
             elif r < 0.4 + repair_prob:
@@ -735,10 +793,7 @@ class Mapper:
                 violated = []
                 for conn in connections:
                     s, d = conn['src'], conn['dst']
-                    if s.endswith('ROW_LC') or s.endswith('COL_LC'):
-                        s = s.split('.')[0]
-                    if d.endswith('ROW_LC') or d.endswith('COL_LC'):
-                        d = d.split('.')[0]
+                    # Use original node names directly - DO NOT strip suffixes
                     p = _conn_penalty(s, d, current_mapping)
                     if p > 0:
                         violated.append((p, s, d))
@@ -769,9 +824,9 @@ class Mapper:
                     used = set(current_mapping.values())
                     if node is None:
                         # fallback to swapping if targeted repair isn't possible
-                        if len(type_nodes) < 2:
+                        if len(type_nodes_filtered) < 2:
                             continue
-                        node1, node2 = random.sample(type_nodes, 2)
+                        node1, node2 = random.sample(type_nodes_filtered, 2)
                         new_mapping = current_mapping.copy()
                         new_mapping[node1], new_mapping[node2] = new_mapping[node2], new_mapping[node1]
                         # proceed to evaluation below
@@ -803,9 +858,9 @@ class Mapper:
                     new_mapping[node1], new_mapping[node2] = new_mapping[node2], new_mapping[node1]
             else:
                 # Swap two nodes of the same type
-                if len(type_nodes) < 2:
+                if len(type_nodes_filtered) < 2:
                     continue
-                node1, node2 = random.sample(type_nodes, 2)
+                node1, node2 = random.sample(type_nodes_filtered, 2)
                 # Create new mapping by swapping
                 new_mapping = current_mapping.copy()
                 new_mapping[node1], new_mapping[node2] = new_mapping[node2], new_mapping[node1]
@@ -914,15 +969,9 @@ class Mapper:
             for c in connections:
                 src_orig, dst_orig = c["src"], c["dst"]
                 
-                # Try to find the mapping for the original node names first (with suffix)
-                # If not found, try without suffix for ROW_LC/COL_LC nodes
+                # Use original node names directly - they should be in best_mapping
                 src = src_orig
                 dst = dst_orig
-                
-                if src not in best_mapping and (src.endswith("ROW_LC") or src.endswith("COL_LC")):
-                    src = src.split(".")[0]
-                if dst not in best_mapping and (dst.endswith("ROW_LC") or dst.endswith("COL_LC")):
-                    dst = dst.split(".")[0]
                 
                 if src in best_mapping and dst in best_mapping:
                     src_res = best_mapping[src]
@@ -935,21 +984,16 @@ class Mapper:
                             print(f"  ✗ {src_orig} ({src_res}) -> {dst_orig} ({dst_res}): "
                                   f"{src_type}{src_idx} -> {dst_type}{dst_idx} violates {constraint.__class__.__name__}")
                             break
+                else:
+                    # Debug: print missing mappings
+                    if src not in best_mapping:
+                        print(f"  ⚠ Warning: Source node '{src}' not found in mapping")
+                    if dst not in best_mapping:
+                        print(f"  ⚠ Warning: Destination node '{dst}' not found in mapping")
         
-        # Post-processing: Enforce ROW_LC ↔ COL_LC correspondence
-        # When GROUP i.ROW_LC maps to ROW_LC j, force GROUP i.COL_LC to map to COL_LC j
-        for node in best_mapping:
-            if ".ROW_LC" in node:
-                group_prefix = node.split(".")[0]
-                col_lc_node = f"{group_prefix}.COL_LC"
-                row_lc_resource = best_mapping[node]  # e.g., "ROW_LC2"
-                if row_lc_resource.startswith("ROW_LC"):
-                    row_lc_idx = int(row_lc_resource[6:])
-                    col_lc_resource = f"COL_LC{row_lc_idx}"
-                    if col_lc_node in best_mapping:
-                        if best_mapping[col_lc_node] != col_lc_resource:
-                            print(f"[Post-processing] Fixing {col_lc_node}: {best_mapping[col_lc_node]} → {col_lc_resource}")
-                            best_mapping[col_lc_node] = col_lc_resource
+        # NOTE: Removed Post-processing that forcefully changed ROW_LC/COL_LC mappings
+        # The hard-wired correspondence constraint is now enforced during the search
+        # via the ROW_LC/COL_LC index matching in calculate_cost()
         
         self.node_to_resource = best_mapping
         self.last_mapping_cost = best_cost  # Store cost for later access
