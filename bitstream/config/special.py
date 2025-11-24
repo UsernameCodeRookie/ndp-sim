@@ -31,7 +31,8 @@ class PEConfig(BaseConfigModule):
     def data_type_map(cls):
         return {
             "int8": 0,
-            "fp16": 1,
+            "fp16": 2,
+            "bf16": 3,
         }
     
     def from_json(self, cfg: dict):
