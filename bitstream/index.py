@@ -148,9 +148,29 @@ class Connect:
         elif "COL_LC" in node_name:
             return "COL_LC"
         elif node_name.startswith("STREAM."):
+            # Need to check if it's READ_STREAM or WRITE_STREAM from mapper
+            # For now, return generic STREAM - will be resolved via mapper
             return "STREAM"
         else:
             return "UNKNOWN"
+    
+    @staticmethod
+    def _get_stream_type(node_name: str) -> str:
+        """Get the specific stream type (READ_STREAM or WRITE_STREAM) for a node."""
+        from bitstream.config.mapper import NodeGraph
+        graph = NodeGraph.get()
+        mapper = graph.mapping
+        
+        # Get the physical resource assigned to this stream node
+        physical_resource = mapper.get(node_name)
+        
+        if physical_resource:
+            if physical_resource.startswith("READ_STREAM"):
+                return "READ_STREAM"
+            elif physical_resource.startswith("WRITE_STREAM"):
+                return "WRITE_STREAM"
+        
+        return "STREAM"  # Fallback if not found
     
     @staticmethod
     def _get_lc_row(node_name: str) -> int:
@@ -296,31 +316,51 @@ class Connect:
             else:
                 return 0  # Invalid
         
-        # ==================== LC → AG ====================
-        # LC connects to AGs via specific patterns → indices 0-5 for row 0, 6-11 for row 1
+        # ==================== LC → STREAM (READ_STREAM or WRITE_STREAM) ====================
+        # LC connects to streams via specific patterns → indices 0-5 for row 0, 6-11 for row 1
         elif src_type == "LC" and dst_type == "STREAM":
             src_lc_idx = src_phys_id % 8
             src_row = self._get_lc_row(self.src.node_name)
-            ag_idx = dst_phys_id
+            stream_type = self._get_stream_type(self.dst.node_name)
             
-            # Valid LC range for each AG: [ag_idx*2-2, ag_idx*2-1, ag_idx*2, ag_idx*2+1, ag_idx*2+2, ag_idx*2+3]
-            lc_range_start = ag_idx * 2 - 2
-            lc_range = list(range(lc_range_start, ag_idx * 2 + 4))
+            # Map stream resources to logical stream indices
+            # READ_STREAM0-2 -> stream 0-2
+            # WRITE_STREAM0 -> stream 3
+            if stream_type == "READ_STREAM":
+                stream_logical_idx = dst_phys_id
+            elif stream_type == "WRITE_STREAM":
+                stream_logical_idx = 3  # WRITE_STREAM0 -> stream 3
+            else:
+                raise ValueError(f"Unknown stream type: {stream_type}")
+            
+            # Valid LC range for each stream: [stream_idx*2-2, stream_idx*2-1, stream_idx*2, stream_idx*2+1, stream_idx*2+2, stream_idx*2+3]
+            lc_range_start = stream_logical_idx * 2 - 2
+            lc_range = list(range(lc_range_start, stream_logical_idx * 2 + 4))
             
             if src_lc_idx in lc_range:
                 relative_idx = lc_range.index(src_lc_idx)
                 return relative_idx if src_row == 0 else relative_idx + 6
-            return 0 # Invalid
+            return 0  # Invalid
         
-        # ==================== PE → AG ====================
-        # PE connects to AGs via specific patterns → indices 12-17
+        # ==================== PE → STREAM (READ_STREAM or WRITE_STREAM) ====================
+        # PE connects to streams via specific patterns → indices 12-17
         elif src_type == "PE" and dst_type == "STREAM":
             src_pe_idx = src_phys_id
-            ag_idx = dst_phys_id
+            stream_type = self._get_stream_type(self.dst.node_name)
             
-            # Valid PE range: [ag_idx*2-2, ag_idx*2-1, ag_idx*2, ag_idx*2+1, ag_idx*2+2, ag_idx*2+3]
-            pe_range_start = ag_idx * 2 - 2
-            pe_range = list(range(pe_range_start, ag_idx * 2 + 4))
+            # Map stream resources to logical stream indices
+            # READ_STREAM0-2 -> stream 0-2
+            # WRITE_STREAM0 -> stream 3
+            if stream_type == "READ_STREAM":
+                stream_logical_idx = dst_phys_id
+            elif stream_type == "WRITE_STREAM":
+                stream_logical_idx = 3  # WRITE_STREAM0 -> stream 3
+            else:
+                raise ValueError(f"Unknown stream type: {stream_type}")
+            
+            # Valid PE range: [stream_idx*2-2, stream_idx*2-1, stream_idx*2, stream_idx*2+1, stream_idx*2+2, stream_idx*2+3]
+            pe_range_start = stream_logical_idx * 2 - 2
+            pe_range = list(range(pe_range_start, stream_logical_idx * 2 + 4))
             
             if src_pe_idx in pe_range:
                 relative_idx = pe_range.index(src_pe_idx)
