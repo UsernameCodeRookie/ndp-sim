@@ -159,6 +159,18 @@ class WriteStreamEngineConfig(BaseConfigModule):
             cfg = {**cfg, "idx": idx_list}
         
         super().from_json(cfg)
+        
+        idx_size : list = cfg.get("idx_size", [])
+        
+        dim_size = [0, 0, 0]
+        for i in range(3):
+            dim_size[i] = idx_size[i] + 1 if idx_size[i] is not None else 1
+        dim0 = dim_size[0]
+        dim1 = dim_size[1] * dim0
+        dim2 = dim_size[2] * dim1
+        
+        self.values["total_size"] = dim2
+        self.values["idx_size_log"] = [int(log2(dim0)), int(log2(dim1)), 0]
 
 
 class StreamConfig(BaseConfigModule):
