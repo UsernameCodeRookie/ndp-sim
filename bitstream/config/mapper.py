@@ -292,13 +292,7 @@ class Mapper:
                     # LC in row 0 cannot connect to row 1 LCs
                     return False
                 
-                # Same row: allowed distance is 1 or 2
-                if src_row == dst_row:
-                    return abs(dst_col - src_col) in [1, 2]
-                # Different rows: src can connect to dst row's positions: col, col-2, col-1, col+1, col+2
-                elif abs(src_row - dst_row) == 1:
-                    return abs(dst_col - src_col) <= 2
-                return False
+                return abs(dst_col - src_col) <= 2
             return True
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
@@ -308,12 +302,12 @@ class Mapper:
                 src_row, src_col = divmod(src_idx, 8)
                 dst_row, dst_col = divmod(dst_idx, 8)
                 
-                # if dst_row == 0 and src_row == 1:
-                #     # LC in row 0 cannot connect to row 1 LCs
-                #     return 100.0  # Extreme penalty for invalid connection
+                if dst_row == 0 and src_row == 1:
+                    # LC in row 0 cannot connect to row 1 LCs
+                    return 100.0  # Extreme penalty for invalid connection
                 
                 # Penalty based on distance
-                distance = abs(src_row - dst_row) * 8 + abs(src_col - dst_col)
+                distance = abs(src_col - dst_col)
                 return float(distance)
             return 0.0
         
@@ -362,7 +356,7 @@ class Mapper:
                 return float(d)
             return 0.0
 
-    class PEtoLCConstraint(Constraint):
+    class LCtoPEConstraint(Constraint):
         """PE i ↔ LC j constraint with strict enforcement:
         
         Each PE i can only connect to row 0 LCs within column distance ≤1:
@@ -375,42 +369,21 @@ class Mapper:
         Handles both PE→LC and LC→PE directions.
         """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
-            # Handle PE → LC direction
-            if src_type == "PE" and dst_type == "LC":
-                dst_row, dst_col = divmod(dst_idx, 8)
-                # PE can ONLY connect to first row LCs
-                if dst_row != 0:
-                    return False
-                # Must be within distance 1 of the PE column
-                return abs(dst_col - src_idx) <= 1
-            # Handle LC → PE direction (reverse: src=LC, dst=PE)
-            elif src_type == "LC" and dst_type == "PE":
+            if src_type == "LC" and dst_type == "PE":
                 src_row, src_col = divmod(src_idx, 8)
                 # LC in row 1 cannot connect to any PE
-                if src_row != 0:
-                    return False
+                # if src_row != 0:
+                #     return False
                 # Must be within distance 1 of the PE column (PE index = column for now)
                 return abs(src_col - dst_idx) <= 1
             return True
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
-            # Handle PE → LC direction
-            if src_type == "PE" and dst_type == "LC":
-                dst_row, dst_col = divmod(dst_idx, 8)
-                # VERY HIGH penalty for second row (should never happen)
-                if dst_row != 0:
-                    return 100.0  # Extreme penalty to disallow second row connections
-                # Penalty for distance within same row
-                d = abs(dst_col - src_idx)
-                if d <= 1:
-                    return 0.0
-                return float(d)
-            # Handle LC → PE direction (reverse: src=LC, dst=PE)
-            elif src_type == "LC" and dst_type == "PE":
+            if src_type == "LC" and dst_type == "PE":
                 src_row, src_col = divmod(src_idx, 8)
                 # VERY HIGH penalty for second row LC
-                if src_row != 0:
-                    return 100.0  # Extreme penalty to disallow second row connections
+                # if src_row != 0:
+                #     return 100.0  # Extreme penalty to disallow second row connections
                 # Penalty for distance within row 0
                 d = abs(src_col - dst_idx)
                 if d <= 1:
@@ -552,7 +525,7 @@ class Mapper:
             self.LCtoLCConstraint(),
             self.LCtoROWLCConstraint(),
             self.LCtoStreamConstraint(),
-            self.PEtoLCConstraint(),
+            self.LCtoPEConstraint(),
             self.PEtoPEConstraint(),
             self.PEtoStreamConstraint(),
             self.LCtoStreamConstraint(),
