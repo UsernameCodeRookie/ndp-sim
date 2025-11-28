@@ -177,8 +177,13 @@ class Connect:
         """Get which row an LC belongs to (0=first row, 1=second row)."""
         if node_name.startswith("DRAM_LC.LC"):
             # Extract the number from "DRAM_LC.LC<num>"
-            lc_num = int(node_name.split(".")[-1][2:])
-            return 0 if lc_num < 8 else 1
+            graph = NodeGraph.get()
+            mapper = graph.mapping
+            physical_resource = mapper.get(node_name) # LCxx
+            
+            lc_num = physical_resource[len("LC"):] if physical_resource else "0"
+            
+            return 0 if int(lc_num) < 8 else 1
         return -1
     
     def _calculate_relative_index(self) -> int:
@@ -243,7 +248,7 @@ class Connect:
             else:
                 # Different row: corresponding LC and neighbors from other row → indices 0-4
                 # Map: [i-2, i-1, i, i+1, i+2] → [0, 1, 2, 3, 4]
-                diff = dst_lc_idx - src_lc_idx
+                diff = src_lc_idx - dst_lc_idx
                 if diff == -2:
                     return 0
                 elif diff == -1:
