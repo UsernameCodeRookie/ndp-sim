@@ -135,10 +135,10 @@ class GAPEConfig(BaseConfigModule):
             "constant": 3,
         }
     
-    def __init__(self, pe_name: str):
+    def __init__(self, name: str):
         """Initialize with PE name (e.g., 'PE00', 'PE12')"""
         super().__init__()
-        self.pe_name = pe_name
+        self.name = name
         self.id: Optional[NodeIndex] = None
     
     def set_empty(self):
@@ -153,8 +153,8 @@ class GAPEConfig(BaseConfigModule):
         cfg = cfg.get("general_array", cfg)
         cfg = cfg.get("PE_array", cfg)
         
-        if self.pe_name in cfg:
-            entry = cfg[self.pe_name]
+        if self.name in cfg:
+            entry = cfg[self.name]
             
             # Check if this PE has configuration data
             if not entry or ('alu_opcode' not in entry and 'inport0' not in entry):
@@ -162,7 +162,7 @@ class GAPEConfig(BaseConfigModule):
                 self.set_empty()
             else:
                 # Assign NodeIndex only if PE has data
-                # self.id = NodeIndex(f'GA_PE.{self.pe_name}')
+                self.id = NodeIndex(f'GA_PE.{self.name}')
                 
                 # Parse JSON format into FIELD_MAP format
                 self.values['alu_opcode'] = entry.get('alu_opcode', 0)

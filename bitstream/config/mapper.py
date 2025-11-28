@@ -71,6 +71,10 @@ class Mapper:
             # Support both "COL_LC.COL_LC{idx}" and "GROUP{n}.COL_LC"
             return "COL_LC"
         elif "PE" in node and ".PE" in node:
+            
+            if "GA_PE" in node:
+                return None  # General Array PE, not LC PE
+            
             return "PE"
         elif node.startswith("STREAM"):
             # Stream type is determined during allocation based on JSON mode
