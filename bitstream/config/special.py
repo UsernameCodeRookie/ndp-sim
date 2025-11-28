@@ -22,7 +22,7 @@ class InportConfig(BaseConfigModule):
 
 class PEConfig(BaseConfigModule):
     FIELD_MAP = [
-        ("data_type", 2, lambda x: PEConfig.data_type_map()[x] if x is not None else 0),  # sa_pe_data_type
+        ("data_type", 2, lambda x: PEConfig.data_type_map().get(x, x) if isinstance(x, str) else (x if x is not None else 0)),  # sa_pe_data_type
         ("transout_last_index", 4),  # sa_pe_transout_last_index in hardware
         ("bias_enable", 1),  # sa_pe_bias_enable (default 0)
     ]

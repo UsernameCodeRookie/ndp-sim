@@ -4,14 +4,10 @@ class NeighborStreamConfig(BaseConfigModule):
     """Neighbor-to-neighbor stream config."""
 
     FIELD_MAP = [
-        ("mem_loop", 4),
-        ("ping_pong", 1),
         ("src_slice_sel", 1),
         ("dst_slice_sel", 1),
-        # ("src_buf_ping_idx", 3),
-        # ("src_buf_pong_idx", 3),
-        # ("dst_buf_ping_idx", 3),
-        # ("dst_buf_pong_idx", 3),
+        ("ping_pong", 1),
+        ("mem_loop", 4),
     ]
 
     def from_json(self, cfg: dict):
