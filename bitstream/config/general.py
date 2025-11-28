@@ -33,13 +33,14 @@ class GAInportConfig(BaseConfigModule):
     
     def from_json(self, cfg: dict):
         """Load from general_array.inport.inportX"""
+        cfg = cfg.get("general_array", cfg)
         cfg = cfg.get("inport", cfg)
         key = f"inport{self.inport_idx}"
         
         if key in cfg:
             inport_cfg = cfg[key]
             if inport_cfg:
-                self.id = NodeIndex(f"GA_INPORT.{key}")
+                # self.id = NodeIndex(f"GA_INPORT.{key}")
                 super().from_json(inport_cfg)
             else:
                 self.set_empty()
@@ -72,9 +73,10 @@ class GAOutportConfig(BaseConfigModule):
     
     def from_json(self, cfg: dict):
         """Load from general_array.outport"""
+        cfg = cfg.get("general_array", cfg)
         cfg = cfg.get("outport", cfg)
         if cfg:
-            self.id = NodeIndex("GA_OUTPORT")
+            # self.id = NodeIndex("GA_OUTPORT")
             super().from_json(cfg)
         else:
             self.set_empty()
@@ -148,6 +150,7 @@ class GAPEConfig(BaseConfigModule):
     
     def from_json(self, cfg: dict):
         """Fill this PE config from JSON by looking up PE by name"""
+        cfg = cfg.get("general_array", cfg)
         cfg = cfg.get("PE_array", cfg)
         
         if self.pe_name in cfg:
@@ -159,7 +162,7 @@ class GAPEConfig(BaseConfigModule):
                 self.set_empty()
             else:
                 # Assign NodeIndex only if PE has data
-                self.id = NodeIndex(f'GA_PE.{self.pe_name}')
+                # self.id = NodeIndex(f'GA_PE.{self.pe_name}')
                 
                 # Parse JSON format into FIELD_MAP format
                 self.values['alu_opcode'] = entry.get('alu_opcode', 0)
