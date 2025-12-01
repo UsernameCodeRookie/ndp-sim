@@ -32,22 +32,29 @@ class ModuleID(IntEnum):
 MODULE_CFG_CHUNK_SIZES = [1, 1, 1, 2, 9, 6, 1, 1, 1, 1, 1, 4]
 MODULE_ID_TO_MASK = [0, 0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 3]
 
-def split_config(config):
-    """Split configuration into chunks of size determined by total length.
-    The chunk size is the largest divisor of the total length that is <= 63.
-    This ensures that we can fit the configuration into 64-bit words.
-    If the total length is 0, return an empty list.
+def split_config(config, module_id):
+    """Split configuration into chunks based on MODULE_CFG_CHUNK_SIZES.
+    
+    Args:
+        config: Binary string to split
+        module_id: ModuleID enum value to look up number of chunks in MODULE_CFG_CHUNK_SIZES
+    
+    Returns:
+        List of config chunks, where number of chunks = MODULE_CFG_CHUNK_SIZES[module_id]
     """
-    total_len = len(config)
-    if total_len == 0:
+    if not config or len(config) == 0:
         return []
-
-    for i in range(min(63, total_len), 0, -1):
-        if total_len % i == 0:
-            chunk_size = i
-            break
-
-    chunks = [config[i:i + chunk_size] for i in range(0, total_len, chunk_size)]
+    
+    num_chunks = MODULE_CFG_CHUNK_SIZES[module_id]
+    if num_chunks <= 0:
+        return []
+    
+    chunk_size = len(config) // num_chunks
+    if chunk_size == 0:
+        # If config is too small to divide into num_chunks, treat as single chunk
+        return [config]
+    
+    chunks = [config[i:i + chunk_size] for i in range(0, len(config), chunk_size)]
     return chunks
 
 def bitstring(bits):
@@ -274,7 +281,7 @@ def generate_bitstream(entries, config_mask):
         if not config or set(config) == {'0'}:
             bitstream += '0' * MODULE_CFG_CHUNK_SIZES[mid]
         else:
-            for chunk in split_config(config):
+            for chunk in split_config(config, mid):
                 bitstream += '1' + chunk
     
     # Pad to 64-bit boundary
@@ -317,13 +324,13 @@ def write_bitstream(entries, config_mask, output_file='./data/parsed_bitstream.t
         module_groups[mid].append(config)
     
     # Helper function to get output lines for a single config entry
-    def get_config_output_lines(config):
+    def get_config_output_lines(config, module_id):
         """Returns list of output lines for a config entry."""
         if not config or set(config) == {'0'}:
             return ["0"]
         else:
             lines = []
-            for chunk in split_config(config):
+            for chunk in split_config(config, module_id):
                 lines.append(f"1 {chunk}")
             return lines
     
@@ -341,7 +348,7 @@ def write_bitstream(entries, config_mask, output_file='./data/parsed_bitstream.t
             # Calculate max number of output lines for this module type
             max_lines = 0
             for config in configs:
-                lines = get_config_output_lines(config)
+                lines = get_config_output_lines(config, mid)
                 max_lines = max(max_lines, len(lines))
                 
             print(f"Processing {module_name} with {len(configs)} entries, max lines: {max_lines}, config bits: {max(len(c) for c in configs if c)}")
@@ -351,7 +358,7 @@ def write_bitstream(entries, config_mask, output_file='./data/parsed_bitstream.t
             
             # Write each configuration entry with padding
             for config in configs:
-                lines = get_config_output_lines(config)
+                lines = get_config_output_lines(config, mid)
                 
                 # Write the actual bitstream lines
                 for line in lines:
@@ -519,7 +526,7 @@ def compare_bitstreams(generated_info, reference_file=None):
                 ref_pos += MODULE_CFG_CHUNK_SIZES[mid]
             else:
                 # Has data
-                chunks = split_config(config)
+                chunks = split_config(config, mid)
                 print(f"\n  [{idx}] {len(config)} bits -> {len(chunks)} chunks")
                 
                 all_match = True
