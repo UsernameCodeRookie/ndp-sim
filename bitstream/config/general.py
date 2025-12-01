@@ -100,18 +100,19 @@ class GAPEConfig(BaseConfigModule):
         ("inport2_src_id", 3),
         ("inport2_keep_last_index", 4),
         ("inport2_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
-        ("constant2", 36),
         
         # Port 1: src_id(3) + keep_last_index(4) + mode(2) + constant(32)
         ("inport1_src_id", 3),
         ("inport1_keep_last_index", 4),
         ("inport1_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
-        ("constant1", 36),
         
         # Port 0: src_id(3) + keep_last_index(4) + mode(2) + constant(32)
         ("inport0_src_id", 3),
         ("inport0_keep_last_index", 4),
         ("inport0_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
+        
+        ("constant2", 36),
+        ("constant1", 36),
         ("constant0", 36),
     ]
     
