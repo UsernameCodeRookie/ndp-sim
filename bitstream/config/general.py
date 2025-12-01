@@ -92,28 +92,27 @@ class GAPEConfig(BaseConfigModule):
     Total: 41*3 + 3 = 126 bits
     """
     FIELD_MAP = [
-        ("__padding", 2),  # Padding to align to byte boundary
-        
         # ALU opcode (3 bits)
-        ("alu_opcode", 3, lambda x: x if isinstance(x, int) else (GAPEConfig.opcode_map().get(x, 0) if x is not None else 0)),
+        ("alu_opcode", 5, lambda x: x if isinstance(x, int) else (GAPEConfig.opcode_map().get(x, 0) if x is not None else 0)),
+        ("transout_last_index", 4),
         
         # Port 2: src_id(3) + keep_last_index(4) + mode(2) + constant(32)
         ("inport2_src_id", 3),
         ("inport2_keep_last_index", 4),
         ("inport2_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
-        ("constant2", 32),
+        ("constant2", 36),
         
         # Port 1: src_id(3) + keep_last_index(4) + mode(2) + constant(32)
         ("inport1_src_id", 3),
         ("inport1_keep_last_index", 4),
         ("inport1_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
-        ("constant1", 32),
+        ("constant1", 36),
         
         # Port 0: src_id(3) + keep_last_index(4) + mode(2) + constant(32)
         ("inport0_src_id", 3),
         ("inport0_keep_last_index", 4),
         ("inport0_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
-        ("constant0", 32),
+        ("constant0", 36),
     ]
     
     @staticmethod
@@ -166,6 +165,7 @@ class GAPEConfig(BaseConfigModule):
                 
                 # Parse JSON format into FIELD_MAP format
                 self.values['alu_opcode'] = entry.get('alu_opcode', 0)
+                self.values['transout_last_index'] = entry.get('transout_last_index', 1)
                 
                 # Extract fields for each port (inport2, inport1, inport0)
                 for i in range(3):
