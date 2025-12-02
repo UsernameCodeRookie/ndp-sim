@@ -7,7 +7,7 @@ class NeighborStreamConfig(BaseConfigModule):
         ("src_slice_sel", 1),
         ("dst_slice_sel", 1),
         ("ping_pong", 1),
-        ("mem_loop", 4, lambda x : x-1),
+        ("mem_loop", 4, lambda x : x-1 if isinstance(x, int) and x > 0 else x),
     ]
 
     def from_json(self, cfg: dict):
