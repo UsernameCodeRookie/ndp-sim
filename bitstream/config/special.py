@@ -19,6 +19,15 @@ class InportConfig(BaseConfigModule):
         key = f"inport{self.idx}"
         cfg = cfg.get(key, cfg)
         super().from_json(cfg)
+        
+class InportNeighborConfig(BaseConfigModule):
+    # Extends InportConfig with neighbor-specific fields
+    FIELD_MAP = [
+        ("nbr_enable", 1),  # sa_inport_nbr_enable
+    ]
+    
+    def from_json(self, cfg: dict):
+        super().from_json(cfg)
 
 class PEConfig(BaseConfigModule):
     FIELD_MAP = [
@@ -57,9 +66,10 @@ class SpecialArrayConfig(BaseConfigModule):
     - inport2 (5 bits)
     - inport1 (5 bits)
     - inport0 (5 bits)
+    - inport neighbor (1 bit)
     - PE config (6 bits)
     - outport (2 bits)
-    Total: 23 bits
+    Total: 24 bits
     """
 
     def __init__(self):
@@ -69,6 +79,7 @@ class SpecialArrayConfig(BaseConfigModule):
             InportConfig(2),  # inport2 first (high bits)
             InportConfig(1),  # inport1
             InportConfig(0),  # inport0
+            InportNeighborConfig(),  # inport neighbor
             PEConfig(),       # PE config
             OutportConfig(),  # outport last (low bits)
         ]

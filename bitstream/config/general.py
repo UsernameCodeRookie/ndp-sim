@@ -15,6 +15,7 @@ class GAInportConfig(BaseConfigModule):
         ("src_id", 3),  # ga_inport_src_id
         ("pingpong_en", 1),  # ga_inport_pingpong_en
         ("pingpong_last_index", 4),  # ga_inport_pingpong_last_index
+        ("nbr_enable", 1),  # ga_inport_nbr_enable
         ("fp16to32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_fp16to32
         ("int32tofp", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_int32tofp
     ]
