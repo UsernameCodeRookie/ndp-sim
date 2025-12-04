@@ -107,7 +107,7 @@ class WriteStreamEngineConfig(BaseConfigModule):
     """
     
     FIELD_MAP = [
-        ("_padding", 3),
+        ("_padding", 1),
         # Memory AG fields
         ("mem_idx_mode", 6, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
         ("mem_idx_keep_last_index", 12),
@@ -127,6 +127,9 @@ class WriteStreamEngineConfig(BaseConfigModule):
         ("dim_stride", 60),
         # Remapping
         ("address_remapping", 64, lambda lst: lst[::-1] if isinstance(lst, list) else StreamConfig.address_remapping_default),
+        # Tailing (branch) fields
+        ("tailing_enable", 3),
+        ("idx_tailing_range", 72),
         # Spatial fields
         ("buf_spatial_stride", 80, lambda lst: lst[::-1] if isinstance(lst, list) else None),
         ("buf_spatial_size", 5),
@@ -147,6 +150,10 @@ class WriteStreamEngineConfig(BaseConfigModule):
     def from_json(self, cfg: dict):
         """Load write stream configuration from JSON."""
         self.id = NodeIndex(f"STREAM.{self.stream_key}", stream_type="write")
+        
+        if "idx_tailing_range" in cfg and isinstance(cfg["idx_tailing_range"], dict):
+            tailing_range = cfg["idx_tailing_range"]
+            cfg = {**cfg, "idx_tailing_range": tailing_range.get("low", []) + tailing_range.get("up", [])}
         
         # Pre-process idx field to convert string node names to Connect objects
         if "idx" in cfg and isinstance(cfg["idx"], list):
