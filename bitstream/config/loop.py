@@ -10,9 +10,9 @@ class DramLoopControlConfig(BaseConfigModule):
     FIELD_MAP = [
         ("src_id", 4, lambda self, x: Connect(x, self.id) if x else None),  # source node ID, resolved later
         ("outmost_loop", 1),
-        ("start", 13),  # initial_value in config
-        ("stride", 13),
-        ("end", 13),
+        ("start", 17),  # initial_value in config
+        ("stride", 17),
+        ("end", 17),
         ("last_index", 4),
     ]
 
@@ -68,7 +68,6 @@ class LCPEConfig(BaseConfigModule):
     # Field order matches iga_pe.py: ALU_OPCODE | PORT2(SRC,KEEP,MODE) | PORT1 | PORT0 | CONST2 | CONST1 | CONST0
     # Total: 2 + 8*3 + 12*3 = 62 bits
     FIELD_MAP = [
-        ("_padding", 4),  # Padding to align to 4 bits (not used)
         # ALU opcode (2 bits)
         ("opcode", 2, lambda x: LCPEConfig.opcode_map()[x] if x is not None else 0),
         
@@ -86,11 +85,12 @@ class LCPEConfig(BaseConfigModule):
         ("inport0_src", 4),
         ("inport0_last_index", 4),
         ("inport0_mode", 2, lambda x: LCPEConfig.inport_mode_map()[x] if x is not None else 0),
+        ("_padding", 16),
         
         # Constants: 3 × 12 bits = 36 bits
-        ("constant2", 12),
-        ("constant1", 12),
-        ("constant0", 12),
+        ("constant2", 16),
+        ("constant1", 16),
+        ("constant0", 16),
     ]
 
     def __init__(self, idx: int):
