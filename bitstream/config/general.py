@@ -56,7 +56,7 @@ class GAOutportConfig(BaseConfigModule):
     """
     FIELD_MAP = [
         ("mask", 8),  # ga_outport_mask
-        ("src_id", 3),  # ga_outport_src_id
+        ("src_id", 1),  # ga_outport_src_id
         ("fp32to16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_fp32to16
         ("int32to8", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_int32to8
     ]
