@@ -12,7 +12,7 @@ class GAInportConfig(BaseConfigModule):
     """
     FIELD_MAP = [
         ("mask", 8),  # ga_inport_mask
-        ("src_id", 3),  # ga_inport_src_id
+        ("src_id", 1),  # ga_inport_src_id
         ("pingpong_en", 1),  # ga_inport_pingpong_en
         ("pingpong_last_index", 4),  # ga_inport_pingpong_last_index
         ("nbr_enable", 1),  # ga_inport_nbr_enable
