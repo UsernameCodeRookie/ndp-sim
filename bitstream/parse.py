@@ -342,6 +342,10 @@ def write_bitstream(entries, config_mask, output_file='./data/parsed_bitstream.t
     with open(output_file, 'w') as f:
         # Process each module type in order
         for mid in sorted(module_groups.keys()):
+            # Skip module if config_mask is 0
+            if not config_mask[MODULE_ID_TO_MASK[mid]]:
+                continue
+            
             configs = module_groups[mid]
             module_name = module_names.get(mid, f"module_{mid}")
             
