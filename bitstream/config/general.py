@@ -127,8 +127,10 @@ class GAPEConfig(BaseConfigModule):
         """Map string opcode names to integers. Also accepts integers directly."""
         return {
             "add": 0,
-            "mul": 1,
-            "mac": 2,
+            "sub": 1,
+            "mul": 2,
+            "max": 3,
+            "sum": 4,
         }
     
     @staticmethod
