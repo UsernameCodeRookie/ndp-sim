@@ -14,7 +14,7 @@ class BufferConfig(BaseConfigModule):
         ("buffer_life_time", 2, lambda x : x-1),
         ("mode", 1),
         # "mask": List[int] -> Bit integer
-        ("mask", 8, lambda x: int("".join(str(v) for v in x), 2) if isinstance(x, list) else x),
+        ("mask", 8, lambda x: int("".join(str(v) for v in x[::-1]), 2) if isinstance(x, list) else x),
     ]
 
     def __init__(self, idx: int):
