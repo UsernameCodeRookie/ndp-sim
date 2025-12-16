@@ -41,7 +41,7 @@ class ReadStreamEngineConfig(BaseConfigModule):
         ("tailing_enable", 3),
         ("idx_tailing_range", 72),
         # Spatial fields
-        ("buf_spatial_stride", 80, lambda lst: lst[::-1] if isinstance(lst, list) else None),
+        ("buf_spatial_stride", 80, lambda lst: StreamConfig.pad_stride_list(lst)),
         ("buf_spatial_size", 5),
         ("buf_full_last_index", 4),
     ]
@@ -131,7 +131,7 @@ class WriteStreamEngineConfig(BaseConfigModule):
         ("tailing_enable", 3),
         ("idx_tailing_range", 72),
         # Spatial fields
-        ("buf_spatial_stride", 80, lambda lst: lst[::-1] if isinstance(lst, list) else None),
+        ("buf_spatial_stride", 80, lambda lst: StreamConfig.pad_stride_list(lst)),
         ("buf_spatial_size", 5),
     ]
     
@@ -306,6 +306,18 @@ class StreamConfig(BaseConfigModule):
         if self.submodules:
             return self.submodules[0].to_bits()
         return []
+    
+    @staticmethod
+    def pad_stride_list(lst):
+        """Reverse list and pad with leading zeros to ensure length 16."""
+        if not isinstance(lst, list):
+            return None
+        reversed_lst = lst[::-1]
+        if len(reversed_lst) < 16:
+            # Pad with leading zeros until 16 elements
+            padding = [0] * (16 - len(reversed_lst))
+            reversed_lst = padding + reversed_lst
+        return reversed_lst
     
     @staticmethod
     def inport_mode_map():
