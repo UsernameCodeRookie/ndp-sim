@@ -181,8 +181,11 @@ class GAPEConfig(BaseConfigModule):
                 for i in range(3):
                     port = entry.get(f'inport{i}', {})
                     src_id = port.get('src_id')
+                    # Special case: if src_id is the string "buffer", set to 0
+                    if isinstance(src_id, str) and src_id.lower() == "buffer":
+                        self.values[f'inport{i}_src_id'] = 0
                     # If src_id is a string (node name), create a Connect object
-                    if isinstance(src_id, str):
+                    elif isinstance(src_id, str):
                         self.values[f'inport{i}_src_id'] = Connect(src_id, self.id)
                     elif src_id is None:
                         self.values[f'inport{i}_src_id'] = 0

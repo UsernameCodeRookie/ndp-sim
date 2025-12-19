@@ -143,6 +143,8 @@ class Connect:
             return "LC"
         elif node_name.startswith("LC_PE.PE"):
             return "PE"
+        elif node_name.startswith("GA_PE.PE"):
+            return "PE"
         elif "ROW_LC" in node_name:
             return "ROW_LC"
         elif "COL_LC" in node_name:
@@ -185,6 +187,71 @@ class Connect:
             
             return 0 if int(lc_num) < 8 else 1
         return -1
+    
+    @staticmethod
+    def _get_pe_position(node_name: str) -> tuple:
+        """Extract GA_PE row and column from node name (e.g., 'GA_PE.PE12' -> (1, 2)).
+        
+        Only applies to GA_PE, not LC_PE.
+        """
+        if node_name.startswith("GA_PE.PE"):
+            pe_suffix = node_name[len("GA_PE."):]  # "PE12"
+            if pe_suffix.startswith("PE"):
+                pe_nums = pe_suffix[2:]  # "12"
+                try:
+                    if len(pe_nums) == 2:
+                        row = int(pe_nums[0])
+                        col = int(pe_nums[1])
+                        return (row, col)
+                    elif len(pe_nums) == 4:
+                        row = int(pe_nums[:2])
+                        col = int(pe_nums[2:])
+                        return (row, col)
+                except ValueError:
+                    pass
+        return None
+    
+    def _calculate_pe_src_id(self, src_pe_pos: tuple, dst_pe_pos: tuple) -> int:
+        """
+        Calculate src_id for PE→PE connection based on relative position.
+        
+        The configuration specifies: current_pe.inport0 = src_pe_name
+        This means: src_pe sends data to current_pe (which is dst_pe)
+        
+        We need to calculate src_id based on src_pe's position relative to dst_pe's position:
+        For dst_pe at (i, j) receiving from src_pe:
+        - src at (i-1, j-1) -> src_id 1
+        - src at (i, j-1)   -> src_id 2
+        - src at (i+1, j-1) -> src_id 3
+        - src at (i-1, j)   -> src_id 4
+        - src at (i+1, j)   -> src_id 5
+        """
+        if not src_pe_pos or not dst_pe_pos:
+            return 0
+        
+        src_row, src_col = src_pe_pos
+        dst_row, dst_col = dst_pe_pos
+        
+        # Calculate relative position: src relative to dst
+        row_diff = src_row - dst_row
+        col_diff = src_col - dst_col
+        
+        # Column j-1 (previous column)
+        if col_diff == -1:
+            if row_diff == -1:
+                return 1  # (i-1, j-1)
+            elif row_diff == 0:
+                return 2  # (i, j-1)
+            elif row_diff == 1:
+                return 3  # (i+1, j-1)
+        # Same column j
+        elif col_diff == 0:
+            if row_diff == -1:
+                return 4  # (i-1, j)
+            elif row_diff == 1:
+                return 5  # (i+1, j)
+        
+        return 0  # Default for invalid positions
     
     def _calculate_relative_index(self) -> int:
         """
@@ -307,19 +374,27 @@ class Connect:
                 return 0  # Invalid
         
         # ==================== PE → PE ====================
-        # Same row PE connections: left 2, right 2 → indices 6-9
+        # GA_PE: 2D grid-based src_id calculation based on relative position
+        # LC_PE: Same row PE connections: left 2, right 2 → indices 6-9
         elif src_type == "PE" and dst_type == "PE":
-            diff = src_phys_id - dst_phys_id
-            if diff == -2:
-                return 6  # left 2
-            elif diff == -1:
-                return 7  # left 1
-            elif diff == 1:
-                return 8  # right 1
-            elif diff == 2:
-                return 9  # right 2
+            # Check if this is GA_PE (2D grid) or LC_PE (1D row)
+            if self.src.node_name.startswith("GA_PE.") and self.dst.node_name.startswith("GA_PE."):
+                src_pe_pos = self._get_pe_position(self.src.node_name)
+                dst_pe_pos = self._get_pe_position(self.dst.node_name)
+                return self._calculate_pe_src_id(src_pe_pos, dst_pe_pos)
             else:
-                return 0  # Invalid
+                # LC_PE: Use physical ID for 1D linear calculation
+                diff = src_phys_id - dst_phys_id
+                if diff == -2:
+                    return 6  # left 2
+                elif diff == -1:
+                    return 7  # left 1
+                elif diff == 1:
+                    return 8  # right 1
+                elif diff == 2:
+                    return 9  # right 2
+                else:
+                    return 0  # Invalid
         
         # ==================== LC → STREAM (READ_STREAM or WRITE_STREAM) ====================
         # LC connects to streams via specific patterns → indices 0-5 for row 0, 6-11 for row 1
