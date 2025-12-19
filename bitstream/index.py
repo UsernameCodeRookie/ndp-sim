@@ -200,12 +200,12 @@ class Connect:
                 pe_nums = pe_suffix[2:]  # "12"
                 try:
                     if len(pe_nums) == 2:
-                        row = int(pe_nums[0])
-                        col = int(pe_nums[1])
+                        col = int(pe_nums[0])
+                        row = int(pe_nums[1])
                         return (row, col)
                     elif len(pe_nums) == 4:
-                        row = int(pe_nums[:2])
-                        col = int(pe_nums[2:])
+                        col = int(pe_nums[:2])
+                        row = int(pe_nums[2:])
                         return (row, col)
                 except ValueError:
                     pass
