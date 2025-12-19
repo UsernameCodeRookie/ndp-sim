@@ -131,6 +131,7 @@ class GAPEConfig(BaseConfigModule):
             "mul": 2,
             "max": 3,
             "sum": 4,
+            "rec": 17,
         }
     
     @staticmethod
