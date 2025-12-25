@@ -15,6 +15,7 @@ class BufferConfig(BaseConfigModule):
         ("mode", 1),
         # "mask": List[int] -> Bit integer
         ("mask", 8, lambda x: int("".join(str(v) for v in x[::-1]), 2) if isinstance(x, list) else x),
+        ("buf_end_row_addr", 2),
     ]
 
     def __init__(self, idx: int):

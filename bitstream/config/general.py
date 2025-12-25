@@ -18,6 +18,7 @@ class GAInportConfig(BaseConfigModule):
         ("nbr_enable", 1),  # ga_inport_nbr_enable
         ("fp16to32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_fp16to32
         ("int32tofp", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_int32tofp
+        ("uint8to32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_uint8to32
     ]
     
     def __init__(self, inport_idx: int):
