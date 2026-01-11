@@ -176,7 +176,7 @@ class LCPEConfig(BaseConfigModule):
                     
                     self.values[f'inport{i}_last_index'] = port.get('keep_last_index', 0)
                     self.values[f'inport{i}_mode'] = port.get('mode', 0)
-                    self.values[f'constant{i}'] = port.get('cfg_constant_pos', 0)
+                    self.values[f'constant{i}'] = port.get('constant', 0)
         else:
             # No valid entry: treat as empty
             self.set_empty()
