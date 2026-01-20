@@ -132,6 +132,7 @@ class GAPEConfig(BaseConfigModule):
             "mul": 2,
             "max": 3,
             "sum": 4,
+            "int8_max": 11,
             "rec": 17,
         }
     
