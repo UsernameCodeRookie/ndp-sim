@@ -17,7 +17,9 @@ class GAInportConfig(BaseConfigModule):
         ("pingpong_last_index", 4),  # ga_inport_pingpong_last_index
         ("nbr_enable", 1),  # ga_inport_nbr_enable
         ("fp16to32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_fp16to32
+        ("bf16to32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_bf16to32
         ("int32tofp", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_int32tofp
+        ("uint8tofp", 1,lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_uint8tofp
         ("uint8to32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_uint8to32
     ]
     
@@ -58,7 +60,8 @@ class GAOutportConfig(BaseConfigModule):
     FIELD_MAP = [
         ("mask", 8),  # ga_outport_mask
         ("src_id", 1),  # ga_outport_src_id
-        ("fp32to16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_fp32to16
+        ("fp32tofp16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_fp32tofp16
+        ("fp32tobf16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_fp32tobf16
         ("int32to8", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_int32to8
     ]
     
@@ -132,6 +135,7 @@ class GAPEConfig(BaseConfigModule):
             "mul": 2,
             "max": 3,
             "sum": 4,
+            "int8_max": 11,
             "rec": 17,
         }
     

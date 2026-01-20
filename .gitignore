@@ -6,3 +6,9 @@ __pycache__/
 *.pyc
 .DS_Store
 *.html
+
+*.json
+*.txt
+*.png
+*.bin
+*.md
