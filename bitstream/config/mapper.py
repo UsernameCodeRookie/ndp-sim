@@ -115,8 +115,21 @@ class Mapper:
         elif resource.startswith("WRITE_STREAM"):
             res_type = "STREAM"
             res_idx = 4 + int(resource[len("WRITE_STREAM"):])  # Offset for WRITE_STREAM resources (after 4 reads)
+        elif resource.startswith("ROW_LC"):
+            res_type = "ROW_LC"
+            res_idx = int(resource[len("ROW_LC"):])
+        elif resource.startswith("COL_LC"):
+            res_type = "COL_LC"
+            res_idx = int(resource[len("COL_LC"):])
+        elif resource.startswith("LC"):
+            res_type = "LC"
+            res_idx = int(resource[len("LC"):]) if len(resource) > 2 else 0
+        elif resource.startswith("PE"):
+            res_type = "PE"
+            res_idx = int(resource[len("PE"):]) if len(resource) > 2 else 0
         else:
             # Extract alphabetical prefix as resource type and digits as index if present
+            # Note: fallback keeps only letters; prefer explicit branches above for types with underscores
             res_type = ''.join(ch for ch in resource if ch.isalpha())
             digits = ''.join(ch for ch in resource if ch.isdigit())
             res_idx = int(digits) if digits != '' else 0
@@ -317,24 +330,30 @@ class Mapper:
         
     class LCtoROWLCConstraint(Constraint):
         """LC i → ROW_LC j constraint:
-        First row (LC 0-7) connects to ROW_LC 0-3 (corresponding upper positions)
-        Second row (LC 8-15) connects to ROW_LC 4-7 (corresponding lower positions)
-        Each ROW_LC connects to 6 LC nodes (2 above left, corresponding, 2 above right, same from below)
+        Restrict ROW_LC j to only connect to LC whose column src_col is in
+        {2*j-2, 2*j-1, 2*j, 2*j+1, 2*j+2, 2*j+3} (clamped to [0, 9]).
+        Connections outside this window incur a penalty.
         """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "LC" and dst_type == "ROW_LC":
-                src_row, src_col = divmod(src_idx, 10)
-                # For ROW_LC, it connects to specific LCs from both rows
-                # Mapping is flexible for now - just check reasonable distance
-                return abs(dst_idx - (src_col // 2)) <= 1
+                _, src_col = divmod(src_idx, 10)
+                # Allowed LC column window around 2*dst_idx
+                min_col = max(0, 2 * dst_idx - 2)
+                max_col = min(9, 2 * dst_idx + 3)
+                return min_col <= src_col <= max_col
             return True
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
             if src_type == "LC" and dst_type == "ROW_LC":
-                src_row, src_col = divmod(src_idx, 10)
-                # Penalize based on distance
-                d = abs(dst_idx - (src_col // 2))
-                return float(d)
+                _, src_col = divmod(src_idx, 10)
+                # Penalty is distance outside the allowed window; 0 if within
+                min_col = max(0, 2 * dst_idx - 2)
+                max_col = min(9, 2 * dst_idx + 3)
+                if src_col < min_col:
+                    return float(min_col - src_col)
+                if src_col > max_col:
+                    return float(src_col - max_col)
+                return 0.0
             return 0.0
 
     class LCtoStreamConstraint(Constraint):
