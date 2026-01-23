@@ -6,3 +6,12 @@ __pycache__/
 *.pyc
 .DS_Store
 *.html
+
+*.json
+*.txt
+*.png
+*.bin
+*.md
+
+maxpool_config_64_112_112_stride2_padding1_out/
+maxpool_config_16_112_112_stride2_padding1_out/

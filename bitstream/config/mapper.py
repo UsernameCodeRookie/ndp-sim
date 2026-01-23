@@ -18,13 +18,13 @@ class Mapper:
     """
     def __init__(self, seed: Optional[int] = None):
         # Predefined physical resource pools
-        # New architecture: 2 rows of 8 LCs, 4 ROW_LC, 4 COL_LC, 8 PE, 4 AG
+        # New architecture: 2 rows of 10 LCs, 5 ROW_LC, 5 COL_LC, 10 PE, 4 READ_STREAM + 1 WRITE_STREAM
         self.resource_pools = {
-            "LC":         [f"LC{i}" for i in range(16)],          # 16 LC resources (2 rows of 8)
-            "ROW_LC":     [f"ROW_LC{i}" for i in range(4)],       # 4 ROW_LC resources
-            "COL_LC":     [f"COL_LC{i}" for i in range(4)],       # 4 COL_LC resources
-            "PE":         [f"PE{i}" for i in range(8)],           # 8 Processing Elements
-            "READ_STREAM": [f"READ_STREAM{i}" for i in range(3)], # 3 Read Streams (physical)
+            "LC":         [f"LC{i}" for i in range(20)],          # 20 LC resources (2 rows of 10)
+            "ROW_LC":     [f"ROW_LC{i}" for i in range(5)],       # 5 ROW_LC resources
+            "COL_LC":     [f"COL_LC{i}" for i in range(5)],       # 5 COL_LC resources
+            "PE":         [f"PE{i}" for i in range(10)],          # 10 Processing Elements
+            "READ_STREAM": [f"READ_STREAM{i}" for i in range(4)], # 4 Read Streams (physical)
             "WRITE_STREAM":[f"WRITE_STREAM{i}" for i in range(1)],# 1 Write Stream (physical)
         }
 
@@ -56,10 +56,10 @@ class Mapper:
         """Infer the resource type of a node based on its name prefix.
         
         Node naming patterns:
-        - LCs (2 rows): "DRAM_LC.LC{row}{col}" where row is 0-1, col is 0-7
+        - LCs (2 rows): "DRAM_LC.LC{row}{col}" where row is 0-1, col is 0-9
         - ROW_LC: "ROW_LC.ROW_LC{row}{col}" or "GROUP{n}.ROW_LC"
         - COL_LC: "COL_LC.COL_LC{row}{col}" or "GROUP{n}.COL_LC"
-        - PE: "PE.PE{idx}" where idx is 0-7
+        - PE: "PE.PE{idx}" where idx is 0-9
         - STREAM: "STREAM.stream{idx}"
         """
         if "DRAM_LC" in node and ".LC" in node:
@@ -114,7 +114,7 @@ class Mapper:
             res_idx = int(resource[len("READ_STREAM"):])
         elif resource.startswith("WRITE_STREAM"):
             res_type = "STREAM"
-            res_idx = 3 + int(resource[len("WRITE_STREAM"):])  # Offset for WRITE_STREAM resources
+            res_idx = 4 + int(resource[len("WRITE_STREAM"):])  # Offset for WRITE_STREAM resources (after 4 reads)
         else:
             # Extract alphabetical prefix as resource type and digits as index if present
             res_type = ''.join(ch for ch in resource if ch.isalpha())
@@ -143,7 +143,7 @@ class Mapper:
             if match:
                 row = int(match.group(1)[0]) if len(match.group(1)) > 0 else 0
                 col = int(match.group(2)) if match.group(2) else 0
-                return row * 8 + col  # Linearize: first row 0-7, second row 8-15
+            return row * 10 + col  # Linearize: first row 0-9, second row 10-19
         elif "ROW_LC" in node:
             # Support both "GROUP{n}.ROW_LC" and "ROW_LC.ROW_LC{idx}"
             match = re.search(r'GROUP(\d+)\.ROW_LC', node)
@@ -288,8 +288,8 @@ class Mapper:
         """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "LC" and dst_type == "LC":
-                src_row, src_col = divmod(src_idx, 8)
-                dst_row, dst_col = divmod(dst_idx, 8)
+                src_row, src_col = divmod(src_idx, 10)
+                dst_row, dst_col = divmod(dst_idx, 10)
                 
                 # LC in row 1 cannot connect to row 0 LCs
                 if dst_row == 0 and src_row == 1:
@@ -303,8 +303,8 @@ class Mapper:
             if src_type == "LC" and dst_type == "LC":
                 if self.check(src_type, src_idx, dst_type, dst_idx):
                     return 0.0
-                src_row, src_col = divmod(src_idx, 8)
-                dst_row, dst_col = divmod(dst_idx, 8)
+                src_row, src_col = divmod(src_idx, 10)
+                dst_row, dst_col = divmod(dst_idx, 10)
                 
                 if dst_row == 0 and src_row == 1:
                     # LC in row 0 cannot connect to row 1 LCs
@@ -323,7 +323,7 @@ class Mapper:
         """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "LC" and dst_type == "ROW_LC":
-                src_row, src_col = divmod(src_idx, 8)
+                src_row, src_col = divmod(src_idx, 10)
                 # For ROW_LC, it connects to specific LCs from both rows
                 # Mapping is flexible for now - just check reasonable distance
                 return abs(dst_idx - (src_col // 2)) <= 1
@@ -331,7 +331,7 @@ class Mapper:
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
             if src_type == "LC" and dst_type == "ROW_LC":
-                src_row, src_col = divmod(src_idx, 8)
+                src_row, src_col = divmod(src_idx, 10)
                 # Penalize based on distance
                 d = abs(dst_idx - (src_col // 2))
                 return float(d)
@@ -344,7 +344,7 @@ class Mapper:
         """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "LC" and dst_type == "STREAM":
-                src_row, src_col = divmod(src_idx, 8)
+                src_row, src_col = divmod(src_idx, 10)
                 # LC from row 0: can map to AG targets 0-5
                 # LC from row 1: can map to AG targets 6-11
                 # Each AG has 12 logical LC targets (6 from each row)
@@ -353,7 +353,7 @@ class Mapper:
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
             if src_type == "LC" and dst_type == "STREAM":
-                src_row, src_col = divmod(src_idx, 8)
+                src_row, src_col = divmod(src_idx, 10)
                 # Penalize based on distance from expected position
                 expected_ag = src_col // 2
                 d = abs(dst_idx - expected_ag)
@@ -374,7 +374,7 @@ class Mapper:
         """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "LC" and dst_type == "PE":
-                src_row, src_col = divmod(src_idx, 8)
+                src_row, src_col = divmod(src_idx, 10)
                 # LC in row 1 cannot connect to any PE
                 # if src_row != 0:
                 #     return False
@@ -384,7 +384,7 @@ class Mapper:
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
             if src_type == "LC" and dst_type == "PE":
-                src_row, src_col = divmod(src_idx, 8)
+                src_row, src_col = divmod(src_idx, 10)
                 # VERY HIGH penalty for second row LC
                 # if src_row != 0:
                 #     return 100.0  # Extreme penalty to disallow second row connections
@@ -435,18 +435,18 @@ class Mapper:
 
     class LCtoStreamConstraint(Constraint):
         """LC i → STREAM j constraint: 
-        Unified STREAM indexing: READ_STREAM0,1,2 → 0,1,2; WRITE_STREAM0 → 3
+        Unified STREAM indexing: READ_STREAM0-3 → 0-3; WRITE_STREAM0 → 4
         """
         def check(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> bool:
             if src_type == "LC" and dst_type == "STREAM":
                 # LC can connect to streams with reasonable topology constraints
-                src_row, src_col = divmod(src_idx, 8)
+                src_row, src_col = divmod(src_idx, 10)
                 return abs(dst_idx - (src_col // 2)) in [0, 1]
             return True
 
         def penalty(self, src_type: str, src_idx: int, dst_type: str, dst_idx: int) -> float:
             if src_type == "LC" and dst_type == "STREAM":
-                src_row, src_col = divmod(src_idx, 8)
+                src_row, src_col = divmod(src_idx, 10)
                 d = abs(dst_idx - (src_col // 2))
                 if d in [0, 1]:
                     return 0.0
@@ -1134,11 +1134,11 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
     """
     Visualize the physical layout of hardware resources with new 5-layer architecture:
     
-    Row 4: LC (Row 0): LC0-LC7
-    Row 3: LC (Row 1): LC8-LC15
-    Row 2: ROW_LC (left): ROW_LC0-ROW_LC3, COL_LC (right): COL_LC0-COL_LC3
-    Row 1: PE0-PE7
-    Row 0: AG0-AG3
+    Row 4: LC (Row 0): LC0-LC9
+    Row 3: LC (Row 1): LC10-LC19
+    Row 2: ROW_LC (left): ROW_LC0-ROW_LC4, COL_LC (right): COL_LC0-COL_LC4
+    Row 1: PE0-PE9
+    Row 0: STREAM (READ_STREAM0-3, WRITE_STREAM0)
 
     The function draws mapped logical connections between resources.
     Output is saved to 'data/placement.png'.
@@ -1155,15 +1155,15 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
         os.makedirs(dir_path, exist_ok=True)
     fig, ax = plt.subplots(figsize=(14, 8))
 
-    # Define fixed layout positions for new 5-row architecture with 4 ROW_LC and 4 COL_LC
+    # Define fixed layout positions for new 5-row architecture with 5 ROW_LC and 5 COL_LC
     # AG row now contains STREAM resources (READ_STREAM and WRITE_STREAM)
     layout = {
-        "LC":           [(i * 2, 4) for i in range(8)] + [(i * 2, 3) for i in range(8)],   # Row 0: LC0-7, Row 1: LC8-15
-        "ROW_LC":       [(i * 4, 2) for i in range(4)],                            # Row 2 left: ROW_LC0-3 (spaced out)
-        "COL_LC":       [(i * 4 + 2, 2) for i in range(4)],                        # Row 2 right: COL_LC0-3 (spaced out)
-        "PE":           [(i * 2, 1) for i in range(8)],                           # Row 1: PE0-7
-        "READ_STREAM":  [(i * 4 + 1, 0) for i in range(3)],                       # Row 0: READ_STREAM0-2 (positions 1, 5, 9)
-        "WRITE_STREAM": [(13, 0)],                                               # Row 0: WRITE_STREAM0 (position 13)
+        "LC":           [(i * 2, 4) for i in range(10)] + [(i * 2, 3) for i in range(10)],   # Row 0: LC0-9, Row 1: LC10-19
+        "ROW_LC":       [(i * 4, 2) for i in range(5)],                             # Row 2 left: ROW_LC0-4 (spaced out)
+        "COL_LC":       [(i * 4 + 2, 2) for i in range(5)],                         # Row 2 right: COL_LC0-4 (spaced out)
+        "PE":           [(i * 2, 1) for i in range(10)],                            # Row 1: PE0-9
+        "READ_STREAM":  [(i * 4 + 1, 0) for i in range(4)],                         # Row 0: READ_STREAM0-3 (positions 1, 5, 9, 13)
+        "WRITE_STREAM": [(17, 0)],                                                 # Row 0: WRITE_STREAM0 (position 17)
     }
 
     # Draw resource nodes
@@ -1293,7 +1293,7 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
 
         # Calculate position based on current layout
         if src_type == "LC":
-            src_row, src_col = divmod(src_idx, 8)
+            src_row, src_col = divmod(src_idx, 10)
             x1 = src_col * 2  # LC spacing: i * 2
             y1 = 4 - src_row  # Row 0 at y=4, Row 1 at y=3
         elif src_type in ["ROW_LC", "COL_LC"]:
@@ -1306,7 +1306,7 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
             x1, y1 = layout[src_type][src_idx]
 
         if dst_type == "LC":
-            dst_row, dst_col = divmod(dst_idx, 8)
+            dst_row, dst_col = divmod(dst_idx, 10)
             x2 = dst_col * 2  # LC spacing: i * 2
             y2 = 4 - dst_row  # Row 0 at y=4, Row 1 at y=3
         elif dst_type in ["ROW_LC", "COL_LC"]:
@@ -1323,7 +1323,7 @@ def visualize_mapping(mapper, connections, save_path="data/placement.png"):
     # Configure axes and legend
     ax.set_title("Physical Resource Placement Visualization (5-Layer Architecture)", 
                  fontsize=14, weight="bold")
-    ax.set_xlim(-1, 16)  # LC spacing goes from 0 to 14 (8 LCs * 2), ROW/COL_LC up to 14
+    ax.set_xlim(-1, 20)  # LC spacing goes from 0 to 18 (10 LCs * 2), ROW/COL_LC up to 18
     ax.set_ylim(-1, 5)
     ax.set_xticks([])
     ax.set_yticks([])
