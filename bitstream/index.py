@@ -185,7 +185,8 @@ class Connect:
             
             lc_num = physical_resource[len("LC"):] if physical_resource else "0"
             
-            return 0 if int(lc_num) < 8 else 1
+            # New architecture: 2 rows of 10 LCs each (LC0-LC9 row 0, LC10-LC19 row 1)
+            return 0 if int(lc_num) < 10 else 1
         return -1
     
     @staticmethod
@@ -257,28 +258,28 @@ class Connect:
         """
         Calculate relative index based on source and destination node types.
         
-        Architecture:
-        - Row 0: 8 LCs (LC0-LC7)
-        - Row 1: 8 LCs (LC8-LC15)
-        - Row 2: 4 GROUPs (GROUP0-GROUP3), each with ROW_LC and COL_LC
-        - Row 3: 8 PEs (PE0-PE7)
-        - Row 4: 4 AGs (AG0-AG3)
+          Architecture (updated):
+          - Row 0: 10 LCs (LC0-LC9)
+          - Row 1: 10 LCs (LC10-LC19)
+          - Row 2: 5 ROW_LC (ROW_LC0-ROW_LC4) and 5 COL_LC (COL_LC0-COL_LC4)
+          - Row 3: 10 PEs (PE0-PE9)
+          - Streams: 4 READ_STREAM (logical indices 0-3) + 1 WRITE_STREAM (logical index 4)
         
         Encoding Rules:
-        1. LC → LC (same row):
+          1. LC → LC (same row):
            - Indices 0-4: 5 LCs from row above (corresponding + left 2, right 2)
            - Indices 5-8: 4 neighbors on same row (left 2, right 2)
            
-        2. LC → ROW_LC: 0-11 (6 from row 0, 6 from row 1)
-        3. COL_LC → ROW_LC: 12
+          2. LC → ROW_LC: 0-11 (6 from row 0, 6 from row 1)
+          3. COL_LC → ROW_LC: 12
         
-        4. PE → LC (3 LCs): corresponding LC, left 1, right 1 = indices 0-5
-        5. PE → PE (4 neighbors): left 2, right 2 = indices 6-9
+          4. PE → LC (3 LCs): corresponding LC, left 1, right 1 = indices 0-5
+          5. PE → PE (4 neighbors): left 2, right 2 = indices 6-9
         
-        6. AG → LC row 0 (6 LCs): indices 0-5
-           AG → LC row 1 (6 LCs): indices 6-11
-           AG → PE (6 PEs): indices 12-17
-           AG ↔ ROW_LC/COL_LC: hard-wired (not variable)
+          6. STREAM → LC row 0 (6 LCs): indices 0-5
+              STREAM → LC row 1 (6 LCs): indices 6-11
+              STREAM → PE (6 PEs): indices 12-17
+              STREAM ↔ ROW_LC/COL_LC: hard-wired (not variable)
         """
         # Ensure physical IDs are resolved
         if self.src._physical_id is None or self.dst._physical_id is None:
@@ -296,8 +297,9 @@ class Connect:
         if src_type == "LC" and dst_type == "LC":
             src_row = self._get_lc_row(self.src.node_name)
             dst_row = self._get_lc_row(self.dst.node_name)
-            src_lc_idx = src_phys_id % 8
-            dst_lc_idx = dst_phys_id % 8
+            # New architecture uses 10 LCs per row
+            src_lc_idx = src_phys_id % 10
+            dst_lc_idx = dst_phys_id % 10
             
             if src_row == dst_row:
                 # Same row connections: left 2, right 2 → indices 5-8
@@ -335,7 +337,7 @@ class Connect:
         elif src_type == "LC" and dst_type == "ROW_LC":
             group_id = dst_phys_id  # ROW_LC shares physical_id with its GROUP
             src_row = self._get_lc_row(self.src.node_name)
-            src_lc_idx = src_phys_id % 8
+            src_lc_idx = src_phys_id % 10
             
             # Valid LC range: [group_id*2-2, group_id*2-1, group_id*2, group_id*2+1, group_id*2+2, group_id*2+3]
             # This gives left 2, corresponding 2, right 2 LCs
@@ -356,7 +358,7 @@ class Connect:
         # Each LC connects to 3 PEs: corresponding PE, left 1, right 1 → indices 0-5
         # LCs from rows 0-1 connect to PEs below
         elif src_type == "LC" and dst_type == "PE":
-            src_lc_idx = src_phys_id % 8
+            src_lc_idx = src_phys_id % 10
             dst_pe_idx = dst_phys_id
             
             # LC connects to PEs below
@@ -399,17 +401,17 @@ class Connect:
         # ==================== LC → STREAM (READ_STREAM or WRITE_STREAM) ====================
         # LC connects to streams via specific patterns → indices 0-5 for row 0, 6-11 for row 1
         elif src_type == "LC" and dst_type == "STREAM":
-            src_lc_idx = src_phys_id % 8
+            src_lc_idx = src_phys_id % 10
             src_row = self._get_lc_row(self.src.node_name)
             stream_type = self._get_stream_type(self.dst.node_name)
             
             # Map stream resources to logical stream indices
-            # READ_STREAM0-2 -> stream 0-2
-            # WRITE_STREAM0 -> stream 3
+            # READ_STREAM0-3 -> stream 0-3
+            # WRITE_STREAM0 -> stream 4
             if stream_type == "READ_STREAM":
                 stream_logical_idx = dst_phys_id
             elif stream_type == "WRITE_STREAM":
-                stream_logical_idx = 3  # WRITE_STREAM0 -> stream 3
+                stream_logical_idx = 4  # WRITE_STREAM0 -> stream 4
             else:
                 raise ValueError(f"Unknown stream type: {stream_type}")
             
@@ -429,12 +431,12 @@ class Connect:
             stream_type = self._get_stream_type(self.dst.node_name)
             
             # Map stream resources to logical stream indices
-            # READ_STREAM0-2 -> stream 0-2
-            # WRITE_STREAM0 -> stream 3
+            # READ_STREAM0-3 -> stream 0-3
+            # WRITE_STREAM0 -> stream 4
             if stream_type == "READ_STREAM":
                 stream_logical_idx = dst_phys_id
             elif stream_type == "WRITE_STREAM":
-                stream_logical_idx = 3  # WRITE_STREAM0 -> stream 3
+                stream_logical_idx = 4  # WRITE_STREAM0 -> stream 4
             else:
                 raise ValueError(f"Unknown stream type: {stream_type}")
             

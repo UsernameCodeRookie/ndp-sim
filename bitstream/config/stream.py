@@ -278,27 +278,37 @@ class StreamConfig(BaseConfigModule):
         submodule.from_json(stream_cfg)
         self.submodules = [submodule]
         
-        # Use target field to determine physical assignment (A B C D -> 0 1 2 3)
-        # target 0,1,2 (A,B,C) map to READ_STREAM0, READ_STREAM1, READ_STREAM2
-        # target 3 (D) maps to WRITE_STREAM0
+        # Use target-only mapping (ignore stream key index):
+        # A->0, B->1, B'->2, C->3, D->4 (logical positions); physical read streams are 0-3, write uses WRITE_STREAM0
         target = stream_cfg.get("target", None)
         if target is not None:
             try:
-                target_idx = ord(target) - ord('A')
-                self.idx = target_idx
+                target_idx_map = {
+                    'A': 0,
+                    'B': 1,
+                    "B'": 2,
+                    'C': 3,
+                    'D': 4,
+                }
+                if target in target_idx_map:
+                    self.idx = target_idx_map[target]
                 
-                # Determine resource based on target
-                if target_idx <= 2:
-                    # targets A, B, C -> READ_STREAM 0, 1, 2
-                    resource = f"READ_STREAM{target_idx}"
-                else:
-                    # target D (3) -> WRITE_STREAM0
+                # Determine physical resource based on mode and target-derived index
+                if mode == "write":
                     resource = "WRITE_STREAM0"
-                
-                # Directly assign to fixed position based on target
-                NodeGraph.get().assign_node(f"STREAM.{self.stream_key}", resource)
+                else:
+                    if target in target_idx_map:
+                        logical_idx = target_idx_map[target]
+                        physical_read_idx = max(0, min(logical_idx, 3))  # clamp to 0-3 (4 READ streams physically)
+                        resource = f"READ_STREAM{physical_read_idx}"
+                    else:
+                        resource = None
+
+                if resource is not None:
+                    # Directly assign to fixed position based on mapping
+                    NodeGraph.get().assign_node(f"STREAM.{self.stream_key}", resource)
             except Exception:
-                # If target is not a single character, skip assigning and leave idx as None
+                # If target isn't in expected format, skip assigning
                 pass
         
     

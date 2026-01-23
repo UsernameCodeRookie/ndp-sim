@@ -94,10 +94,11 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
     NodeGraph._instance = None
     
     # Create all modules in a unified list
-    modules =   [DramLoopControlConfig(i) for i in range(16)] + \
-                [BufferLoopControlGroupConfig(i) for i in range(4)] + \
-                [LCPEConfig(i) for i in range(8)] + \
-                [StreamConfig(i) for i in range(4)] + \
+    # Updated counts: 20 IGA_LC (2x10), 5 ROW_LC groups, 10 IGA_PE, 4 READ + 1 WRITE streams (total 5 configs)
+    modules =   [DramLoopControlConfig(i) for i in range(20)] + \
+                [BufferLoopControlGroupConfig(i) for i in range(5)] + \
+                [LCPEConfig(i) for i in range(10)] + \
+                [StreamConfig(i) for i in range(5)] + \
                 [NeighborStreamConfig()] + \
                 [BufferConfig(i) for i in range(6)] + \
                 [SpecialArrayConfig()] + \
@@ -239,17 +240,17 @@ def build_entries(modules):
     ga_pe_modules = [m for m in modules if isinstance(m, GAPEConfig)]
     
     # Physical resource layout: (module_id, resource_name_pattern, count, getter_func)
-    # For ROW_LC and COL_LC, we need to look them up by their physical resource names (ROW_LC0-3, COL_LC0-3)
+    # Updated counts to match new architecture: LC=20, ROW_LC=5, COL_LC=5, PE=10, READ=4, WRITE=1
     layout = [
         # IGA resources
-        (ModuleID.IGA_LC, "LC", 16, lambda i: mapper.get_module(f"LC{i}")),  # 16 LC resources (2 rows of 8)
-        # ROW_LC: These are accessed as ROW_LC0, ROW_LC1, ROW_LC3 (not all 4 may be used)
-        (ModuleID.IGA_ROW_LC, "ROW_LC", 4, lambda i: mapper.get_module(f"ROW_LC{i}")),
-        # COL_LC: These are accessed as COL_LC0, COL_LC1, COL_LC3 (not all 4 may be used)
-        (ModuleID.IGA_COL_LC, "COL_LC", 4, lambda i: mapper.get_module(f"COL_LC{i}")),
-        (ModuleID.IGA_PE, "PE", 8, lambda i: mapper.get_module(f"PE{i}")),
+        (ModuleID.IGA_LC, "LC", 20, lambda i: mapper.get_module(f"LC{i}")),  # 20 LC resources (2 rows of 10)
+        # ROW_LC: Accessed as ROW_LC0-4
+        (ModuleID.IGA_ROW_LC, "ROW_LC", 5, lambda i: mapper.get_module(f"ROW_LC{i}")),
+        # COL_LC: Accessed as COL_LC0-4
+        (ModuleID.IGA_COL_LC, "COL_LC", 5, lambda i: mapper.get_module(f"COL_LC{i}")),
+        (ModuleID.IGA_PE, "PE", 10, lambda i: mapper.get_module(f"PE{i}")),
         # Stream Engine resources
-        (ModuleID.SE_RD_MSE, "READ_STREAM", 3, lambda i: mapper.get_module(f"READ_STREAM{i}")),
+        (ModuleID.SE_RD_MSE, "READ_STREAM", 4, lambda i: mapper.get_module(f"READ_STREAM{i}")),
         (ModuleID.SE_WR_MSE, "WRITE_STREAM", 1, lambda i: mapper.get_module(f"WRITE_STREAM{i}")),
         (ModuleID.SE_NSE, "NEIGHBOR", 1, lambda i: neighbor_module),
         (ModuleID.SE_NSE, "NEIGHBOR_EMPTY", 1, lambda i: None),  # Extra empty entry

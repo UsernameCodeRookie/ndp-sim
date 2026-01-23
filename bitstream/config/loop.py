@@ -258,20 +258,28 @@ class BufferLoopControlGroupConfig(BaseConfigModule):
             key = keys[self.idx]
             cfg = cfg.get(key, cfg)
             
-            # Get target from configuration and convert to numeric index (A B C D -> 0 1 2 3)
+            # Get target from configuration and map to preferred index per new rule (single index per target)
             target = cfg.get("target", None)
             if target is not None:
                 try:
-                    target_idx = ord(target) - ord('A')
-                    # Directly assign GROUP nodes to fixed positions based on target
+                    target_idx_map = {
+                        'A': 0,
+                        'B': 1,
+                        "B'": 2,
+                        'C': 3,
+                        'D': 4,
+                    }
+                    preferred = [target_idx_map.get(target)] if target in target_idx_map else []
                     node_graph = NodeGraph.get()
-                    node_graph.assign_node(key, f"GROUP{target_idx}")
-                    
-                    # Also directly assign ROW_LC and COL_LC nodes (they don't participate in mapping)
-                    node_graph.assign_node(f"{key}.ROW_LC", f"ROW_LC{target_idx}")
-                    node_graph.assign_node(f"{key}.COL_LC", f"COL_LC{target_idx}")
+                    pool_len = len(node_graph.mapping.resource_pools.get("ROW_LC", []))
+                    # Pick the first available index within pool, else skip assignment
+                    chosen = next((i for i in preferred if i is not None and i < pool_len), None)
+                    if chosen is not None:
+                        node_graph.assign_node(key, f"GROUP{chosen}")
+                        node_graph.assign_node(f"{key}.ROW_LC", f"ROW_LC{chosen}")
+                        node_graph.assign_node(f"{key}.COL_LC", f"COL_LC{chosen}")
                 except Exception:
-                    # If target is not a single char, gracefully fallback: don't assign
+                    # If target is not a single char or mapping fails, fallback: don't assign
                     pass
             
             # Check if this group has meaningful data (not just a comment)

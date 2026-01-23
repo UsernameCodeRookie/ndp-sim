@@ -13,7 +13,7 @@ from bitstream.parse import (
     load_config, init_modules, build_entries, generate_bitstream,
     write_bitstream, dump_modules_detailed, compare_bitstreams
 )
-# python bitstream/main.py --visualize-placement -c ./jsons/maxpool_config_64_56_56_stride2_padding1.json -o ./maxpool_config_64_56_56_stride2_padding1_out
+# python bitstream/main.py --visualize-placement -c ./jsons/gemm_config_local_M256N1536K32_B.json -o ./gemm_config_local_M256N1536K32_B_out
 
 def main():
     """Main entry point for bitstream CLI."""

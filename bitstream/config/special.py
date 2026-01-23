@@ -45,7 +45,7 @@ class OutportConfig(BaseConfigModule):
     # outport_major(1) + fp32to16(1) = 2 bits
     FIELD_MAP = [
         ("mode", 1, lambda x: 0 if x == "col" else (1 if x == "row" else x)),  # sa_outport_major: col=0, row=1, or pass through int
-        ("fp32to16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # sa_outport_fp32to16
+        ("fp32tofp16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # sa_outport_fp32to16
         ("fp32tobf16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # sa_outport_fp32tobf16
     ]
     
