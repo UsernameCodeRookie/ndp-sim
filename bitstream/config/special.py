@@ -2,11 +2,19 @@ from bitstream.config.base import BaseConfigModule
 from typing import List
 from bitstream.bit import Bit
 
+class Modeconfig(BaseConfigModule):
+    FIELD_MAP = [
+        ("mode", 1, lambda x: 0 if x == "gemm" else 0),  # sa_modeconfig_mode
+    ]
+    
+    def from_json(self, cfg: dict):
+        super().from_json(cfg)
+
+
 class InportConfig(BaseConfigModule):
     # Based on component_config/special_array.py:
     # enable(1) + pingpong_en(1) + pingpong_last_index(3) = 5 bits (per inport)
     FIELD_MAP = [
-        ("mode", 1),
         ("enable", 1),  # sa_inport_enable
         ("pingpong_en", 1),  # sa_inport_pingpong_en
         ("pingpong_last_index", 4),  # sa_inport_pingpong_last_index
@@ -70,6 +78,7 @@ class SpecialArrayConfig(BaseConfigModule):
         super().__init__()
         # Order matters! Must match component_config bit order (high to low)
         self.submodules = [
+            Modeconfig(),  # mode config at the very top
             InportConfig(2),  # inport2 first (high bits)
             InportConfig(1),  # inport1
             InportConfig(0),  # inport0

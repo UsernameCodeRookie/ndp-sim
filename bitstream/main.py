@@ -4,6 +4,7 @@
 import argparse
 import sys
 import os
+import shutil
 from pathlib import Path
 
 # Add parent directory to path
@@ -13,7 +14,7 @@ from bitstream.parse import (
     load_config, init_modules, build_entries, generate_bitstream,
     write_bitstream, dump_modules_detailed, compare_bitstreams
 )
-# python bitstream/main.py --visualize-placement -c ./jsons/gemm_config_local_M256N1536K32_B.json -o ./gemm_config_local_M256N1536K32_B_out
+# python bitstream/main.py --visualize-placement -c ./jsons/maxpool_config_16_112_112_stride2_padding1.json -o ./maxpool_config_16_112_112_stride2_padding1_out
 
 def main():
     """Main entry point for bitstream CLI."""
@@ -284,6 +285,11 @@ Examples:
                 binary_output_path = str(output_dir / args.binary_name)
             
             write_bitstream(entries, config_mask=config_mask, output_file=str(parsed_path), binary_output_file=binary_output_path)
+
+            # Also emit a duplicate binary named after the config for convenience
+            if binary_output_path:
+                config_bin_path = output_dir / f"{Path(args.config).stem}_bitstream.bin"
+                shutil.copyfile(binary_output_path, str(config_bin_path))
         elif args.verbose:
             print("[5.5/6] Skipping parsed bitstream")
         
