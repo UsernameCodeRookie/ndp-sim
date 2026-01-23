@@ -135,8 +135,15 @@ class GAPEConfig(BaseConfigModule):
             "mul": 2,
             "max": 3,
             "sum": 4,
+            "summac": 5,
+            "mac": 6,
             "int8_max": 11,
+            "int32_sum": 12,
+            "int32_mac": 14,
             "rec": 17,
+            "sqrt": 18,
+            "rec_sqrt": 20,
+            "activation": 24,
         }
     
     @staticmethod
