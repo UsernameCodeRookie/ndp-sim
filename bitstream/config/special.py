@@ -4,7 +4,7 @@ from bitstream.bit import Bit
 
 class Modeconfig(BaseConfigModule):
     FIELD_MAP = [
-        ("mode", 1, lambda x: 0 if x == "gemm" else 0),  # sa_modeconfig_mode
+        ("mode", 1, lambda x: 0 if x == "gemm" else 1),  # sa_modeconfig_mode
     ]
     
     def from_json(self, cfg: dict):
