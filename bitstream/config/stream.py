@@ -33,7 +33,7 @@ class ReadStreamEngineConfig(BaseConfigModule):
         ("total_size", 8),
         ("dim_stride", 60),
         # Remapping
-        ("address_remapping", 105, lambda lst: lst[::-1] if isinstance(lst, list) else StreamConfig.address_remapping_default),
+        ("address_remapping", 130, lambda lst: lst[::-1] if isinstance(lst, list) else StreamConfig.address_remapping_default),
         # Padding fields
         ("padding_reg_value", 8),
         ("padding_enable", 3),
@@ -127,7 +127,7 @@ class WriteStreamEngineConfig(BaseConfigModule):
         ("total_size", 8),
         ("dim_stride", 60),
         # Remapping
-        ("address_remapping", 105, lambda lst: lst[::-1] if isinstance(lst, list) else StreamConfig.address_remapping_default),
+        ("address_remapping", 130, lambda lst: lst[::-1] if isinstance(lst, list) else StreamConfig.address_remapping_default),
         # Tailing (branch) fields
         ("tailing_enable", 3),
         ("idx_tailing_range", 72),
@@ -190,7 +190,7 @@ class StreamConfig(BaseConfigModule):
     Can be initialized with either an index (int) or stream_key (str).
     """
     
-    address_remapping_default : list = [20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8,
+    address_remapping_default : list = [25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8,
                                         7, 6, 5, 4, 3, 2, 1, 0]
     
     def __init__(self, idx_or_key):
