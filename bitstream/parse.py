@@ -29,7 +29,7 @@ class ModuleID(IntEnum):
     GA_OUTPORT_GROUP = 10
     GENERAL_PE = 11
 
-MODULE_CFG_CHUNK_SIZES = [1, 1, 1, 2, 9, 9, 1, 1, 1, 1, 1, 4]
+MODULE_CFG_CHUNK_SIZES = [1, 1, 1, 2, 10, 8, 1, 1, 1, 1, 1, 4]
 MODULE_ID_TO_MASK = [0, 0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 3]
 
 def split_config(config, module_id):
