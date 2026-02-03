@@ -14,7 +14,7 @@ class ReadStreamEngineConfig(BaseConfigModule):
     """
     
     FIELD_MAP = [
-        ("_padding", 1),
+        #("_padding", 0),
         # Memory AG fields
         ("mem_idx_mode", 6, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
         ("mem_idx_keep_last_index", 12),
@@ -27,7 +27,7 @@ class ReadStreamEngineConfig(BaseConfigModule):
         ("ping_pong", 1),
         ("pingpong_last_index", 4),
         # Address and size fields
-        ("base_addr", 29),
+        ("base_addr", 30),
         ("idx_size", 24),
         ("idx_size_log", 9),
         ("total_size", 8),
@@ -108,7 +108,7 @@ class WriteStreamEngineConfig(BaseConfigModule):
     """
     
     FIELD_MAP = [
-        ("_padding", 4),
+        ("_padding", 3),
         # Memory AG fields
         ("mem_idx_mode", 6, lambda x: [StreamConfig.inport_mode_map().get(i, 0) for i in x] if isinstance(x, list) else x),
         ("mem_idx_keep_last_index", 12),
@@ -121,7 +121,7 @@ class WriteStreamEngineConfig(BaseConfigModule):
         ("ping_pong", 1),
         ("pingpong_last_index", 4),
         # Address and size fields
-        ("base_addr", 29),
+        ("base_addr", 30),
         ("idx_size", 24),
         ("idx_size_log", 9),
         ("total_size", 8),
