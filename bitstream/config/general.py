@@ -2,9 +2,22 @@ from bitstream.config.base import BaseConfigModule
 from bitstream.index import NodeIndex, Connect
 from typing import List, Optional
 from bitstream.bit import Bit
+<<<<<<< HEAD
 import numbers
 import struct
 from fractions import Fraction
+=======
+import struct
+
+
+def float_to_ieee754(x):
+    """Convert a float to its IEEE 754 single-precision (32-bit) integer representation."""
+    if x is None:
+        return 0
+    
+    # Pack as big-endian float, unpack as big-endian unsigned int
+    return struct.unpack('>I', struct.pack('>f', x))[0]
+>>>>>>> 85c4a17e912318e3bac27a36c0c685763109bcc2
 
 class GAInportConfig(BaseConfigModule):
     """General Array inport configuration.
@@ -120,6 +133,7 @@ class GAPEConfig(BaseConfigModule):
         ("inport0_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
         
         ("_padding2", 4),  # Padding to align to byte boundary
+<<<<<<< HEAD
         ("constant2", 32, lambda x: GAPEConfig._encode_constant(x)),
         
         ("_padding1", 4),  # Padding to align to byte boundary
@@ -127,6 +141,15 @@ class GAPEConfig(BaseConfigModule):
         
         ("_padding0", 4),  # Padding to align to byte boundary
         ("constant0", 32, lambda x: GAPEConfig._encode_constant(x)),
+=======
+        ("constant2", 32),  # Conversion handled in from_json based on opcode
+        
+        ("_padding1", 4),  # Padding to align to byte boundary
+        ("constant1", 32),  # Conversion handled in from_json based on opcode
+        
+        ("_padding0", 4),  # Padding to align to byte boundary
+        ("constant0", 32),  # Conversion handled in from_json based on opcode
+>>>>>>> 85c4a17e912318e3bac27a36c0c685763109bcc2
     ]
 
     @staticmethod
@@ -150,6 +173,9 @@ class GAPEConfig(BaseConfigModule):
             return int.from_bytes(struct.pack('<f', float(val)), byteorder='little', signed=False)
         return val
     
+    # Integer opcodes that should NOT convert constant to float
+    INT_OPCODES = {"int8_max", "int32_sum", "int32_mac", 11, 12, 14}
+    
     @staticmethod
     def opcode_map():
         """Map string opcode names to integers. Also accepts integers directly."""
@@ -167,7 +193,7 @@ class GAPEConfig(BaseConfigModule):
             "rec": 17,
             "sqrt": 18,
             "rec_sqrt": 20,
-            "activation": 24,
+            "sfu_activation": 24,
         }
     
     @staticmethod
@@ -232,7 +258,16 @@ class GAPEConfig(BaseConfigModule):
                     
                     self.values[f'inport{i}_keep_last_index'] = port.get('keep_last_index', 0)
                     self.values[f'inport{i}_mode'] = port.get('mode', 0)
-                    self.values[f'constant{i}'] = port.get('constant', 0)
+                    
+                    # Handle constant: convert to float if opcode is not integer-based
+                    constant_val = port.get('constant', 0)
+                    opcode = entry.get('alu_opcode', 0)
+                    if opcode not in self.INT_OPCODES:
+                        # Convert to IEEE 754 float format
+                        self.values[f'constant{i}'] = float_to_ieee754(constant_val)
+                    else:
+                        # Keep as integer
+                        self.values[f'constant{i}'] = int(constant_val) if constant_val is not None else 0
         else:
             # No valid entry: treat as empty
             self.set_empty()
