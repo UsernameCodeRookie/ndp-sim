@@ -16,11 +16,11 @@ class GAInportConfig(BaseConfigModule):
         ("pingpong_en", 1),  # ga_inport_pingpong_en
         ("pingpong_last_index", 4),  # ga_inport_pingpong_last_index
         ("nbr_enable", 1),  # ga_inport_nbr_enable
-        ("fp16to32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_fp16to32
-        ("bf16to32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_bf16to32
-        ("int32tofp", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_int32tofp
-        ("uint8tofp", 1,lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_uint8tofp
-        ("uint8to32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_uint8to32
+        ("fp16tofp32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_fp16to32
+        ("bf16tofp32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_bf16to32
+        ("int32tofp32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_int32tofp
+        ("uint8tofp32", 1,lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_uint8tofp
+        ("uint8toint32", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_inport_uint8to32
     ]
     
     def __init__(self, inport_idx: int):
@@ -62,7 +62,7 @@ class GAOutportConfig(BaseConfigModule):
         ("src_id", 1),  # ga_outport_src_id
         ("fp32tofp16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_fp32tofp16
         ("fp32tobf16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_fp32tobf16
-        ("int32to8", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_int32to8
+        ("int32touint8", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_int32to8
     ]
     
     def __init__(self):
