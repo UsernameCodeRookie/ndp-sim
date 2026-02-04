@@ -2,6 +2,9 @@ from bitstream.config.base import BaseConfigModule
 from bitstream.index import NodeIndex, Connect
 from typing import List, Optional
 from bitstream.bit import Bit
+import numbers
+import struct
+from fractions import Fraction
 
 class GAInportConfig(BaseConfigModule):
     """General Array inport configuration.
@@ -117,14 +120,35 @@ class GAPEConfig(BaseConfigModule):
         ("inport0_mode", 2, lambda x: x if isinstance(x, int) else (GAPEConfig.inport_mode_map().get(x, 0) if x is not None else 0)),
         
         ("_padding2", 4),  # Padding to align to byte boundary
-        ("constant2", 32),
+        ("constant2", 32, lambda x: GAPEConfig._encode_constant(x)),
         
         ("_padding1", 4),  # Padding to align to byte boundary
-        ("constant1", 32),
+        ("constant1", 32, lambda x: GAPEConfig._encode_constant(x)),
         
         ("_padding0", 4),  # Padding to align to byte boundary
-        ("constant0", 32),
+        ("constant0", 32, lambda x: GAPEConfig._encode_constant(x)),
     ]
+
+    @staticmethod
+    def _encode_constant(val):
+        """Encode constant to 32-bit int. Floats -> fp32 IEEE754, ints -> int."""
+        if val is None:
+            return 0
+        if isinstance(val, str):
+            text = val.strip()
+            # Try fraction first (e.g., "1/1024"), then float
+            try:
+                val = float(Fraction(text))
+            except (ValueError, ZeroDivisionError):
+                try:
+                    val = float(text)
+                except ValueError:
+                    return val
+        if isinstance(val, numbers.Integral):
+            return int(val)
+        if isinstance(val, numbers.Real):
+            return int.from_bytes(struct.pack('<f', float(val)), byteorder='little', signed=False)
+        return val
     
     @staticmethod
     def opcode_map():
