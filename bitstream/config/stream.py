@@ -27,7 +27,7 @@ class ReadStreamEngineConfig(BaseConfigModule):
         ("ping_pong", 1),
         ("pingpong_last_index", 4),
         # Address and size fields
-        ("base_addr", 30),
+        ("base_addr", 30, lambda x: StreamConfig.parse_base_addr(x)),
         ("idx_size", 24),
         ("idx_size_log", 9),
         ("total_size", 8),
@@ -121,7 +121,7 @@ class WriteStreamEngineConfig(BaseConfigModule):
         ("ping_pong", 1),
         ("pingpong_last_index", 4),
         # Address and size fields
-        ("base_addr", 30),
+        ("base_addr", 30, lambda x: StreamConfig.parse_base_addr(x)),
         ("idx_size", 24),
         ("idx_size_log", 9),
         ("total_size", 8),
@@ -329,6 +329,19 @@ class StreamConfig(BaseConfigModule):
             padding = [0] * (16 - len(reversed_lst))
             reversed_lst = padding + reversed_lst
         return reversed_lst
+
+    @staticmethod
+    def parse_base_addr(val):
+        """Parse base_addr, supporting hex strings like 0x0000."""
+        if val is None:
+            return 0
+        if isinstance(val, str):
+            text = val.strip().replace("_", "")
+            try:
+                return int(text, 0)
+            except ValueError:
+                return 0
+        return int(val)
     
     @staticmethod
     def inport_mode_map():
