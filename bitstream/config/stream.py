@@ -338,6 +338,10 @@ class StreamConfig(BaseConfigModule):
         if isinstance(val, str):
             text = val.strip().replace("_", "")
             try:
+                if text.startswith(("0b", "0B")):
+                    return int(text, 2)
+                if text and all(ch in "01" for ch in text):
+                    return int(text, 2)
                 return int(text, 0)
             except ValueError:
                 return 0
