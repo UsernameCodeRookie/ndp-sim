@@ -14,7 +14,7 @@ class GAInportConfig(BaseConfigModule):
       fp16to32(1) + int32tofp(1) = 18 bits
     """
     FIELD_MAP = [
-        ("mask", 8, lambda lst: lst[::-1]),  # ga_inport_mask
+        ("mask", 8, lambda x: int("".join(str(v) for v in x[::-1]), 2) if isinstance(x, list) else x),
         ("src_id", 1),  # ga_inport_src_id
         ("pingpong_en", 1),  # ga_inport_pingpong_en
         ("pingpong_last_index", 4),  # ga_inport_pingpong_last_index
@@ -61,7 +61,7 @@ class GAOutportConfig(BaseConfigModule):
     - mask(8) + src_id(3) + fp32to16(1) + int32to8(1) = 13 bits
     """
     FIELD_MAP = [
-        ("mask", 8, lambda lst: lst[::-1]),  # ga_outport_mask
+        ("mask", 8, lambda x: int("".join(str(v) for v in x[::-1]), 2) if isinstance(x, list) else x),
         ("src_id", 1),  # ga_outport_src_id
         ("fp32tofp16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_fp32tofp16
         ("fp32tobf16", 1, lambda x: 1 if str(x).lower() == "true" else (0 if str(x).lower() == "false" else x)),  # ga_outport_fp32tobf16
