@@ -11,7 +11,7 @@ class NeighborStreamConfig(BaseConfigModule):
     ]
     
     def __init__(self, idx: int):
-        super().__init__(idx)
+        super().__init__()
         self.idx = idx
         
     def set_empty(self):
