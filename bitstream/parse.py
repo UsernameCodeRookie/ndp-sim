@@ -99,7 +99,7 @@ def init_modules(cfg, use_direct_mapping=False, use_heuristic_search=True, heuri
                 [BufferLoopControlGroupConfig(i) for i in range(5)] + \
                 [LCPEConfig(i) for i in range(10)] + \
                 [StreamConfig(i) for i in range(5)] + \
-                [NeighborStreamConfig()] + \
+                [NeighborStreamConfig(i) for i in range(2)] + \
                 [BufferConfig(i) for i in range(6)] + \
                 [SpecialArrayConfig()] + \
                 [GAInportConfig(i) for i in range(3)] + \
