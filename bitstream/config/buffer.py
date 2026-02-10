@@ -14,7 +14,7 @@ class BufferConfig(BaseConfigModule):
         ("buffer_life_time", 4, lambda x : x-1),
         ("mode", 1),
         # "mask": List[int] -> Bit integer
-        ("mask", 8, lambda x: int("".join(str(v) for v in x[::-1]), 2) if isinstance(x, list) else x),
+        ("mask", 8, lambda lst : lst[::-1]),  # Reverse the list to match hardware bit order
         ("buf_end_row_addr", 2),
     ]
 
