@@ -3,6 +3,9 @@ from bitstream.index import NodeIndex, Connect
 from bitstream.config.mapper import NodeGraph
 from typing import Optional, List
 from bitstream.bit import Bit
+import numbers
+import struct
+from fractions import Fraction
 
 class DramLoopControlConfig(BaseConfigModule):
     """Represents a single DRAM loop configuration."""
@@ -88,9 +91,9 @@ class LCPEConfig(BaseConfigModule):
         ("inport0_mode", 2, lambda x: LCPEConfig.inport_mode_map()[x] if x is not None else 0),
         
         # Constants: 3 × 12 bits = 36 bits
-        ("constant2", 16),
-        ("constant1", 16),
-        ("constant0", 16),
+        ("constant2", 16, lambda x: LCPEConfig._encode_constant(x)),
+        ("constant1", 16, lambda x: LCPEConfig._encode_constant(x)),
+        ("constant0", 16, lambda x: LCPEConfig._encode_constant(x)),
     ]
 
     def __init__(self, idx: int):
@@ -135,6 +138,27 @@ class LCPEConfig(BaseConfigModule):
         # Treat missing entries as 0
         padded = [(lst[i] if i < len(lst) and lst[i] else 0) for i in range(3)]
         return (padded[2] << 2) | (padded[1] << 1) | padded[0]
+    
+    @staticmethod
+    def _encode_constant(val):
+        """Encode constant to 32-bit int. Floats -> fp32 IEEE754, ints -> int."""
+        if val is None:
+            return 0
+        if isinstance(val, str):
+            text = val.strip()
+            # Try fraction first (e.g., "1/1024"), then float
+            try:
+                val = float(Fraction(text))
+            except (ValueError, ZeroDivisionError):
+                try:
+                    val = float(text)
+                except ValueError:
+                    return val
+        if isinstance(val, numbers.Integral):
+            return int(val)
+        if isinstance(val, numbers.Real):
+            return int.from_bytes(struct.pack('<f', float(val)), byteorder='little', signed=False)
+        return val
 
     def from_json(self, cfg: dict):
         """
