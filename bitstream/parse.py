@@ -233,7 +233,7 @@ def build_entries(modules):
     
     # Get fixed-position modules from module list
     buffer_modules = [m for m in modules if isinstance(m, BufferConfig)]
-    neighbor_module = next((m for m in modules if isinstance(m, NeighborStreamConfig)), None)
+    neighbor_modules = [m for m in modules if isinstance(m, NeighborStreamConfig)]
     special_module = next((m for m in modules if isinstance(m, SpecialArrayConfig)), None)
     ga_inport_modules = [m for m in modules if isinstance(m, GAInportConfig)]
     ga_outport_module = next((m for m in modules if isinstance(m, GAOutportConfig)), None)
@@ -252,8 +252,7 @@ def build_entries(modules):
         # Stream Engine resources
         (ModuleID.SE_RD_MSE, "READ_STREAM", 4, lambda i: mapper.get_module(f"READ_STREAM{i}")),
         (ModuleID.SE_WR_MSE, "WRITE_STREAM", 1, lambda i: mapper.get_module(f"WRITE_STREAM{i}")),
-        (ModuleID.SE_NSE, "NEIGHBOR", 1, lambda i: neighbor_module),
-        (ModuleID.SE_NSE, "NEIGHBOR_EMPTY", 1, lambda i: None),  # Extra empty entry
+        (ModuleID.SE_NSE, "NEIGHBOR", len(neighbor_modules), lambda i: neighbor_modules[i] if i < len(neighbor_modules) else None),
         # Buffer manager cluster
         (ModuleID.BUFFER_MANAGER_CLUSTER, "BUFFER", len(buffer_modules), lambda i: buffer_modules[i] if i < len(buffer_modules) else None),
         # Special array

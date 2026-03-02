@@ -28,6 +28,6 @@ class NeighborStreamConfig(BaseConfigModule):
         
         if self.idx < len(keys):
             n2n = cfg[keys[self.idx]]
-            self.from_json(n2n)
+            super().from_json(n2n)
         else:
             self.set_empty()
