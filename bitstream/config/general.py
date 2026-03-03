@@ -161,6 +161,7 @@ class GAPEConfig(BaseConfigModule):
             "sum": 4,
             "summac": 5,
             "mac": 6,
+            "int32_sub": 9,
             "int8_max": 11,
             "int32_sum": 12,
             "int32_mac": 14,
