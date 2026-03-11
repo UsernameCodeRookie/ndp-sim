@@ -355,7 +355,7 @@ def write_bitstream(entries, config_mask, output_file='./data/parsed_bitstream.t
                 lines = get_config_output_lines(config, mid)
                 max_lines = max(max_lines, len(lines))
                 
-            print(f"Processing {module_name} with {len(configs)} entries, max lines: {max_lines}, config bits: {max(len(c) for c in configs if c)}")
+            print(f"Processing {module_name} with {len(configs)} entries, max lines: {max_lines}")
             
             # Write module header
             f.write(f"{module_name}:\n")
