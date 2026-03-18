@@ -304,21 +304,7 @@ Examples:
         
         # Step 6: Compare with reference (if requested)
         if args.compare:
-            if args.verbose:
-                print(f"[6/6] Comparing with reference bitstream: {args.compare}...")
-            
-            if not Path(args.compare).exists():
-                print(f"\nError: Reference file not found: {args.compare}")
-                return 1
-            else:
-                result_info = {
-                    'bitstream': bitstream,
-                    'entries': entries,
-                    'config_mask': config_mask,
-                    'modules': modules,
-                    'reference_file': args.compare
-                }
-                compare_bitstreams(result_info)
+            raise NotImplementedError("Bitstream comparison functionality is removed in this version.")
         elif args.verbose:
             print("[6/6] Skipping comparison (no --compare specified)")
         
