@@ -298,7 +298,8 @@ def write_bitstream(entries, config_mask, output_file='./data/parsed_bitstream.t
     by padding empty entries with '0' lines to match the maximum length of non-empty entries.
     
     If binary_output_file is provided, also writes concatenated binary data (without module headers)
-    to that file as 64-bit lines.
+    to that file as reordered 128-bit lines: for each 128-bit block, upper 64 bits are placed first,
+    then lower 64 bits ("second line first, first line second" relative to old 64-bit output).
     """
     from collections import defaultdict
     
@@ -395,13 +396,16 @@ def write_bitstream(entries, config_mask, output_file='./data/parsed_bitstream.t
             else:
                 binary_string += line
         
-        # Pad to 64-bit boundary
-        binary_string += '0' * ((64 - len(binary_string) % 64) % 64)
+        # Pad to 128-bit boundary for 128-bit line output.
+        binary_string += '0' * ((128 - len(binary_string) % 128) % 128)
         
         with open(binary_output_file, 'w') as f:
-            for i in range(0, len(binary_string), 64):
-                chunk = binary_string[i:i+64]
-                f.write(chunk + '\n')
+            for i in range(0, len(binary_string), 128):
+                chunk128 = binary_string[i:i+128].ljust(128, '0')
+                low64 = chunk128[:64]
+                high64 = chunk128[64:128]
+                # Output reordered 128-bit line: second 64-bit half first, then first half.
+                f.write(high64 + low64 + '\n')
         
         print(f'Binary dump written to {binary_output_file}')
 
