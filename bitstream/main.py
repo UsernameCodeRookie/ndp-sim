@@ -81,7 +81,7 @@ Examples:
         '--binary-name',
         type=str,
         default='modules_dump.bin',
-        help='Name of binary dump file (default: modules_dump.bin)'
+        help='Base name for binary dumps; tool emits *_64b and *_128b files (default: modules_dump.bin)'
     )
     
     # Dump options
@@ -284,19 +284,32 @@ Examples:
             if not args.no_dump_binary:
                 binary_output_path = str(output_dir / args.binary_name)
             
-            write_bitstream(entries, config_mask=config_mask, output_file=str(parsed_path), binary_output_file=binary_output_path)
+            binary_outputs = write_bitstream(
+                entries,
+                config_mask=config_mask,
+                output_file=str(parsed_path),
+                binary_output_file=binary_output_path,
+            )
 
-            # Also emit a duplicate binary named after the config for convenience
-            if binary_output_path:
-                config_bin_path = output_dir / f"{Path(args.config).stem}_bitstream.bin"
-                shutil.copyfile(binary_output_path, str(config_bin_path))
+            # Also emit duplicates named after the config for convenience
+            if binary_outputs:
+                config_stem = f"{Path(args.config).stem}_bitstream"
+                src_64 = binary_outputs.get('binary_64')
+                src_128 = binary_outputs.get('binary_128')
+                if src_64:
+                    config_bin_64_path = output_dir / f"{config_stem}_64b.bin"
+                    shutil.copyfile(src_64, str(config_bin_64_path))
+                if src_128:
+                    config_bin_128_path = output_dir / f"{config_stem}_128b.bin"
+                    shutil.copyfile(src_128, str(config_bin_128_path))
         elif args.verbose:
             print("[5.5/6] Skipping parsed bitstream")
         
         if not args.quiet:
             print(f"\n✓ Bitstream generated successfully")
-            if not args.no_dump_binary:
-                print(f"✓ Binary dump: {output_dir / args.binary_name}")
+            if not args.no_dump_binary and 'binary_outputs' in locals() and binary_outputs:
+                print(f"✓ Binary dump (64b): {binary_outputs.get('binary_64')}")
+                print(f"✓ Binary dump (128b): {binary_outputs.get('binary_128')}")
             if not args.no_dump_detailed:
                 print(f"✓ Detailed dump: {output_dir / args.detailed_dump_output}")
             if not args.no_dump_parsed:

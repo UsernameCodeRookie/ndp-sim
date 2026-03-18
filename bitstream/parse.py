@@ -297,9 +297,14 @@ def write_bitstream(entries, config_mask, output_file='./data/parsed_bitstream.t
     For each module type, ensures all entries have consistent bitstream length
     by padding empty entries with '0' lines to match the maximum length of non-empty entries.
     
-    If binary_output_file is provided, also writes concatenated binary data (without module headers)
-    to that file as reordered 128-bit lines: for each 128-bit block, upper 64 bits are placed first,
-    then lower 64 bits ("second line first, first line second" relative to old 64-bit output).
+        If binary_output_file is provided, writes two binary dumps (without module headers):
+        - *_64b: original 64-bit lines
+        - *_128b: reordered 128-bit lines where upper 64 bits are placed first,
+            then lower 64 bits ("second line first, first line second" relative to old 64-bit output).
+
+        Returns:
+                dict with keys binary_64 and binary_128 when binary output is enabled;
+                otherwise an empty dict.
     """
     from collections import defaultdict
     
@@ -385,7 +390,11 @@ def write_bitstream(entries, config_mask, output_file='./data/parsed_bitstream.t
     print(f'Bitstream written to {output_file}')
     
     # Write binary output if requested
+    generated_binary_paths = {}
+
     if binary_output_file:
+        from pathlib import Path
+
         # Extract just the binary values (without '1 ' prefix for non-zero lines)
         binary_string = ''
         for line in binary_data:
@@ -395,19 +404,38 @@ def write_bitstream(entries, config_mask, output_file='./data/parsed_bitstream.t
                 binary_string += '1' + line[2:]
             else:
                 binary_string += line
-        
-        # Pad to 128-bit boundary for 128-bit line output.
-        binary_string += '0' * ((128 - len(binary_string) % 128) % 128)
-        
-        with open(binary_output_file, 'w') as f:
-            for i in range(0, len(binary_string), 128):
-                chunk128 = binary_string[i:i+128].ljust(128, '0')
+
+        base_path = Path(binary_output_file)
+        suffix = base_path.suffix if base_path.suffix else '.bin'
+        stem = base_path.stem if base_path.suffix else base_path.name
+        binary_64_path = str(base_path.with_name(f"{stem}_64b{suffix}"))
+        binary_128_path = str(base_path.with_name(f"{stem}_128b{suffix}"))
+
+        # Write 64-bit output
+        binary_string_64 = binary_string + '0' * ((64 - len(binary_string) % 64) % 64)
+        with open(binary_64_path, 'w') as f:
+            for i in range(0, len(binary_string_64), 64):
+                chunk64 = binary_string_64[i:i + 64].ljust(64, '0')
+                f.write(chunk64 + '\n')
+
+        # Write reordered 128-bit output
+        binary_string_128 = binary_string + '0' * ((128 - len(binary_string) % 128) % 128)
+        with open(binary_128_path, 'w') as f:
+            for i in range(0, len(binary_string_128), 128):
+                chunk128 = binary_string_128[i:i + 128].ljust(128, '0')
                 low64 = chunk128[:64]
                 high64 = chunk128[64:128]
                 # Output reordered 128-bit line: second 64-bit half first, then first half.
                 f.write(high64 + low64 + '\n')
-        
-        print(f'Binary dump written to {binary_output_file}')
+
+        generated_binary_paths = {
+            'binary_64': binary_64_path,
+            'binary_128': binary_128_path,
+        }
+        print(f"Binary dump (64b) written to {binary_64_path}")
+        print(f"Binary dump (128b) written to {binary_128_path}")
+
+    return generated_binary_paths
 
 def dump_modules_detailed(modules, output_file=None):
     """
