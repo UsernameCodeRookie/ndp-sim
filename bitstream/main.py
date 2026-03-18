@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bitstream.parse import (
     load_config, init_modules, build_entries, generate_bitstream,
-    write_bitstream, dump_modules_detailed, compare_bitstreams
+    write_bitstream, dump_modules_detailed
 )
 # python bitstream/main.py --visualize-placement -c ./jsons/maxpool_config_16_112_112_stride2_padding1.json -o ./maxpool_config_16_112_112_stride2_padding1_out
 
