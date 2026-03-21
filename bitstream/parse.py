@@ -333,7 +333,8 @@ def write_bitstream(entries, config_mask, output_file='./data/parsed_bitstream.t
     def get_config_output_lines(config, module_id):
         """Returns list of output lines for a config entry."""
         if not config or set(config) == {'0'}:
-            return ["0"]
+            # Empty/zero config still occupies one presence bit per chunk.
+            return ["0"] * MODULE_CFG_CHUNK_SIZES[module_id]
         else:
             lines = []
             for chunk in split_config(config, module_id):
